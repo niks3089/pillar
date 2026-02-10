@@ -247,6 +247,33 @@ dependencies = [
 ]
 
 [[package]]
+name = "controller"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "axum",
+ "dashmap",
+ "figment",
+ "prost",
+ "rusqlite",
+ "rust-embed",
+ "serde",
+ "serde_json",
+ "shared",
+ "tempfile",
+ "tokio",
+ "tokio-stream",
+ "tokio-util",
+ "tonic",
+ "tonic-prost",
+ "tonic-prost-build",
+ "tower",
+ "tower-http",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "core-foundation"
 version = "0.9.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -985,6 +1012,34 @@ dependencies = [
 ]
 
 [[package]]
+name = "link"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "axum",
+ "chrono",
+ "figment",
+ "prometheus",
+ "prost",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "sha2",
+ "shared",
+ "sysinfo",
+ "tempfile",
+ "tokio",
+ "tokio-stream",
+ "tokio-util",
+ "tonic",
+ "tonic-prost",
+ "tonic-prost-build",
+ "tower",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "linux-raw-sys"
 version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1181,6 +1236,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "operator"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "chrono",
+ "figment",
+ "prost",
+ "reqwest 0.13.2",
+ "serde",
+ "serde_json",
+ "shared",
+ "strum",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "parking_lot"
 version = "0.12.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1241,96 +1318,6 @@ dependencies = [
  "fixedbitset",
  "hashbrown 0.15.5",
  "indexmap",
-]
-
-[[package]]
-name = "controller"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "axum",
- "dashmap",
- "figment",
- "pillar-shared",
- "prost",
- "rusqlite",
- "rust-embed",
- "serde",
- "serde_json",
- "tempfile",
- "tokio",
- "tokio-stream",
- "tokio-util",
- "tonic",
- "tonic-prost",
- "tonic-prost-build",
- "tower",
- "tower-http",
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
-name = "link"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "axum",
- "chrono",
- "figment",
- "pillar-shared",
- "prometheus",
- "prost",
- "reqwest 0.12.28",
- "serde",
- "serde_json",
- "sha2",
- "sysinfo",
- "tempfile",
- "tokio",
- "tokio-stream",
- "tokio-util",
- "tonic",
- "tonic-prost",
- "tonic-prost-build",
- "tower",
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
-name = "operator"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-trait",
- "chrono",
- "figment",
- "pillar-shared",
- "prost",
- "reqwest 0.13.2",
- "serde",
- "serde_json",
- "strum",
- "tempfile",
- "thiserror 2.0.18",
- "tokio",
- "tokio-util",
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
-name = "shared"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "prost",
- "prost-build",
- "serde",
- "serde_json",
- "strum",
- "tempfile",
 ]
 
 [[package]]
@@ -2075,6 +2062,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f40ca3c46823713e0d4209592e8d6e826aa57e928f09752619fc696c499637f6"
 dependencies = [
  "lazy_static",
+]
+
+[[package]]
+name = "shared"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "prost",
+ "prost-build",
+ "serde",
+ "serde_json",
+ "strum",
+ "tempfile",
 ]
 
 [[package]]

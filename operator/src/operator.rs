@@ -275,6 +275,12 @@ impl Operator {
             return;
         }
 
+        // Don't try to recover a service that was never installed
+        if !self.service_manager.service_exists().await {
+            tracing::debug!("validator service not installed, waiting for provisioning");
+            return;
+        }
+
         self.evict_old_restarts();
 
         if self.restarts_in_window() >= self.config.lifecycle.crash_threshold {

@@ -48,6 +48,13 @@ impl SystemdManager {
         Ok(stdout == "active")
     }
 
+    /// Check whether the systemd unit file exists (i.e. the service has been installed).
+    /// Returns false if the validator has never been provisioned.
+    pub async fn service_exists(&self) -> bool {
+        let unit_file = format!("/etc/systemd/system/{}.service", self.service_name);
+        tokio::fs::metadata(&unit_file).await.is_ok()
+    }
+
     async fn run_systemctl(&self, operation: &str) -> PillarResult<()> {
         let mut last_err = None;
 
