@@ -1,0 +1,6 @@
+role: rpc
+state_path: /var/run/pillar/operator-state.bin
+network:
+  cluster: mainnet-beta
+  reference_rpc_urls:
+    - https://api.mainnet-beta.solana.com

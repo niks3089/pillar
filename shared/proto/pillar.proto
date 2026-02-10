@@ -1,0 +1,158 @@
+syntax = "proto3";
+
+package pillar;
+
+// Link pushes node status to controller on a regular interval.
+service PillarController {
+    rpc ReportStatus(ReportStatusRequest) returns (ReportStatusResponse);
+    rpc CommandStream(CommandStreamRequest) returns (stream ControllerCommand);
+    rpc RegisterNode(RegisterNodeRequest) returns (RegisterNodeResponse);
+    rpc ReportUpgradeStatus(UpgradeStatusRequest) returns (UpgradeStatusResponse);
+    // Link streams log batches from validator/operator/link services.
+    rpc PushLogs(stream LogBatch) returns (LogAck);
+}
+
+message ReportStatusRequest {
+    string node_id = 1;
+    NodeStatus status = 2;
+}
+
+message ReportStatusResponse {}
+
+message CommandStreamRequest {
+    string node_id = 1;
+}
+
+// Flattened operator state + system metrics sent to controller.
+// Operator writes the node-health fields; Link enriches with system/process metrics.
+message NodeStatus {
+    string state = 1;
+    int64  local_slot = 2;
+    int64  reference_slot = 3;
+    int64  slots_behind = 4;
+    bool   healthy = 5;
+    uint64 restart_count = 6;
+    bool   crash_looping = 7;
+    double health_check_duration_secs = 8;
+    string version = 9;
+    string role = 10;
+    string client = 11;
+    string cluster = 12;
+    double cpu_usage_percent = 13;
+    uint64 memory_used_bytes = 14;
+    uint64 memory_total_bytes = 15;
+    uint64 disk_used_bytes = 16;
+    uint64 disk_total_bytes = 17;
+    int64  updated_at_unix_secs = 18;
+    uint64 state_duration_secs = 19;
+    string validator_process = 20;
+    uint64 network_rx_bytes = 21;
+    uint64 network_tx_bytes = 22;
+    double validator_cpu_percent = 23;
+    uint64 validator_memory_bytes = 24;
+    double operator_cpu_percent = 25;
+    uint64 operator_memory_bytes = 26;
+    double link_cpu_percent = 27;
+    uint64 link_memory_bytes = 28;
+    string operator_version = 29;
+    string link_version = 30;
+    string pending_upgrade = 31;
+    string hostname = 32;
+}
+
+// Commands pushed from controller to link.
+message ControllerCommand {
+    oneof command {
+        RestartCommand restart = 1;
+        RecoverCommand recover = 2;
+        UpdateConfigCommand update_config = 3;
+        UpgradeCommand upgrade = 4;
+        ProvisionCommand provision = 5;
+    }
+}
+
+message RestartCommand {
+    string reason = 1;
+}
+
+message RecoverCommand {
+    string reason = 1;
+}
+
+message UpdateConfigCommand {
+    bytes config_yaml = 1;
+}
+
+message UpgradeCommand {
+    string binary_name = 1;
+    string version = 2;
+    string download_url = 3;
+    string sha256 = 4;
+    string reason = 5;
+}
+
+message RegisterNodeRequest {
+    string node_id = 1;
+    string role = 2;
+    string client = 3;
+    string cluster = 4;
+    string operator_version = 5;
+    string link_version = 6;
+    string hostname = 7;
+    string architecture = 8;
+    string os = 9;
+}
+
+message RegisterNodeResponse {
+    bool accepted = 1;
+    string message = 2;
+}
+
+message UpgradeStatusRequest {
+    string node_id = 1;
+    string binary_name = 2;
+    string version = 3;
+    bool success = 4;
+    string error_message = 5;
+}
+
+message UpgradeStatusResponse {}
+
+// Log streaming from link to controller.
+message LogBatch {
+    string node_id = 1;
+    repeated LogEntry entries = 2;
+}
+
+message LogEntry {
+    string service = 1;          // "validator", "operator", "link"
+    int64 timestamp_unix_ms = 2;
+    string level = 3;            // "info", "warn", "error", "debug"
+    string message = 4;
+    string unit = 5;             // systemd unit name (e.g. "solana-validator.service")
+}
+
+// Provision a validator on the node (triggered from controller UI).
+message ProvisionCommand {
+    string client = 1;             // "agave", "jito", "firedancer", "frankendancer"
+    string version = 2;            // e.g. "2.1.6"
+    string cluster = 3;            // "mainnet-beta", "testnet", "devnet"
+    string identity_keypair_path = 4;
+    string vote_account_keypair_path = 5;
+    string ledger_path = 6;
+    string snapshot_path = 7;
+    string accounts_path = 8;
+    repeated string entrypoints = 9;
+    repeated string known_validators = 10;
+    string download_url = 11;      // URL to fetch the validator binary
+    string sha256 = 12;            // expected SHA256 of the binary
+    bool jito_mev = 13;            // enable Jito MEV tip-distribution
+    string jito_block_engine_url = 14;
+    bool yellowstone_grpc = 15;    // enable Yellowstone gRPC plugin
+    uint32 rpc_port = 16;              // RPC HTTP port (default 8899 if 0)
+    string dynamic_port_range = 17;    // e.g. "8000-8020"
+}
+
+message LogAck {
+    uint64 received_count = 1;
+}
