@@ -15,7 +15,7 @@ Deployment: **operator + link + controller** (no standalone mode). Link always c
 Single command pulls a prebuilt binary from the open-source GitHub release:
 
 ```bash
-curl -sSL https://github.com/niks3089/pillar/releases/latest/download/install-controller.sh | bash
+curl -sSL https://github.com/helius-labs/pillar/releases/latest/download/install-controller.sh | bash
 ```
 
 The script:
@@ -68,6 +68,7 @@ Once a node connects, the UI shows it progressing through states:
 | `behind` | Validator running but catching up to the chain tip |
 | `healthy` | Fully synced, serving traffic (green) |
 | `recovering` | Snapshot recovery in progress (operator triggered) |
+| `stopped` | Validator explicitly stopped via API (no automatic restart) |
 | `unhealthy` | Health checks failing, validator may be stuck |
 | `offline` | Node stopped reporting (link unreachable for >60s) |
 
@@ -120,7 +121,7 @@ The onboarding command embedded in the UI always reflects the correct reachable 
 
 ## Architecture Decisions
 
-- **Fully independent** — no external path deps
+- **Fully independent** from Helius shared crates (no `helius` path dep)
 - **No Solana SDK deps** — raw JSON-RPC via reqwest for health checks
 - **Prometheus metrics** (open standard, not Datadog/StatsD)
 - **figment** for YAML config, **thiserror** for errors
@@ -128,7 +129,7 @@ The onboarding command embedded in the UI always reflects the correct reachable 
 - **Single `NodeStatus` proto type** — flows from operator → binary state file → link → controller → SQLite → web UI + /metrics + alerts. Operator writes node-health fields, Link enriches with system/process metrics before pushing to controller.
 - **State sharing via atomic binary proto file** — operator encodes `NodeStatus` with prost, writes via temp + rename; link polls and decodes
 - **Controller always required** — Link must always connect to a controller (no feature gate, no standalone mode)
-- **extern_path for shared proto types** — link's and controller's build.rs use `extern_path` so gRPC stubs reference `shared::proto::*` directly, avoiding duplicate message types
+- **extern_path for shared proto types** — link's and controller's build.rs use `extern_path` so gRPC stubs reference `pillar_shared::proto::*` directly, avoiding duplicate message types
 - **All services run as `sol` user** — the same Anza-convention user that runs the validator. Operator manages systemd services via `sudo systemctl` with a sudoers rule (`/etc/sudoers.d/sol-systemctl`). No separate `pillar` user.
 - Author: Nikhil Acharya
 
@@ -253,7 +254,7 @@ controller/
 **2. Node Detail**
 - Current state badge + state history timeline
 - Live metrics: slots_behind, CPU, memory, disk, network
-- Actions: Restart, Recover, Upgrade, Remove
+- Actions: Restart, Recover, Stop, Cancel Deployment, Upgrade, Remove
 - Config: current operator.yaml + link.yaml (read-only view)
 - **Logs tab** — live-streaming log viewer for all services on this node:
   - Filter by service: validator, operator, link (toggle each on/off)
@@ -303,6 +304,8 @@ POST /api/nodes/:id/restart          send RestartCommand
 POST /api/nodes/:id/recover          send RecoverCommand
 POST /api/nodes/:id/upgrade          trigger binary upgrade
 POST /api/nodes/:id/provision        install validator (client, version, cluster, addons)
+POST /api/nodes/:id/stop             stop the validator (no automatic restart)
+POST /api/nodes/:id/cancel           cancel in-progress deployment (must be in provisioning/starting_up)
 GET  /api/nodes/:id/logs             paginated logs (?service=validator&level=error&since=...&limit=100)
 GET  /api/nodes/:id/logs/stream      SSE stream of live logs (filtered by query params)
 DELETE /api/nodes/:id                remove node from fleet
@@ -321,7 +324,7 @@ GET  /metrics                        Prometheus scrape (all nodes, labeled)
 ```sql
 CREATE TABLE nodes (
     node_id TEXT PRIMARY KEY,
-    lifecycle_state TEXT NOT NULL DEFAULT 'registered',  -- registered|provisioning|starting_up|behind|healthy|recovering|unhealthy|offline
+    lifecycle_state TEXT NOT NULL DEFAULT 'registered',  -- registered|provisioning|starting_up|behind|healthy|recovering|stopped|unhealthy|offline
     role TEXT,
     client TEXT,
     client_version TEXT,
@@ -436,7 +439,7 @@ Alert deduplication: alerts fire on state transition (healthy→unhealthy), not 
 Logs from all services on each node (validator, operator, link) are streamed to the controller and viewable in the UI.
 
 **Flow:**
-1. Link's `log_collector` tails journald for configured systemd units (`solana-validator.service`, `operator.service`, `link.service`)
+1. Link's `log_collector` tails journald for configured systemd units (`solana-validator.service`, `pillar-operator.service`, `pillar-link.service`)
 2. Log entries are parsed into structured `LogEntry` messages (service, timestamp, level, message, unit)
 3. Link buffers entries and pushes batches to controller via the `PushLogs` client-streaming gRPC RPC
 4. Controller writes log batches to the `logs` SQLite table
@@ -514,7 +517,7 @@ This enriched `NodeStatus` is the single source of truth for HTTP endpoints, Pro
 |----------|----------|
 | `GET /health` | 200 if `healthy == true`, 503 otherwise |
 | `GET /status` | Full enriched NodeStatus as JSON (proto types have serde derives), or 503 if unavailable |
-| `GET /version` | `{"service": "link", "version": "..."}` |
+| `GET /version` | `{"service": "pillar-link", "version": "..."}` |
 | `GET /metrics` | Prometheus text format (all metrics from enriched NodeStatus) |
 
 These endpoints remain available even when the controller is unreachable — Link keeps collecting and serving data locally.
@@ -554,12 +557,12 @@ Controller config (planned, `PILLAR_CONTROLLER_CONFIG` env var):
 - `retention_days`: 30 (applies to status_history and logs tables)
 - `external_url`: the public URL nodes use to reach this controller (auto-set by install script, used in onboard command)
 - `tunnel`: tunnel config if behind NAT (`type`: cloudflare/none, `credentials_path`)
-- `github_repo`: niks3089/pillar (for fetching release artifacts)
+- `github_repo`: helius-labs/pillar (for fetching release artifacts)
 - `alerts`: list of alert rules (name, condition, action, webhook_url)
 
 Link log collector config (in `link-config.yaml` under `log_collector`):
 - `enabled`: true (default) — set false to disable log streaming
-- `units`: list of systemd units to tail (default: `["solana-validator.service", "operator.service", "link.service", "controller.service"]`)
+- `units`: list of systemd units to tail (default: `["solana-validator.service", "pillar-operator.service", "pillar-link.service", "pillar-controller.service"]`)
 - `buffer_size`: 100 (max entries per batch before flush)
 - `flush_interval_ms`: 1000 (max time before flushing a partial batch)
 
@@ -568,7 +571,7 @@ Link log collector config (in `link-config.yaml` under `log_collector`):
 ### Controller Install (run once, on any machine — Mac or Linux)
 
 ```bash
-curl -sSL https://github.com/niks3089/pillar/releases/latest/download/install-controller.sh | bash
+curl -sSL https://github.com/helius-labs/pillar/releases/latest/download/install-controller.sh | bash
 ```
 
 Phases:
@@ -643,7 +646,7 @@ Post-install: open controller UI → select the new node → "Setup Validator" t
 - Controller gRPC server — all 5 RPCs (ReportStatus, CommandStream, RegisterNode, ReportUpgradeStatus, PushLogs)
 - Controller SQLite — schema, node registry, status_history, logs with retention pruning
 - Controller web UI — vanilla JS SPA embedded via rust-embed + React source (fleet overview, node detail with logs, Setup Validator provisioning panel)
-- Controller JSON API — /api/overview, /api/nodes, /api/nodes/:id, history, logs, logs/stream (SSE), restart, recover, provision, onboard-command, DELETE
+- Controller JSON API — /api/overview, /api/nodes, /api/nodes/:id, history, logs, logs/stream (SSE), restart, recover, provision, stop, cancel, onboard-command, DELETE
 - Controller Prometheus `/metrics` endpoint — per-node labels for Grafana scraping
 - Controller node lifecycle state machine — registered → starting_up → behind → healthy → recovering → offline
 - Controller config — grpc_listen, http_listen, db_path, retention_days, external_url

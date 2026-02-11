@@ -1,5 +1,5 @@
 [package]
-name = "link"
+name = "pillar-link"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
@@ -9,7 +9,7 @@ name = "link"
 path = "src/main.rs"
 
 [dependencies]
-shared = { path = "../shared" }
+pillar-shared = { path = "../shared" }
 anyhow = "1.0.86"
 axum = "0.8"
 chrono = { version = "0.4.31", features = ["serde"] }

@@ -1,1 +1,1 @@
-pub use shared::types::{NodeHealth, NodeState, SlotInfo};
+pub use pillar_shared::types::{NodeHealth, NodeState, SlotInfo};

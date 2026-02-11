@@ -1,5 +1,5 @@
 [package]
-name = "controller"
+name = "pillar-controller"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
@@ -9,7 +9,7 @@ name = "controller"
 path = "src/main.rs"
 
 [dependencies]
-shared = { path = "../shared" }
+pillar-shared = { path = "../shared" }
 anyhow = "1.0.86"
 axum = { version = "0.8", features = ["macros"] }
 dashmap = "6"

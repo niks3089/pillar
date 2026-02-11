@@ -11,7 +11,7 @@ pub mod proto {
 
 use proto::pillar_controller_client::PillarControllerClient;
 
-use shared::proto::{CommandStreamRequest, ControllerCommand, ReportStatusRequest};
+use pillar_shared::proto::{CommandStreamRequest, ControllerCommand, ReportStatusRequest};
 
 /// Connection to the centralized controller.
 ///
@@ -81,7 +81,7 @@ impl ControllerLink {
     ) {
         // Register with controller on every (re-)connect
         let mut reg_client = client.clone();
-        let reg_req = tonic::Request::new(shared::proto::RegisterNodeRequest {
+        let reg_req = tonic::Request::new(pillar_shared::proto::RegisterNodeRequest {
             node_id: self.config.node_id.clone(),
             hostname: gethostname(),
             ..Default::default()
@@ -209,13 +209,13 @@ async fn run_command_stream(
 }
 
 fn handle_command(cmd: ControllerCommand) {
-    use shared::proto::controller_command::Command;
+    use pillar_shared::proto::controller_command::Command;
     match cmd.command {
         Some(Command::Restart(r)) => {
             tracing::info!(reason = %r.reason, "received restart command");
             tokio::spawn(async move {
                 if let Err(e) = crate::provisioner::write_pending_command(
-                    &shared::PendingCommand::Restart {
+                    &pillar_shared::PendingCommand::Restart {
                         reason: r.reason,
                     },
                 )
@@ -229,7 +229,7 @@ fn handle_command(cmd: ControllerCommand) {
             tracing::info!(reason = %r.reason, "received recover command");
             tokio::spawn(async move {
                 if let Err(e) = crate::provisioner::write_pending_command(
-                    &shared::PendingCommand::Recover {
+                    &pillar_shared::PendingCommand::Recover {
                         reason: r.reason,
                     },
                 )
@@ -273,6 +273,27 @@ fn handle_command(cmd: ControllerCommand) {
                 }
             });
         }
+        Some(Command::Stop(s)) => {
+            tracing::info!(reason = %s.reason, "received stop command");
+            tokio::spawn(async move {
+                // Clean up staging dir if a download is in progress
+                let staging_dir = std::path::Path::new("/tmp/pillar-staging");
+                if staging_dir.exists() {
+                    if let Err(e) = tokio::fs::remove_dir_all(staging_dir).await {
+                        tracing::warn!(error = %e, "failed to clean up staging dir");
+                    }
+                }
+                if let Err(e) = crate::provisioner::write_pending_command(
+                    &pillar_shared::PendingCommand::Stop {
+                        reason: s.reason,
+                    },
+                )
+                .await
+                {
+                    tracing::error!(error = %e, "stop command failed");
+                }
+            });
+        }
         None => {
             tracing::warn!("received empty controller command");
         }
@@ -280,7 +301,7 @@ fn handle_command(cmd: ControllerCommand) {
 }
 
 async fn handle_provision(
-    p: shared::proto::ProvisionCommand,
+    p: pillar_shared::proto::ProvisionCommand,
     download_url: &str,
     sha256: &str,
 ) -> Result<(), String> {
@@ -295,7 +316,7 @@ async fn handle_provision(
     let timeout = std::time::Duration::from_secs(3600);
     provisioner::download_and_verify(download_url, &staged, sha256, timeout).await?;
 
-    provisioner::write_pending_command(&shared::PendingCommand::Provision {
+    provisioner::write_pending_command(&pillar_shared::PendingCommand::Provision {
         staged_binary_path: staged.display().to_string(),
         provision: Box::new(p),
     })
@@ -306,7 +327,7 @@ async fn handle_provision(
 }
 
 async fn handle_upgrade(
-    u: shared::proto::UpgradeCommand,
+    u: pillar_shared::proto::UpgradeCommand,
     download_url: &str,
     sha256: &str,
 ) -> Result<(), String> {
@@ -321,7 +342,7 @@ async fn handle_upgrade(
     let timeout = std::time::Duration::from_secs(3600);
     provisioner::download_and_verify(download_url, &staged, sha256, timeout).await?;
 
-    provisioner::write_pending_command(&shared::PendingCommand::Upgrade {
+    provisioner::write_pending_command(&pillar_shared::PendingCommand::Upgrade {
         staged_binary_path: staged.display().to_string(),
         upgrade: u,
     })

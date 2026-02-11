@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use tokio::sync::{broadcast, mpsc};
 
-use shared::proto::{ControllerCommand, LogEntry, NodeStatus};
+use pillar_shared::proto::{ControllerCommand, LogEntry, NodeStatus};
 
 struct NodeEntry {
     status: Option<NodeStatus>,
@@ -126,7 +126,7 @@ impl NodeRegistry {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use shared::proto::controller_command;
+    use pillar_shared::proto::controller_command;
 
     fn sample_status(state: &str) -> NodeStatus {
         NodeStatus {
@@ -139,7 +139,7 @@ mod tests {
     fn restart_command() -> ControllerCommand {
         ControllerCommand {
             command: Some(controller_command::Command::Restart(
-                shared::proto::RestartCommand {
+                pillar_shared::proto::RestartCommand {
                     reason: "test".to_string(),
                 },
             )),

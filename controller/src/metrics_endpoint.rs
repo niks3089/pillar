@@ -4,7 +4,7 @@ use axum::extract::State;
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
 
-use shared::proto::NodeStatus;
+use pillar_shared::proto::NodeStatus;
 
 use crate::node_registry::NodeRegistry;
 

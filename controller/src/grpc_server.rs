@@ -1,7 +1,7 @@
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::{Request, Response, Status, Streaming};
 
-use shared::proto::{
+use pillar_shared::proto::{
     CommandStreamRequest, ControllerCommand, LogAck, LogBatch, RegisterNodeRequest,
     RegisterNodeResponse, ReportStatusRequest, ReportStatusResponse, UpgradeStatusRequest,
     UpgradeStatusResponse,

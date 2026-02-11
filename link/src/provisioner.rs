@@ -116,8 +116,8 @@ pub async fn download_and_verify(
 // ---------------------------------------------------------------------------
 
 /// Write a PendingCommand JSON file atomically for the operator to pick up.
-pub async fn write_pending_command(cmd: &shared::PendingCommand) -> Result<(), String> {
-    let path = shared::PENDING_COMMAND_PATH;
+pub async fn write_pending_command(cmd: &pillar_shared::PendingCommand) -> Result<(), String> {
+    let path = pillar_shared::PENDING_COMMAND_PATH;
     let tmp = format!("{path}.tmp");
 
     let json = serde_json::to_string_pretty(cmd)
@@ -202,9 +202,9 @@ mod tests {
         let path = dir.path().join("pending-command.json");
         let tmp = dir.path().join("pending-command.json.tmp");
 
-        let cmd = shared::PendingCommand::Provision {
+        let cmd = pillar_shared::PendingCommand::Provision {
             staged_binary_path: "/tmp/staged".to_string(),
-            provision: Box::new(shared::proto::ProvisionCommand {
+            provision: Box::new(pillar_shared::proto::ProvisionCommand {
                 client: "agave".to_string(),
                 version: "2.1.6".to_string(),
                 cluster: "testnet".to_string(),
@@ -218,10 +218,10 @@ mod tests {
 
         // Read back
         let data = tokio::fs::read_to_string(&path).await.unwrap();
-        let parsed: shared::PendingCommand = serde_json::from_str(&data).unwrap();
+        let parsed: pillar_shared::PendingCommand = serde_json::from_str(&data).unwrap();
         assert_eq!(parsed.command_type(), "provision");
         match &parsed {
-            shared::PendingCommand::Provision { staged_binary_path, .. } => {
+            pillar_shared::PendingCommand::Provision { staged_binary_path, .. } => {
                 assert_eq!(staged_binary_path, "/tmp/staged");
             }
             _ => panic!("expected Provision variant"),

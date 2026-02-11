@@ -31,6 +31,8 @@ pub enum PendingCommand {
     Restart { reason: String },
     #[serde(rename = "recover")]
     Recover { reason: String },
+    #[serde(rename = "stop")]
+    Stop { reason: String },
 }
 
 impl PendingCommand {
@@ -41,6 +43,7 @@ impl PendingCommand {
             PendingCommand::Upgrade { .. } => "upgrade",
             PendingCommand::Restart { .. } => "restart",
             PendingCommand::Recover { .. } => "recover",
+            PendingCommand::Stop { .. } => "stop",
         }
     }
 }

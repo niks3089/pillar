@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Pillar Controller installer — installs controller on a Linux machine.
+# Pillar Controller installer — installs the controller on a Linux machine.
 # Expects pre-built binary (via --binaries-dir or downloaded from GitHub releases).
 #
 # Usage:

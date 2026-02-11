@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Pillar Node installer — installs operator, link, Solana CLI,
+# Pillar Node installer — installs operator, link, Solana CLI, Rust toolchain,
 # creates the sol user, applies sysctl tuning, and generates validator keypairs.
 #
 # Usage:
@@ -272,7 +272,7 @@ done
 SUDOERS_FILE="/etc/sudoers.d/sol-systemctl"
 cat > "$SUDOERS_FILE" <<'EOF'
 # Allow sol user to manage systemd services without a password.
-# Used by operator to start/stop/restart the validator.
+# Used by pillar-operator to start/stop/restart the validator.
 sol ALL=(root) NOPASSWD: /usr/bin/systemctl
 EOF
 chmod 440 "$SUDOERS_FILE"
@@ -328,7 +328,46 @@ else
 fi
 
 # ------------------------------------------------------------------------------
-# Phase 3e: Generate validator keypairs
+# Phase 3e: Install Rust toolchain (required for building agave v3+)
+# ------------------------------------------------------------------------------
+
+section "Rust toolchain"
+
+AGAVE_RUST_VERSION="1.86.0"
+
+if su - sol -c "command -v rustc" &>/dev/null; then
+    EXISTING_RUST=$(su - sol -c "rustc --version 2>/dev/null" || echo "unknown")
+    ok "Rust already installed ($EXISTING_RUST)"
+    # Ensure the required version is available
+    if ! su - sol -c ". \$HOME/.cargo/env && rustup toolchain list 2>/dev/null" 2>/dev/null | grep -q "$AGAVE_RUST_VERSION"; then
+        info "Installing Rust $AGAVE_RUST_VERSION toolchain (required for agave v3)..."
+        if su - sol -c ". \$HOME/.cargo/env && rustup install $AGAVE_RUST_VERSION" 2>&1; then
+            ok "Rust $AGAVE_RUST_VERSION installed"
+        else
+            warn "failed to install Rust $AGAVE_RUST_VERSION — you can install manually: rustup install $AGAVE_RUST_VERSION"
+        fi
+    else
+        ok "Rust $AGAVE_RUST_VERSION toolchain available"
+    fi
+else
+    info "Installing Rust toolchain as sol user..."
+    if su - sol -c 'curl --proto "=https" --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain '"$AGAVE_RUST_VERSION" 2>&1; then
+        ok "Rust $AGAVE_RUST_VERSION installed"
+    else
+        warn "Rust install failed — you can install manually as the sol user"
+    fi
+fi
+
+# Ensure cargo bin is in sol's PATH
+SOL_CARGO_PATH='export PATH="$HOME/.cargo/bin:$PATH"'
+SOL_PROFILE="/home/sol/.profile"
+if ! grep -qF "$SOL_CARGO_PATH" "$SOL_PROFILE" 2>/dev/null; then
+    echo "$SOL_CARGO_PATH" >> "$SOL_PROFILE"
+    ok "added cargo to sol PATH in .profile"
+fi
+
+# ------------------------------------------------------------------------------
+# Phase 3f: Generate validator keypairs
 # ------------------------------------------------------------------------------
 
 section "Validator keypairs"

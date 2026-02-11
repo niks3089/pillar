@@ -72,7 +72,7 @@ mod tests {
     use super::*;
     use axum::body::Body;
     use axum::http::Request;
-    use shared::proto::NodeStatus;
+    use pillar_shared::proto::NodeStatus;
     use tokio::sync::RwLock;
     use tower::ServiceExt;
 

@@ -68,7 +68,12 @@ message ControllerCommand {
         UpdateConfigCommand update_config = 3;
         UpgradeCommand upgrade = 4;
         ProvisionCommand provision = 5;
+        StopCommand stop = 6;
     }
+}
+
+message StopCommand {
+    string reason = 1;
 }
 
 message RestartCommand {

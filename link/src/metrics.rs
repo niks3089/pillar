@@ -1,4 +1,4 @@
-use shared::proto::NodeStatus;
+use pillar_shared::proto::NodeStatus;
 use prometheus::{
     Encoder, Gauge, GaugeVec, IntCounter, IntGauge, Opts, Registry, TextEncoder,
 };

@@ -22,7 +22,14 @@ pub enum EventKind {
     SnapshotDownloadCompleted {
         duration_secs: f64,
     },
+    ServiceStopped {
+        reason: String,
+    },
     CrashLoopDetected {
         restarts_in_window: usize,
+    },
+    VersionMismatchDetected {
+        local_version: String,
+        cluster_version: String,
     },
 }

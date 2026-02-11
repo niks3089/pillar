@@ -95,6 +95,30 @@ impl RpcClient {
         Ok((current, delinquent))
     }
 
+    /// Call `getVersion` on the first responsive reference RPC.
+    /// Returns the `solana-core` version string (e.g. `"3.1.8"`), or `None` on failure.
+    pub async fn get_reference_version(&self) -> Option<String> {
+        for url in &self.reference_urls {
+            match self.call(url, "getVersion", json!([])).await {
+                Ok(resp) => {
+                    if let Some(version) = resp
+                        .get("result")
+                        .and_then(|r| r.get("solana-core"))
+                        .and_then(|v| v.as_str())
+                    {
+                        return Some(version.to_string());
+                    }
+                    tracing::warn!(url, "getVersion response missing solana-core field");
+                }
+                Err(e) => {
+                    tracing::warn!(url, error = %e, "getVersion failed, trying next");
+                }
+            }
+        }
+        tracing::warn!("failed to get cluster version from any reference RPC");
+        None
+    }
+
     /// Fetch local and reference slots and compute the difference.
     pub async fn compare_slots(&self) -> SlotComparison {
         let local_slot = self.get_local_slot().await.ok();

@@ -103,6 +103,14 @@ export async function deleteNode(id: string): Promise<void> {
   await fetch(`/api/nodes/${encodeURIComponent(id)}`, { method: 'DELETE' })
 }
 
+export async function stopNode(id: string): Promise<{ ok: boolean; message: string }> {
+  return api(`/api/nodes/${encodeURIComponent(id)}/stop`, { method: 'POST' })
+}
+
+export async function cancelDeployment(id: string): Promise<{ ok: boolean; message: string }> {
+  return api(`/api/nodes/${encodeURIComponent(id)}/cancel`, { method: 'POST' })
+}
+
 export interface ProvisionRequest {
   client: string
   version: string

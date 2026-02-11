@@ -2,70 +2,74 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     tonic_prost_build::configure()
         .build_server(true)
         .build_client(false)
-        .extern_path(".pillar.NodeStatus", "::shared::proto::NodeStatus")
+        .extern_path(".pillar.NodeStatus", "::pillar_shared::proto::NodeStatus")
         .extern_path(
             ".pillar.ReportStatusRequest",
-            "::shared::proto::ReportStatusRequest",
+            "::pillar_shared::proto::ReportStatusRequest",
         )
         .extern_path(
             ".pillar.ReportStatusResponse",
-            "::shared::proto::ReportStatusResponse",
+            "::pillar_shared::proto::ReportStatusResponse",
         )
         .extern_path(
             ".pillar.CommandStreamRequest",
-            "::shared::proto::CommandStreamRequest",
+            "::pillar_shared::proto::CommandStreamRequest",
         )
         .extern_path(
             ".pillar.ControllerCommand",
-            "::shared::proto::ControllerCommand",
+            "::pillar_shared::proto::ControllerCommand",
         )
         .extern_path(
             ".pillar.RestartCommand",
-            "::shared::proto::RestartCommand",
+            "::pillar_shared::proto::RestartCommand",
         )
         .extern_path(
             ".pillar.RecoverCommand",
-            "::shared::proto::RecoverCommand",
+            "::pillar_shared::proto::RecoverCommand",
         )
         .extern_path(
             ".pillar.UpdateConfigCommand",
-            "::shared::proto::UpdateConfigCommand",
+            "::pillar_shared::proto::UpdateConfigCommand",
         )
         .extern_path(
             ".pillar.UpgradeCommand",
-            "::shared::proto::UpgradeCommand",
+            "::pillar_shared::proto::UpgradeCommand",
         )
         .extern_path(
             ".pillar.ProvisionCommand",
-            "::shared::proto::ProvisionCommand",
+            "::pillar_shared::proto::ProvisionCommand",
         )
         .extern_path(
             ".pillar.RegisterNodeRequest",
-            "::shared::proto::RegisterNodeRequest",
+            "::pillar_shared::proto::RegisterNodeRequest",
         )
         .extern_path(
             ".pillar.RegisterNodeResponse",
-            "::shared::proto::RegisterNodeResponse",
+            "::pillar_shared::proto::RegisterNodeResponse",
         )
         .extern_path(
             ".pillar.UpgradeStatusRequest",
-            "::shared::proto::UpgradeStatusRequest",
+            "::pillar_shared::proto::UpgradeStatusRequest",
         )
         .extern_path(
             ".pillar.UpgradeStatusResponse",
-            "::shared::proto::UpgradeStatusResponse",
+            "::pillar_shared::proto::UpgradeStatusResponse",
         )
         .extern_path(
             ".pillar.LogBatch",
-            "::shared::proto::LogBatch",
+            "::pillar_shared::proto::LogBatch",
         )
         .extern_path(
             ".pillar.LogEntry",
-            "::shared::proto::LogEntry",
+            "::pillar_shared::proto::LogEntry",
         )
         .extern_path(
             ".pillar.LogAck",
-            "::shared::proto::LogAck",
+            "::pillar_shared::proto::LogAck",
+        )
+        .extern_path(
+            ".pillar.StopCommand",
+            "::pillar_shared::proto::StopCommand",
         )
         .compile_protos(&["../shared/proto/pillar.proto"], &["../shared/proto/"])?;
     Ok(())

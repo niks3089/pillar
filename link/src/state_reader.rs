@@ -2,7 +2,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
-use shared::proto::NodeStatus;
+use pillar_shared::proto::NodeStatus;
 use tokio::sync::RwLock;
 use tokio_util::sync::CancellationToken;
 
@@ -63,7 +63,7 @@ pub async fn run_state_reader(
             }
             _ = tokio::time::sleep(interval) => {
                 // 1. Read state file
-                match shared::read_state(&path) {
+                match pillar_shared::read_state(&path) {
                     Ok(Some(mut status)) => {
                         // 2. Refresh sysinfo
                         sys.refresh();

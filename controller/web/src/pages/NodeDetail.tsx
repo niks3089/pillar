@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import { fetchNode, fetchNodeLogs, restartNode, recoverNode, deleteNode, provisionNode } from '../api'
+import { fetchNode, fetchNodeLogs, restartNode, recoverNode, deleteNode, stopNode, cancelDeployment, provisionNode } from '../api'
 import type { Node, LogEntry, ProvisionRequest } from '../api'
 
 function formatBytes(bytes: number): string {
@@ -135,6 +135,34 @@ function NodeDetail() {
     refresh()
   }
 
+  const handleStop = async () => {
+    if (!id || !confirm('Stop the validator on this node? It will not restart automatically.')) return
+    try {
+      const result = await stopNode(id)
+      if (result.ok) {
+        refresh()
+      } else {
+        alert(`Failed: ${result.message}`)
+      }
+    } catch (err) {
+      alert(`Error: ${err}`)
+    }
+  }
+
+  const handleCancel = async () => {
+    if (!id || !confirm('Cancel the in-progress deployment? The validator will be stopped.')) return
+    try {
+      const result = await cancelDeployment(id)
+      if (result.ok) {
+        refresh()
+      } else {
+        alert(`Failed: ${result.message}`)
+      }
+    } catch (err) {
+      alert(`Error: ${err}`)
+    }
+  }
+
   const handleDelete = async () => {
     if (!id || !confirm('Remove this node from the fleet? This cannot be undone.')) return
     await deleteNode(id)
@@ -258,6 +286,10 @@ function NodeDetail() {
       <div className="actions">
         <button className="btn primary" onClick={handleRestart}>Restart</button>
         <button className="btn" onClick={handleRecover}>Recover</button>
+        <button className="btn" onClick={handleStop}>Stop</button>
+        {(node.lifecycle_state === 'provisioning' || node.lifecycle_state === 'starting_up') && (
+          <button className="btn danger" onClick={handleCancel}>Cancel Deployment</button>
+        )}
         <button className="btn danger" onClick={handleDelete}>Delete</button>
       </div>
 

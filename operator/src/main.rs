@@ -103,6 +103,7 @@ async fn main() -> anyhow::Result<()> {
         PathBuf::from(&config.paths.ledger_path),
         PathBuf::from(&config.state_path),
         validator_process,
+        validator_client.binary_path().clone(),
     );
 
     op.run(cancel).await;

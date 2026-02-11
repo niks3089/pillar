@@ -11,9 +11,9 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use tokio_stream::StreamExt;
 
-use shared::proto::{
+use pillar_shared::proto::{
     controller_command, ControllerCommand, LogEntry, NodeStatus, ProvisionCommand, RecoverCommand,
-    RestartCommand, UpgradeCommand,
+    RestartCommand, StopCommand, UpgradeCommand,
 };
 
 use crate::config::ControllerConfig;
@@ -39,6 +39,8 @@ pub fn router(state: ApiState) -> Router {
         .route("/api/nodes/{id}/recover", post(recover_node))
         .route("/api/nodes/{id}/provision", post(provision_node))
         .route("/api/nodes/{id}/upgrade", post(upgrade_node))
+        .route("/api/nodes/{id}/stop", post(stop_node))
+        .route("/api/nodes/{id}/cancel", post(cancel_deployment))
         .route("/api/cluster-defaults/{cluster}", get(cluster_defaults))
         .route("/api/onboard-command", get(onboard_command))
         .route("/metrics", get(crate::metrics_endpoint::metrics_handler))
@@ -317,6 +319,115 @@ async fn recover_node(
             Json(CommandResponse {
                 ok: true,
                 message: "recover command sent".to_string(),
+            })
+            .into_response()
+        }
+        Err(e) => (
+            StatusCode::BAD_REQUEST,
+            Json(CommandResponse {
+                ok: false,
+                message: e,
+            }),
+        )
+            .into_response(),
+    }
+}
+
+async fn stop_node(
+    State(state): State<ApiState>,
+    Path(id): Path<String>,
+) -> impl IntoResponse {
+    let cmd = ControllerCommand {
+        command: Some(controller_command::Command::Stop(StopCommand {
+            reason: "stop requested via API".to_string(),
+        })),
+    };
+
+    match state.registry.send_command(&id, cmd).await {
+        Ok(()) => {
+            if let Err(e) = db::set_lifecycle_state(&state.db, &id, "stopped").await {
+                tracing::warn!(error = %e, "failed to set lifecycle_state to stopped");
+            }
+            emit_controller_log(&state.registry, &state.db, &id, "info", "Stop command sent")
+                .await;
+            Json(CommandResponse {
+                ok: true,
+                message: "stop command sent".to_string(),
+            })
+            .into_response()
+        }
+        Err(e) => (
+            StatusCode::BAD_REQUEST,
+            Json(CommandResponse {
+                ok: false,
+                message: e,
+            }),
+        )
+            .into_response(),
+    }
+}
+
+async fn cancel_deployment(
+    State(state): State<ApiState>,
+    Path(id): Path<String>,
+) -> impl IntoResponse {
+    // Only allow cancel when node is actively deploying
+    match db::get_lifecycle_state(&state.db, &id).await {
+        Ok(Some(s)) if s == "provisioning" || s == "starting_up" => {}
+        Ok(Some(s)) => {
+            return (
+                StatusCode::CONFLICT,
+                Json(CommandResponse {
+                    ok: false,
+                    message: format!("cannot cancel: node is in '{s}' state, not provisioning/starting_up"),
+                }),
+            )
+                .into_response();
+        }
+        Ok(None) => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(CommandResponse {
+                    ok: false,
+                    message: "node not found".to_string(),
+                }),
+            )
+                .into_response();
+        }
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(CommandResponse {
+                    ok: false,
+                    message: format!("db error: {e}"),
+                }),
+            )
+                .into_response();
+        }
+    }
+
+    let cmd = ControllerCommand {
+        command: Some(controller_command::Command::Stop(StopCommand {
+            reason: "deployment cancelled via API".to_string(),
+        })),
+    };
+
+    match state.registry.send_command(&id, cmd).await {
+        Ok(()) => {
+            if let Err(e) = db::set_lifecycle_state(&state.db, &id, "registered").await {
+                tracing::warn!(error = %e, "failed to reset lifecycle_state to registered");
+            }
+            emit_controller_log(
+                &state.registry,
+                &state.db,
+                &id,
+                "info",
+                "Deployment cancelled",
+            )
+            .await;
+            Json(CommandResponse {
+                ok: true,
+                message: "deployment cancelled".to_string(),
             })
             .into_response()
         }

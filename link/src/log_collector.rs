@@ -14,7 +14,7 @@ pub mod proto {
     tonic::include_proto!("pillar");
 }
 
-use shared::proto::{LogBatch, LogEntry};
+use pillar_shared::proto::{LogBatch, LogEntry};
 use proto::pillar_controller_client::PillarControllerClient;
 
 /// Map journald priority (0-7) to a level string.

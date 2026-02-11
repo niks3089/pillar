@@ -1,5 +1,5 @@
 [package]
-name = "shared"
+name = "pillar-shared"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true

@@ -1,2 +1,2 @@
-pub use shared::proto::NodeStatus;
-pub use shared::write_state;
+pub use pillar_shared::proto::NodeStatus;
+pub use pillar_shared::write_state;

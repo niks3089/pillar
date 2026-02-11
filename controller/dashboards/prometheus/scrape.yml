@@ -1,5 +1,5 @@
 scrape_configs:
-  - job_name: 'controller'
+  - job_name: 'pillar-controller'
     scrape_interval: 15s
     static_configs:
       - targets: ['localhost:8080']

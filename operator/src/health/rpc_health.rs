@@ -28,6 +28,7 @@ impl RpcHealthChecker {
 impl HealthChecker for RpcHealthChecker {
     async fn check(&self) -> PillarResult<NodeHealth> {
         let cmp = self.client.compare_slots().await;
+        let cluster_version = self.client.get_reference_version().await;
 
         let state = determine_state(cmp.local_slot, cmp.slots_behind, self.slots_behind_threshold);
 
@@ -38,6 +39,7 @@ impl HealthChecker for RpcHealthChecker {
                 reference_slot: cmp.reference_slot,
             },
             slots_behind: cmp.slots_behind,
+            cluster_version,
         })
     }
 }

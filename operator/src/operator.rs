@@ -1,5 +1,5 @@
 use std::collections::VecDeque;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use tokio_util::sync::CancellationToken;
@@ -30,9 +30,15 @@ pub struct Operator {
     consecutive_off_count: usize,
     /// Set while a provision/upgrade is in progress. Prevents recovery from triggering.
     upgrading: bool,
+
+    // Version mismatch detection
+    local_validator_version: Option<String>,
+    cluster_version: Option<String>,
+    version_mismatch: bool,
 }
 
 impl Operator {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         config: OperatorConfig,
         health_checker: Box<dyn HealthChecker>,
@@ -41,7 +47,15 @@ impl Operator {
         ledger_dir: PathBuf,
         state_path: PathBuf,
         validator_process: String,
+        binary_path: PathBuf,
     ) -> Self {
+        let local_validator_version = detect_validator_version(&binary_path);
+        if let Some(ref v) = local_validator_version {
+            tracing::info!(version = %v, binary = %binary_path.display(), "detected local validator version");
+        } else {
+            tracing::warn!(binary = %binary_path.display(), "could not detect local validator version");
+        }
+
         Self {
             config,
             health_checker,
@@ -57,6 +71,9 @@ impl Operator {
             last_check_duration_secs: 0.0,
             consecutive_off_count: 0,
             upgrading: false,
+            local_validator_version,
+            cluster_version: None,
+            version_mismatch: false,
         }
     }
 
@@ -105,7 +122,7 @@ impl Operator {
             Ok(Some(cmd)) => {
                 let command_type = cmd.command_type();
                 match cmd {
-                    shared::PendingCommand::Provision {
+                    pillar_shared::PendingCommand::Provision {
                         staged_binary_path,
                         ref provision,
                     } => {
@@ -115,18 +132,23 @@ impl Operator {
                         self.upgrading = false;
                         match result {
                             Ok(()) => {
-                                tracing::info!(command_type, "provision completed successfully");
+                                tracing::info!(command_type, "provision completed — exiting for config reload");
+                                // Write final state before exiting
                                 self.on_state_transition(
                                     self.current_state,
                                     NodeState::StartingUp,
                                 );
+                                self.publish_state().await;
+                                // Exit so systemd restarts us with updated operator config
+                                // (client, cluster, service_name may have changed)
+                                std::process::exit(0);
                             }
                             Err(e) => {
                                 tracing::error!(command_type, error = %e, "provision failed");
                             }
                         }
                     }
-                    shared::PendingCommand::Upgrade {
+                    pillar_shared::PendingCommand::Upgrade {
                         staged_binary_path,
                         ref upgrade,
                     } => {
@@ -147,7 +169,7 @@ impl Operator {
                             }
                         }
                     }
-                    shared::PendingCommand::Restart { reason } => {
+                    pillar_shared::PendingCommand::Restart { reason } => {
                         tracing::info!(reason = %reason, "restart command from controller");
                         match self.service_manager.restart().await {
                             Ok(()) => {
@@ -165,9 +187,26 @@ impl Operator {
                             }
                         }
                     }
-                    shared::PendingCommand::Recover { reason } => {
+                    pillar_shared::PendingCommand::Recover { reason } => {
                         tracing::info!(reason = %reason, "recover command from controller");
                         self.force_recovery().await;
+                    }
+                    pillar_shared::PendingCommand::Stop { reason } => {
+                        tracing::info!(reason = %reason, "stop command from controller");
+                        match self.service_manager.stop().await {
+                            Ok(()) => {
+                                self.emit_event(EventKind::ServiceStopped {
+                                    reason: format!("controller: {reason}"),
+                                });
+                                self.on_state_transition(
+                                    self.current_state,
+                                    NodeState::Off,
+                                );
+                            }
+                            Err(e) => {
+                                tracing::error!(error = %e, "stop command failed");
+                            }
+                        }
                     }
                 }
             }
@@ -219,6 +258,38 @@ impl Operator {
         }
 
         self.last_health = health;
+
+        // 2b. Version mismatch detection
+        if let Some(ref cv) = self.last_health.cluster_version {
+            self.cluster_version = Some(cv.clone());
+        }
+        if let (Some(local), Some(cluster)) =
+            (&self.local_validator_version, &self.cluster_version)
+        {
+            let local_major = parse_major_version(local);
+            let cluster_major = parse_major_version(cluster);
+            if local_major != cluster_major {
+                if !self.version_mismatch {
+                    self.version_mismatch = true;
+                    tracing::error!(
+                        local_version = %local,
+                        cluster_version = %cluster,
+                        "version mismatch detected — validator binary must be upgraded"
+                    );
+                    self.emit_event(EventKind::VersionMismatchDetected {
+                        local_version: local.clone(),
+                        cluster_version: cluster.clone(),
+                    });
+                }
+            } else if self.version_mismatch {
+                self.version_mismatch = false;
+                tracing::info!(
+                    local_version = %local,
+                    cluster_version = %cluster,
+                    "version mismatch resolved"
+                );
+            }
+        }
 
         // 3. Write state for Link to read
         self.publish_state().await;
@@ -272,6 +343,11 @@ impl Operator {
     async fn attempt_recovery(&mut self) {
         if self.upgrading {
             tracing::info!("upgrade/provision in progress, skipping recovery");
+            return;
+        }
+
+        if self.version_mismatch {
+            tracing::warn!("version mismatch — recovery skipped, binary upgrade required");
             return;
         }
 
@@ -390,6 +466,12 @@ impl Operator {
             validator_process: self.validator_process.clone(),
             pending_upgrade: if self.upgrading {
                 "in-progress".to_string()
+            } else if self.version_mismatch {
+                format!(
+                    "version_mismatch: local={}, cluster={}",
+                    self.local_validator_version.as_deref().unwrap_or("unknown"),
+                    self.cluster_version.as_deref().unwrap_or("unknown")
+                )
             } else {
                 String::new()
             },
@@ -408,5 +490,83 @@ impl Operator {
             kind,
         };
         tracing::info!(event = ?event, "operator event");
+    }
+}
+
+/// Run `<binary_path> --version` and extract the version string.
+/// E.g. `"agave-validator 2.1.21 (src:8a085eeb; ...)"` → `"2.1.21"`.
+fn detect_validator_version(binary_path: &Path) -> Option<String> {
+    let output = std::process::Command::new(binary_path)
+        .arg("--version")
+        .output()
+        .ok()?;
+
+    if !output.status.success() {
+        return None;
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    parse_version_output(&stdout)
+}
+
+/// Extract a semver-like version from `--version` output.
+/// Looks for the first token matching `X.Y.Z` (digits separated by dots).
+fn parse_version_output(output: &str) -> Option<String> {
+    output.split_whitespace().find_map(|token| {
+        let parts: Vec<&str> = token.split('.').collect();
+        if parts.len() >= 2 && parts.iter().all(|p| p.chars().all(|c| c.is_ascii_digit())) {
+            Some(token.to_string())
+        } else {
+            None
+        }
+    })
+}
+
+/// Extract the major version number from a version string.
+/// `"3.1.8"` → `Some(3)`, `"2.1.21"` → `Some(2)`, `""` → `None`.
+fn parse_major_version(version: &str) -> Option<u32> {
+    version.split('.').next()?.parse().ok()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_major_version_basic() {
+        assert_eq!(parse_major_version("3.1.8"), Some(3));
+        assert_eq!(parse_major_version("2.1.21"), Some(2));
+        assert_eq!(parse_major_version("1.18.26"), Some(1));
+    }
+
+    #[test]
+    fn parse_major_version_edge_cases() {
+        assert_eq!(parse_major_version(""), None);
+        assert_eq!(parse_major_version("abc"), None);
+        assert_eq!(parse_major_version("0.1.0"), Some(0));
+    }
+
+    #[test]
+    fn parse_version_output_agave() {
+        let output = "agave-validator 2.1.21 (src:8a085eeb; feat:1234)";
+        assert_eq!(parse_version_output(output), Some("2.1.21".to_string()));
+    }
+
+    #[test]
+    fn parse_version_output_solana_core() {
+        let output = "solana-validator 1.18.26 (src:abc123; feat:5678)";
+        assert_eq!(parse_version_output(output), Some("1.18.26".to_string()));
+    }
+
+    #[test]
+    fn parse_version_output_two_part() {
+        let output = "firedancer 0.1";
+        assert_eq!(parse_version_output(output), Some("0.1".to_string()));
+    }
+
+    #[test]
+    fn parse_version_output_no_version() {
+        assert_eq!(parse_version_output("no version here"), None);
+        assert_eq!(parse_version_output(""), None);
     }
 }

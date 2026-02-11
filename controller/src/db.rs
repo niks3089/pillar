@@ -6,7 +6,7 @@ use anyhow::{Context, Result};
 use rusqlite::{params, Connection};
 use serde::Serialize;
 
-use shared::proto::{LogEntry, NodeStatus, RegisterNodeRequest};
+use pillar_shared::proto::{LogEntry, NodeStatus, RegisterNodeRequest};
 
 pub type Db = Arc<Mutex<Connection>>;
 
