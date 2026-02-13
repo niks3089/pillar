@@ -25,6 +25,25 @@ const METRIC_HEADERS: &[(&str, &str)] = &[
     ("pillar_system_network_tx_bytes", "Network bytes transmitted"),
     ("pillar_process_cpu_percent", "Per-process CPU usage percentage"),
     ("pillar_process_memory_bytes", "Per-process memory usage in bytes"),
+    // Operator self-health
+    ("pillar_operator_reconcile_count", "Total operator reconciliation ticks"),
+    ("pillar_operator_health_check_errors", "Cumulative health check failures"),
+    ("pillar_operator_consecutive_off_count", "Current consecutive Off debounce counter"),
+    ("pillar_operator_recovery_count", "Snapshot recoveries attempted"),
+    ("pillar_operator_state_write_errors", "State file write failures"),
+    ("pillar_operator_pending_cmd_errors", "Pending command read/parse failures"),
+    ("pillar_operator_uptime_secs", "Seconds since operator started"),
+    ("pillar_operator_version_mismatch", "Validator/cluster version mismatch (1/0)"),
+    // Link self-health
+    ("pillar_link_controller_connected", "Active gRPC connection to controller (1/0)"),
+    ("pillar_link_controller_latency_ms", "Last ReportStatus round-trip in ms"),
+    ("pillar_link_status_reports_sent", "Successful status report count"),
+    ("pillar_link_status_reports_failed", "Failed status report count"),
+    ("pillar_link_state_file_age_secs", "Operator state file age in seconds"),
+    ("pillar_link_state_read_errors", "State file read errors"),
+    ("pillar_link_log_batches_dropped", "Log batches dropped on controller unreachable"),
+    ("pillar_link_uptime_secs", "Seconds since link started"),
+    ("pillar_link_commands_received", "Commands received via CommandStream"),
 ];
 
 fn emit_node_metrics(out: &mut String, node_id: &str, status: &NodeStatus) {
@@ -50,7 +69,36 @@ fn emit_node_metrics(out: &mut String, node_id: &str, status: &NodeStatus) {
         ("pillar_system_network_tx_bytes", status.network_tx_bytes as f64),
     ];
 
-    for (name, value) in node_metrics {
+    // Operator self-health
+    let operator_metrics: &[(&str, f64)] = &[
+        ("pillar_operator_reconcile_count", status.operator_reconcile_count as f64),
+        ("pillar_operator_health_check_errors", status.operator_health_check_errors as f64),
+        ("pillar_operator_consecutive_off_count", status.operator_consecutive_off_count as f64),
+        ("pillar_operator_recovery_count", status.operator_recovery_count as f64),
+        ("pillar_operator_state_write_errors", status.operator_state_write_errors as f64),
+        ("pillar_operator_pending_cmd_errors", status.operator_pending_cmd_errors as f64),
+        ("pillar_operator_uptime_secs", status.operator_uptime_secs as f64),
+        ("pillar_operator_version_mismatch", if status.operator_version_mismatch { 1.0 } else { 0.0 }),
+    ];
+
+    // Link self-health
+    let link_metrics: &[(&str, f64)] = &[
+        ("pillar_link_controller_connected", if status.link_controller_connected { 1.0 } else { 0.0 }),
+        ("pillar_link_controller_latency_ms", status.link_controller_latency_ms as f64),
+        ("pillar_link_status_reports_sent", status.link_status_reports_sent as f64),
+        ("pillar_link_status_reports_failed", status.link_status_reports_failed as f64),
+        ("pillar_link_state_file_age_secs", status.link_state_file_age_secs as f64),
+        ("pillar_link_state_read_errors", status.link_state_read_errors as f64),
+        ("pillar_link_log_batches_dropped", status.link_log_batches_dropped as f64),
+        ("pillar_link_uptime_secs", status.link_uptime_secs as f64),
+        ("pillar_link_commands_received", status.link_commands_received as f64),
+    ];
+
+    for (name, value) in node_metrics
+        .iter()
+        .chain(operator_metrics.iter())
+        .chain(link_metrics.iter())
+    {
         let _ = writeln!(out, "{name}{{{base}}} {value}");
     }
 

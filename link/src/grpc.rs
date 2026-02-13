@@ -1,8 +1,10 @@
-use std::time::Duration;
+use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use tokio_util::sync::CancellationToken;
 
 use crate::config::ControllerConfig;
+use crate::link_health::LinkHealth;
 use crate::state_reader::SharedState;
 
 pub mod proto {
@@ -21,10 +23,15 @@ use pillar_shared::proto::{CommandStreamRequest, ControllerCommand, ReportStatus
 pub struct ControllerLink {
     config: ControllerConfig,
     operator_state: SharedState,
+    link_health: Arc<LinkHealth>,
 }
 
 impl ControllerLink {
-    pub fn new(config: ControllerConfig, operator_state: SharedState) -> Self {
+    pub fn new(
+        config: ControllerConfig,
+        operator_state: SharedState,
+        link_health: Arc<LinkHealth>,
+    ) -> Self {
         tracing::info!(
             endpoint = %config.endpoint,
             node_id = %config.node_id,
@@ -34,6 +41,7 @@ impl ControllerLink {
         Self {
             config,
             operator_state,
+            link_health,
         }
     }
 
@@ -52,9 +60,12 @@ impl ControllerLink {
             match PillarControllerClient::connect(self.config.endpoint.clone()).await {
                 Ok(client) => {
                     backoff = Duration::from_secs(1);
+                    self.link_health.set_controller_connected(true);
                     self.run_connected(client, cancel.clone()).await;
+                    self.link_health.set_controller_connected(false);
                 }
                 Err(e) => {
+                    self.link_health.set_controller_connected(false);
                     tracing::warn!(
                         error = %e,
                         backoff_secs = backoff.as_secs(),
@@ -101,6 +112,7 @@ impl ControllerLink {
         let report_node_id = self.config.node_id.clone();
         let report_shared = self.operator_state.clone();
         let report_interval = Duration::from_secs(self.config.report_interval_secs);
+        let report_health = self.link_health.clone();
 
         let report_handle = tokio::spawn(async move {
             run_report_loop(
@@ -108,6 +120,7 @@ impl ControllerLink {
                 &report_node_id,
                 report_shared,
                 report_interval,
+                report_health,
                 report_cancel,
             )
             .await
@@ -116,9 +129,10 @@ impl ControllerLink {
         let cmd_cancel = cancel.clone();
         let mut cmd_client = client;
         let cmd_node_id = self.config.node_id.clone();
+        let cmd_health = self.link_health.clone();
 
         let cmd_handle = tokio::spawn(async move {
-            run_command_stream(&mut cmd_client, &cmd_node_id, cmd_cancel).await
+            run_command_stream(&mut cmd_client, &cmd_node_id, cmd_health, cmd_cancel).await
         });
 
         // If either task exits, cancel the other and reconnect
@@ -140,6 +154,7 @@ async fn run_report_loop(
     node_id: &str,
     operator_state: SharedState,
     interval: Duration,
+    link_health: Arc<LinkHealth>,
     cancel: CancellationToken,
 ) {
     loop {
@@ -159,9 +174,15 @@ async fn run_report_loop(
             status: Some(status.clone()),
         });
 
+        let start = Instant::now();
         match client.report_status(request).await {
-            Ok(_) => tracing::debug!("reported status to controller"),
+            Ok(_) => {
+                link_health.set_controller_latency_ms(start.elapsed().as_millis() as u64);
+                link_health.inc_status_reports_sent();
+                tracing::debug!("reported status to controller");
+            }
             Err(e) => {
+                link_health.inc_status_reports_failed();
                 tracing::warn!(error = %e, "report_status failed");
                 return;
             }
@@ -173,6 +194,7 @@ async fn run_report_loop(
 async fn run_command_stream(
     client: &mut PillarControllerClient<tonic::transport::Channel>,
     node_id: &str,
+    link_health: Arc<LinkHealth>,
     cancel: CancellationToken,
 ) {
     let request = tonic::Request::new(CommandStreamRequest {
@@ -193,7 +215,10 @@ async fn run_command_stream(
             _ = cancel.cancelled() => return,
             msg = stream.message() => {
                 match msg {
-                    Ok(Some(cmd)) => handle_command(cmd),
+                    Ok(Some(cmd)) => {
+                        link_health.inc_commands_received();
+                        handle_command(cmd);
+                    }
                     Ok(None) => {
                         tracing::info!("command stream closed by controller");
                         return;

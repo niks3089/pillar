@@ -442,7 +442,7 @@ async fn cancel_deployment(
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 struct ProvisionRequest {
     client: String,
     version: String,
@@ -475,6 +475,25 @@ struct ProvisionRequest {
     rpc_port: u32,
     #[serde(default)]
     dynamic_port_range: String,
+    #[serde(default)]
+    node_type: String,
+    #[serde(default)]
+    gossip_port: u32,
+    /// Client-specific CLI flags: "flag-name" -> "value" (empty for bare flags).
+    #[serde(default)]
+    validator_flags: std::collections::HashMap<String, String>,
+    #[serde(default)]
+    geyser_plugin_configs: Vec<String>,
+    #[serde(default)]
+    environment_vars: std::collections::HashMap<String, String>,
+    #[serde(default)]
+    extra_args: Vec<String>,
+    #[serde(default)]
+    restart_sec: u32,
+    #[serde(default)]
+    log_rate_limit_disable: bool,
+    #[serde(default)]
+    start_limit_disable: bool,
 }
 
 async fn provision_node(
@@ -522,6 +541,9 @@ async fn provision_node(
         req.client, req.version, req.cluster
     );
 
+    // Save provision config JSON for the node record
+    let provision_json = serde_json::to_string(&req).unwrap_or_default();
+
     let cmd = ControllerCommand {
         command: Some(controller_command::Command::Provision(ProvisionCommand {
             client: req.client,
@@ -541,6 +563,15 @@ async fn provision_node(
             yellowstone_grpc: req.yellowstone_grpc,
             rpc_port: req.rpc_port,
             dynamic_port_range: req.dynamic_port_range,
+            node_type: req.node_type,
+            gossip_port: req.gossip_port,
+            validator_flags: req.validator_flags,
+            geyser_plugin_configs: req.geyser_plugin_configs,
+            environment_vars: req.environment_vars,
+            extra_args: req.extra_args,
+            restart_sec: req.restart_sec,
+            log_rate_limit_disable: req.log_rate_limit_disable,
+            start_limit_disable: req.start_limit_disable,
         })),
     };
 
@@ -549,6 +580,10 @@ async fn provision_node(
             // Mark node as provisioning in the database
             if let Err(e) = db::set_lifecycle_state(&state.db, &id, "provisioning").await {
                 tracing::warn!(error = %e, "failed to set lifecycle_state to provisioning");
+            }
+            // Store provision config
+            if let Err(e) = db::set_provision_config(&state.db, &id, &provision_json).await {
+                tracing::warn!(error = %e, "failed to store provision config");
             }
             emit_controller_log(&state.registry, &state.db, &id, "info", &log_msg).await;
             Json(CommandResponse {
@@ -643,49 +678,65 @@ struct ClusterDefaultsResponse {
     entrypoints: Vec<String>,
     known_validators: Vec<String>,
     reference_rpc: String,
+    expected_genesis_hash: String,
 }
 
 async fn cluster_defaults(Path(cluster): Path<String>) -> impl IntoResponse {
-    let (entrypoints, known_validators, reference_rpc) = match cluster.as_str() {
-        "devnet" => (
-            vec!["entrypoint.devnet.solana.com:8001".to_string()],
-            vec![],
-            "https://api.devnet.solana.com".to_string(),
-        ),
-        "testnet" => (
-            vec![
-                "entrypoint.testnet.solana.com:8001".to_string(),
-                "entrypoint2.testnet.solana.com:8001".to_string(),
-                "entrypoint3.testnet.solana.com:8001".to_string(),
-            ],
-            vec![
-                "5D1fNXzvv5NjV1ysLjirC4WY92RNsVH18vjmcszZd8on".to_string(),
-                "dDzy5SR3AXdYWVqbDEkVFdvSPCtS9ihF5kJkHCtXoFs".to_string(),
-                "FS9MmFpFd1iMSSwzDYnqLPhWkoXKhJGBRCq1SFRsqFB".to_string(),
-                "eoKpUABi59aT4with2BRcnKHr6MAxfY53VNa1yoV3Cy".to_string(),
-            ],
-            "https://api.testnet.solana.com".to_string(),
-        ),
-        _ => (
-            vec![
-                "entrypoint.mainnet-beta.solana.com:8001".to_string(),
-                "entrypoint2.mainnet-beta.solana.com:8001".to_string(),
-                "entrypoint3.mainnet-beta.solana.com:8001".to_string(),
-            ],
-            vec![
-                "7Np41oeYqPefeNQEHSv1UDhYrehxin3NStELsSKCT4K2".to_string(),
-                "GdnSyH3YtwcxFvQrVVJMm1JhTS4QVX7MFsX56uJLUfiZ".to_string(),
-                "DE1bawNcRJB9rVm3buyMVfr8mBEoyyu73NBovf2oXJsJ".to_string(),
-                "CakcnaRDHka2gXyfbEd2d3xsvkJkqsLw2akB3zsN1D2S".to_string(),
-            ],
-            "https://api.mainnet-beta.solana.com".to_string(),
-        ),
-    };
+    let (entrypoints, known_validators, reference_rpc, expected_genesis_hash) =
+        match cluster.as_str() {
+            "devnet" => (
+                vec![
+                    "entrypoint.devnet.solana.com:8001".to_string(),
+                    "entrypoint2.devnet.solana.com:8001".to_string(),
+                    "entrypoint3.devnet.solana.com:8001".to_string(),
+                    "entrypoint4.devnet.solana.com:8001".to_string(),
+                    "entrypoint5.devnet.solana.com:8001".to_string(),
+                ],
+                vec![],
+                "https://api.devnet.solana.com".to_string(),
+                "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG".to_string(),
+            ),
+            "testnet" => (
+                vec![
+                    "entrypoint.testnet.solana.com:8001".to_string(),
+                    "entrypoint2.testnet.solana.com:8001".to_string(),
+                    "entrypoint3.testnet.solana.com:8001".to_string(),
+                    "entrypoint4.testnet.solana.com:8001".to_string(),
+                    "entrypoint5.testnet.solana.com:8001".to_string(),
+                ],
+                vec![
+                    "5D1fNXzvv5NjV1ysLjirC4WY92RNsVH18vjmcszZd8on".to_string(),
+                    "dDzy5SR3AXdYWVqbDEkVFdvSPCtS9ihF5kJkHCtXoFs".to_string(),
+                    "FS9MmFpFd1iMSSwzDYnqLPhWkoXKhJGBRCq1SFRsqFB".to_string(),
+                    "eoKpUABi59aT4with2BRcnKHr6MAxfY53VNa1yoV3Cy".to_string(),
+                ],
+                "https://api.testnet.solana.com".to_string(),
+                "4uhcVJyU9pJkvQyS88uRDiswHXSCkY3zQawwpjk2NsNY".to_string(),
+            ),
+            _ => (
+                vec![
+                    "entrypoint.mainnet-beta.solana.com:8001".to_string(),
+                    "entrypoint2.mainnet-beta.solana.com:8001".to_string(),
+                    "entrypoint3.mainnet-beta.solana.com:8001".to_string(),
+                    "entrypoint4.mainnet-beta.solana.com:8001".to_string(),
+                    "entrypoint5.mainnet-beta.solana.com:8001".to_string(),
+                ],
+                vec![
+                    "7Np41oeYqPefeNQEHSv1UDhYrehxin3NStELsSKCT4K2".to_string(),
+                    "GdnSyH3YtwcxFvQrVVJMm1JhTS4QVX7MFsX56uJLUfiZ".to_string(),
+                    "DE1bawNcRJB9rVm3buyMVfr8mBEoyyu73NBovf2oXJsJ".to_string(),
+                    "CakcnaRDHka2gXyfbEd2d3xsvkJkqsLw2akB3zsN1D2S".to_string(),
+                ],
+                "https://api.mainnet-beta.solana.com".to_string(),
+                "5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d".to_string(),
+            ),
+        };
 
     Json(ClusterDefaultsResponse {
         entrypoints,
         known_validators,
         reference_rpc,
+        expected_genesis_hash,
     })
 }
 

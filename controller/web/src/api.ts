@@ -129,6 +129,16 @@ export interface ProvisionRequest {
   yellowstone_grpc: boolean
   rpc_port: number
   dynamic_port_range: string
+  node_type?: string
+  gossip_port?: number
+  /** Client-specific CLI flags: "flag-name" -> "value" (empty string for bare flags) */
+  validator_flags?: Record<string, string>
+  geyser_plugin_configs?: string[]
+  environment_vars?: Record<string, string>
+  extra_args?: string[]
+  restart_sec?: number
+  log_rate_limit_disable?: boolean
+  start_limit_disable?: boolean
 }
 
 export async function provisionNode(id: string, config: ProvisionRequest): Promise<{ ok: boolean; message: string }> {

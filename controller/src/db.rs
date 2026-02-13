@@ -66,6 +66,9 @@ fn init_schema(conn: &Connection) -> Result<()> {
     // Migration: add ip_address column if missing (safe for existing DBs)
     let _ = conn.execute_batch("ALTER TABLE nodes ADD COLUMN ip_address TEXT;");
 
+    // Migration: add provision_config_json column if missing
+    let _ = conn.execute_batch("ALTER TABLE nodes ADD COLUMN provision_config_json TEXT;");
+
     Ok(())
 }
 
@@ -270,6 +273,22 @@ pub async fn set_lifecycle_state(db: &Db, node_id: &str, state: &str) -> Result<
             params![state, node_id],
         )
         .context("set_lifecycle_state")?;
+        Ok(())
+    })
+    .await?
+}
+
+pub async fn set_provision_config(db: &Db, node_id: &str, config_json: &str) -> Result<()> {
+    let db = db.clone();
+    let node_id = node_id.to_owned();
+    let config_json = config_json.to_owned();
+    tokio::task::spawn_blocking(move || {
+        let conn = db.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
+        conn.execute(
+            "UPDATE nodes SET provision_config_json = ?1 WHERE node_id = ?2",
+            params![config_json, node_id],
+        )
+        .context("set_provision_config")?;
         Ok(())
     })
     .await?

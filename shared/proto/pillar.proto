@@ -58,6 +58,27 @@ message NodeStatus {
     string link_version = 30;
     string pending_upgrade = 31;
     string hostname = 32;
+
+    // --- Operator self-health (written by operator) ---
+    uint64 operator_reconcile_count = 33;
+    uint64 operator_health_check_errors = 34;
+    uint32 operator_consecutive_off_count = 35;
+    uint64 operator_recovery_count = 36;
+    uint64 operator_state_write_errors = 37;
+    uint64 operator_pending_cmd_errors = 38;
+    uint64 operator_uptime_secs = 39;
+    bool   operator_version_mismatch = 40;
+
+    // --- Link self-health (enriched by link) ---
+    bool   link_controller_connected = 41;
+    uint64 link_controller_latency_ms = 42;
+    uint64 link_status_reports_sent = 43;
+    uint64 link_status_reports_failed = 44;
+    uint64 link_state_file_age_secs = 45;
+    uint64 link_state_read_errors = 46;
+    uint64 link_log_batches_dropped = 47;
+    uint64 link_uptime_secs = 48;
+    uint64 link_commands_received = 49;
 }
 
 // Commands pushed from controller to link.
@@ -139,6 +160,7 @@ message LogEntry {
 
 // Provision a validator on the node (triggered from controller UI).
 message ProvisionCommand {
+    // Core identity
     string client = 1;             // "agave", "jito", "firedancer", "frankendancer"
     string version = 2;            // e.g. "2.1.6"
     string cluster = 3;            // "mainnet-beta", "testnet", "devnet"
@@ -154,8 +176,31 @@ message ProvisionCommand {
     bool jito_mev = 13;            // enable Jito MEV tip-distribution
     string jito_block_engine_url = 14;
     bool yellowstone_grpc = 15;    // enable Yellowstone gRPC plugin
-    uint32 rpc_port = 16;              // RPC HTTP port (default 8899 if 0)
-    string dynamic_port_range = 17;    // e.g. "8000-8020"
+    uint32 rpc_port = 16;         // RPC HTTP port (default 8899 if 0)
+    string dynamic_port_range = 17; // e.g. "8000-8020"
+    string node_type = 18;        // "validator", "rpc", "archival" (drives UI presets)
+    uint32 gossip_port = 19;      // default 8001
+
+    // Client-specific validator CLI flags.
+    // Key = flag name without "--" prefix (e.g. "private-rpc", "limit-ledger-size").
+    // Value = flag argument, or empty string for bare flags (e.g. "--no-voting").
+    // Agave/Jito: rendered as --{key} {value}. Firedancer: translated to TOML config.
+    // The UI populates this via node_type presets; users can add/override any flag.
+    map<string, string> validator_flags = 20;
+
+    // Geyser plugin config file paths (in addition to yellowstone_grpc auto-path)
+    repeated string geyser_plugin_configs = 21;
+
+    // Systemd Environment=KEY=VALUE entries
+    map<string, string> environment_vars = 22;
+
+    // Raw CLI arguments appended after all other flags (escape hatch)
+    repeated string extra_args = 23;
+
+    // Systemd unit tuning
+    uint32 restart_sec = 24;           // default 1
+    bool log_rate_limit_disable = 25;  // LogRateLimitIntervalSec=0
+    bool start_limit_disable = 26;     // StartLimitIntervalSec=0
 }
 
 message LogAck {

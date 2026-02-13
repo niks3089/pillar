@@ -61,6 +61,27 @@ pub struct Metrics {
     // Link health metrics
     state_file_age_seconds: Gauge,
     state_read_errors_total: IntCounter,
+
+    // Operator self-health (pass-through from proto)
+    operator_reconcile_count: IntGauge,
+    operator_health_check_errors: IntGauge,
+    operator_consecutive_off_count: IntGauge,
+    operator_recovery_count: IntGauge,
+    operator_state_write_errors: IntGauge,
+    operator_pending_cmd_errors: IntGauge,
+    operator_uptime_secs: IntGauge,
+    operator_version_mismatch: IntGauge,
+
+    // Link self-health (from enriched proto)
+    link_controller_connected: IntGauge,
+    link_controller_latency_ms: IntGauge,
+    link_status_reports_sent: IntGauge,
+    link_status_reports_failed: IntGauge,
+    link_state_file_age_secs: IntGauge,
+    link_state_read_errors_gauge: IntGauge,
+    link_log_batches_dropped: IntGauge,
+    link_uptime_secs: IntGauge,
+    link_commands_received: IntGauge,
 }
 
 impl Metrics {
@@ -88,6 +109,28 @@ impl Metrics {
             process_memory_bytes: register_gauge_vec(&registry, "pillar_process_memory_bytes", "Process RSS memory in bytes", &["process"]),
             state_file_age_seconds: register_gauge(&registry, "pillar_link_state_file_age_seconds", "Age of the operator state file in seconds"),
             state_read_errors_total: register_int_counter(&registry, "pillar_link_state_read_errors_total", "Total state file read errors"),
+
+            // Operator self-health
+            operator_reconcile_count: register_int_gauge(&registry, "pillar_operator_reconcile_count", "Total operator reconciliation ticks"),
+            operator_health_check_errors: register_int_gauge(&registry, "pillar_operator_health_check_errors", "Cumulative health check failures"),
+            operator_consecutive_off_count: register_int_gauge(&registry, "pillar_operator_consecutive_off_count", "Current consecutive Off debounce counter"),
+            operator_recovery_count: register_int_gauge(&registry, "pillar_operator_recovery_count", "Snapshot recoveries attempted"),
+            operator_state_write_errors: register_int_gauge(&registry, "pillar_operator_state_write_errors", "State file write failures"),
+            operator_pending_cmd_errors: register_int_gauge(&registry, "pillar_operator_pending_cmd_errors", "Pending command read/parse failures"),
+            operator_uptime_secs: register_int_gauge(&registry, "pillar_operator_uptime_secs", "Seconds since operator started"),
+            operator_version_mismatch: register_int_gauge(&registry, "pillar_operator_version_mismatch", "Validator/cluster version mismatch (1/0)"),
+
+            // Link self-health
+            link_controller_connected: register_int_gauge(&registry, "pillar_link_controller_connected", "Active gRPC connection to controller (1/0)"),
+            link_controller_latency_ms: register_int_gauge(&registry, "pillar_link_controller_latency_ms", "Last ReportStatus round-trip in ms"),
+            link_status_reports_sent: register_int_gauge(&registry, "pillar_link_status_reports_sent", "Successful status report count"),
+            link_status_reports_failed: register_int_gauge(&registry, "pillar_link_status_reports_failed", "Failed status report count"),
+            link_state_file_age_secs: register_int_gauge(&registry, "pillar_link_state_file_age_secs", "Operator state file age in seconds"),
+            link_state_read_errors_gauge: register_int_gauge(&registry, "pillar_link_state_read_errors", "State file read errors (fleet-wide)"),
+            link_log_batches_dropped: register_int_gauge(&registry, "pillar_link_log_batches_dropped", "Log batches dropped on controller unreachable"),
+            link_uptime_secs: register_int_gauge(&registry, "pillar_link_uptime_secs", "Seconds since link started"),
+            link_commands_received: register_int_gauge(&registry, "pillar_link_commands_received", "Commands received via CommandStream"),
+
             registry,
         }
     }
@@ -167,6 +210,43 @@ impl Metrics {
         self.process_memory_bytes
             .with_label_values(&["link"])
             .set(status.link_memory_bytes as f64);
+
+        // Operator self-health
+        self.operator_reconcile_count
+            .set(status.operator_reconcile_count as i64);
+        self.operator_health_check_errors
+            .set(status.operator_health_check_errors as i64);
+        self.operator_consecutive_off_count
+            .set(status.operator_consecutive_off_count as i64);
+        self.operator_recovery_count
+            .set(status.operator_recovery_count as i64);
+        self.operator_state_write_errors
+            .set(status.operator_state_write_errors as i64);
+        self.operator_pending_cmd_errors
+            .set(status.operator_pending_cmd_errors as i64);
+        self.operator_uptime_secs
+            .set(status.operator_uptime_secs as i64);
+        self.operator_version_mismatch
+            .set(if status.operator_version_mismatch { 1 } else { 0 });
+
+        // Link self-health
+        self.link_controller_connected
+            .set(if status.link_controller_connected { 1 } else { 0 });
+        self.link_controller_latency_ms
+            .set(status.link_controller_latency_ms as i64);
+        self.link_status_reports_sent
+            .set(status.link_status_reports_sent as i64);
+        self.link_status_reports_failed
+            .set(status.link_status_reports_failed as i64);
+        self.link_state_file_age_secs
+            .set(status.link_state_file_age_secs as i64);
+        self.link_state_read_errors_gauge
+            .set(status.link_state_read_errors as i64);
+        self.link_log_batches_dropped
+            .set(status.link_log_batches_dropped as i64);
+        self.link_uptime_secs.set(status.link_uptime_secs as i64);
+        self.link_commands_received
+            .set(status.link_commands_received as i64);
     }
 
     /// Increment state read error counter.

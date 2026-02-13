@@ -1,6 +1,7 @@
 mod config;
 mod grpc;
 mod http;
+mod link_health;
 mod log_collector;
 mod metrics;
 mod provisioner;
@@ -75,12 +76,14 @@ async fn main() -> anyhow::Result<()> {
     let shared_state: state_reader::SharedState = Arc::new(RwLock::new(None));
     let prom_metrics = Arc::new(metrics::Metrics::new());
     let poll_interval = Duration::from_secs(config.poll_interval_secs);
+    let link_health = Arc::new(link_health::LinkHealth::new());
 
     // 1. Spawn state reader (reads state file, enriches with sysinfo, updates Prometheus)
     tokio::spawn(state_reader::run_state_reader(
         PathBuf::from(&config.state_path),
         shared_state.clone(),
         prom_metrics.clone(),
+        link_health.clone(),
         poll_interval,
         cancel.clone(),
     ));
@@ -90,13 +93,18 @@ async fn main() -> anyhow::Result<()> {
         let lc_config = config.log_collector.clone();
         let lc_controller = config.controller.clone();
         let lc_cancel = cancel.clone();
+        let lc_health = link_health.clone();
         tokio::spawn(async move {
-            log_collector::run(lc_config, lc_controller, lc_cancel).await;
+            log_collector::run(lc_config, lc_controller, lc_health, lc_cancel).await;
         });
     }
 
     // 3. Spawn controller link (always required)
-    let link = grpc::ControllerLink::new(config.controller, shared_state.clone());
+    let link = grpc::ControllerLink::new(
+        config.controller,
+        shared_state.clone(),
+        link_health.clone(),
+    );
     let grpc_cancel = cancel.clone();
     tokio::spawn(async move { link.run(grpc_cancel).await });
 

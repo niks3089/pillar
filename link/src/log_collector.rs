@@ -1,6 +1,7 @@
 //! Tails journald for configured systemd units and streams log batches
 //! to the controller via PushLogs gRPC.
 
+use std::sync::Arc;
 use std::time::Duration;
 
 use tokio::io::{AsyncBufReadExt, BufReader};
@@ -9,6 +10,7 @@ use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
 use crate::config::{ControllerConfig, LogCollectorConfig};
+use crate::link_health::LinkHealth;
 
 pub mod proto {
     tonic::include_proto!("pillar");
@@ -228,6 +230,7 @@ async fn tail_unit(unit: String, tx: mpsc::Sender<LogEntry>, cancel: Cancellatio
 pub async fn run(
     config: LogCollectorConfig,
     controller: ControllerConfig,
+    link_health: Arc<LinkHealth>,
     cancel: CancellationToken,
 ) {
     tracing::info!(
@@ -267,7 +270,7 @@ pub async fn run(
             _ = cancel.cancelled() => {
                 // Flush remaining on shutdown.
                 if !buffer.is_empty() {
-                    flush_batch(&mut client, &controller.endpoint, &node_id, &mut buffer, &mut backoff, max_backoff).await;
+                    flush_batch(&mut client, &controller.endpoint, &node_id, &mut buffer, &mut backoff, max_backoff, &link_health).await;
                 }
                 break;
             }
@@ -276,14 +279,14 @@ pub async fn run(
                     Some(e) => {
                         buffer.push(e);
                         if buffer.len() >= buffer_size {
-                            flush_batch(&mut client, &controller.endpoint, &node_id, &mut buffer, &mut backoff, max_backoff).await;
+                            flush_batch(&mut client, &controller.endpoint, &node_id, &mut buffer, &mut backoff, max_backoff, &link_health).await;
                             flush_timer.reset();
                         }
                     }
                     None => {
                         // All tailers exited.
                         if !buffer.is_empty() {
-                            flush_batch(&mut client, &controller.endpoint, &node_id, &mut buffer, &mut backoff, max_backoff).await;
+                            flush_batch(&mut client, &controller.endpoint, &node_id, &mut buffer, &mut backoff, max_backoff, &link_health).await;
                         }
                         break;
                     }
@@ -291,7 +294,7 @@ pub async fn run(
             }
             _ = flush_timer.tick() => {
                 if !buffer.is_empty() {
-                    flush_batch(&mut client, &controller.endpoint, &node_id, &mut buffer, &mut backoff, max_backoff).await;
+                    flush_batch(&mut client, &controller.endpoint, &node_id, &mut buffer, &mut backoff, max_backoff, &link_health).await;
                 }
             }
         }
@@ -309,6 +312,7 @@ async fn flush_batch(
     buffer: &mut Vec<LogEntry>,
     backoff: &mut Duration,
     max_backoff: Duration,
+    link_health: &LinkHealth,
 ) {
     let entries = std::mem::take(buffer);
     let count = entries.len();
@@ -321,6 +325,7 @@ async fn flush_batch(
                 *backoff = Duration::from_secs(1);
             }
             Err(e) => {
+                link_health.inc_log_batches_dropped();
                 tracing::debug!(error = %e, "log collector: failed to connect, dropping {count} entries");
                 *backoff = (*backoff * 2).min(max_backoff);
                 return;
@@ -342,6 +347,7 @@ async fn flush_batch(
             tracing::debug!(sent = count, acked = ack.received_count, "log batch flushed");
         }
         Err(e) => {
+            link_health.inc_log_batches_dropped();
             tracing::debug!(error = %e, "log collector: push_logs failed, dropping {count} entries");
             *client = None; // Force reconnect next time.
         }

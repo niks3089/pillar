@@ -23,15 +23,74 @@ function formatLastSeen(ts?: number): string {
 }
 
 const CLUSTER_ENTRYPOINTS: Record<string, string> = {
-  'mainnet-beta': 'entrypoint.mainnet-beta.solana.com:8001\nentrypoint2.mainnet-beta.solana.com:8001\nentrypoint3.mainnet-beta.solana.com:8001',
-  'testnet': 'entrypoint.testnet.solana.com:8001\nentrypoint2.testnet.solana.com:8001\nentrypoint3.testnet.solana.com:8001',
-  'devnet': 'entrypoint.devnet.solana.com:8001',
+  'mainnet-beta': 'entrypoint.mainnet-beta.solana.com:8001\nentrypoint2.mainnet-beta.solana.com:8001\nentrypoint3.mainnet-beta.solana.com:8001\nentrypoint4.mainnet-beta.solana.com:8001\nentrypoint5.mainnet-beta.solana.com:8001',
+  'testnet': 'entrypoint.testnet.solana.com:8001\nentrypoint2.testnet.solana.com:8001\nentrypoint3.testnet.solana.com:8001\nentrypoint4.testnet.solana.com:8001\nentrypoint5.testnet.solana.com:8001',
+  'devnet': 'entrypoint.devnet.solana.com:8001\nentrypoint2.devnet.solana.com:8001\nentrypoint3.devnet.solana.com:8001\nentrypoint4.devnet.solana.com:8001\nentrypoint5.devnet.solana.com:8001',
 }
 
 const CLUSTER_KNOWN_VALIDATORS: Record<string, string> = {
   'mainnet-beta': '7Np41oeYqPefeNQEHSv1UDhYrehxin3NStELsSKCT4K2\nGdnSyH3YtwcxFvQrVVJMm1JhTS4QVX7MFsX56uJLUfiZ\nDE1bawNcRJB9rVm3buyMVfr8mBEoyyu73NBovf2oXJsJ\nCakcnaRDHka2gXyfbEd2d3xsvkJkqsLw2akB3zsN1D2S',
   'testnet': '5D1fNXzvv5NjV1ysLjirC4WY92RNsVH18vjmcszZd8on\ndDzy5SR3AXdYWVqbDEkVFdvSPCtS9ihF5kJkHCtXoFs\nFS9MmFpFd1iMSSwzDYnqLPhWkoXKhJGBRCq1SFRsqFB\neoKpUABi59aT4with2BRcnKHr6MAxfY53VNa1yoV3Cy',
   'devnet': '',
+}
+
+const CLUSTER_GENESIS_HASH: Record<string, string> = {
+  'mainnet-beta': '5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d',
+  'testnet': '4uhcVJyU9pJkvQyS88uRDiswHXSCkY3zQawwpjk2NsNY',
+  'devnet': 'EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG',
+}
+
+// Flags presets per node type. Format: "flag-name" (bare) or "flag-name=value".
+// These are the defaults the UI fills in; users can edit freely.
+function buildPreset(cluster: string, nodeType: string): string {
+  const genesis = CLUSTER_GENESIS_HASH[cluster] || ''
+  const common = [
+    'rpc-bind-address=0.0.0.0',
+    'no-port-check',
+    'wal-recovery-mode=skip_any_corrupted_record',
+    'limit-ledger-size',
+  ]
+  if (genesis) common.push(`expected-genesis-hash=${genesis}`)
+
+  switch (nodeType) {
+    case 'rpc':
+      return [...common, 'no-voting', 'private-rpc', 'full-rpc-api', 'enable-rpc-transaction-history', 'no-skip-initial-accounts-db-clean'].join('\n')
+    case 'archival':
+      return [...common.filter(f => f !== 'limit-ledger-size'), 'limit-ledger-size=500000000', 'no-voting', 'private-rpc', 'full-rpc-api', 'enable-rpc-transaction-history', 'enable-extended-tx-metadata-storage', 'no-skip-initial-accounts-db-clean'].join('\n')
+    default: // validator
+      return common.join('\n')
+  }
+}
+
+// Default presets for the initial form state (validator on mainnet)
+const VALIDATOR_PRESETS: Record<string, string> = {
+  'mainnet-beta': buildPreset('mainnet-beta', 'validator'),
+  'testnet': buildPreset('testnet', 'validator'),
+  'devnet': buildPreset('devnet', 'validator'),
+}
+
+/** Parse "flag-name" or "flag-name=value" lines into a Record */
+function parseFlags(text: string): Record<string, string> {
+  const flags: Record<string, string> = {}
+  text.split('\n').map(s => s.trim()).filter(Boolean).forEach(line => {
+    const eq = line.indexOf('=')
+    if (eq > 0) {
+      flags[line.slice(0, eq)] = line.slice(eq + 1)
+    } else {
+      flags[line] = ''
+    }
+  })
+  return flags
+}
+
+/** Parse "KEY=VALUE" lines into a Record */
+function parseEnvVars(text: string): Record<string, string> {
+  const vars: Record<string, string> = {}
+  text.split('\n').map(s => s.trim()).filter(Boolean).forEach(line => {
+    const eq = line.indexOf('=')
+    if (eq > 0) vars[line.slice(0, eq)] = line.slice(eq + 1)
+  })
+  return vars
 }
 
 function NodeDetail() {
@@ -63,6 +122,20 @@ function NodeDetail() {
   const [provRpcPort, setProvRpcPort] = useState('8899')
   const [provDynamicPortRange, setProvDynamicPortRange] = useState('8000-8020')
   const [provSubmitting, setProvSubmitting] = useState(false)
+  const [provNodeType, setProvNodeType] = useState('validator')
+  const [provGossipPort, setProvGossipPort] = useState('8001')
+  // Validator flags as "flag-name" or "flag-name=value" lines (one per line)
+  const [provValidatorFlags, setProvValidatorFlags] = useState(VALIDATOR_PRESETS['mainnet-beta'])
+  const [provGeyserPluginConfigs, setProvGeyserPluginConfigs] = useState('')
+  const [provEnvironmentVars, setProvEnvironmentVars] = useState('')
+  const [provExtraArgs, setProvExtraArgs] = useState('')
+  const [provRestartSec, setProvRestartSec] = useState('1')
+  const [provLogRateLimitDisable, setProvLogRateLimitDisable] = useState(true)
+  const [provStartLimitDisable, setProvStartLimitDisable] = useState(true)
+  const [showAdvanced, setShowAdvanced] = useState(false)
+
+  // Derived: check if no-voting is present in the flags textarea
+  const noVotingActive = provValidatorFlags.split('\n').some(l => l.trim() === 'no-voting')
 
   const refresh = useCallback(async () => {
     if (!id) return
@@ -173,6 +246,12 @@ function NodeDetail() {
     setProvCluster(cluster)
     setProvEntrypoints(CLUSTER_ENTRYPOINTS[cluster] || '')
     setProvKnownValidators(CLUSTER_KNOWN_VALIDATORS[cluster] || '')
+    setProvValidatorFlags(buildPreset(cluster, provNodeType))
+  }
+
+  const handleNodeTypeChange = (nodeType: string) => {
+    setProvNodeType(nodeType)
+    setProvValidatorFlags(buildPreset(provCluster, nodeType))
   }
 
   const handleProvision = async () => {
@@ -185,12 +264,18 @@ function NodeDetail() {
 
     setProvSubmitting(true)
     try {
+      const validatorFlags = parseFlags(provValidatorFlags)
+      const envVars = parseEnvVars(provEnvironmentVars)
+      const isNoVoting = 'no-voting' in validatorFlags
+      const geyserConfigs = provGeyserPluginConfigs.split('\n').map(s => s.trim()).filter(Boolean)
+      const extraArgsList = provExtraArgs.split('\n').map(s => s.trim()).filter(Boolean)
+
       const config: ProvisionRequest = {
         client: provClient,
         version: provVersion,
         cluster: provCluster,
         identity_keypair_path: provIdentityPath,
-        vote_account_keypair_path: provVotePath,
+        vote_account_keypair_path: isNoVoting ? '' : provVotePath,
         ledger_path: provLedgerPath,
         snapshot_path: provSnapshotPath,
         accounts_path: provAccountsPath,
@@ -203,6 +288,15 @@ function NodeDetail() {
         yellowstone_grpc: provYellowstoneGrpc,
         rpc_port: parseInt(provRpcPort) || 8899,
         dynamic_port_range: provDynamicPortRange,
+        node_type: provNodeType,
+        gossip_port: parseInt(provGossipPort) || 8001,
+        validator_flags: Object.keys(validatorFlags).length > 0 ? validatorFlags : undefined,
+        geyser_plugin_configs: geyserConfigs.length > 0 ? geyserConfigs : undefined,
+        environment_vars: Object.keys(envVars).length > 0 ? envVars : undefined,
+        extra_args: extraArgsList.length > 0 ? extraArgsList : undefined,
+        restart_sec: parseInt(provRestartSec) || 1,
+        log_rate_limit_disable: provLogRateLimitDisable,
+        start_limit_disable: provStartLimitDisable,
       }
       const result = await provisionNode(id, config)
       if (result.ok) {
@@ -314,6 +408,14 @@ function NodeDetail() {
             </select>
           </div>
           <div className="form-group">
+            <label>Node Type</label>
+            <select value={provNodeType} onChange={e => handleNodeTypeChange(e.target.value)}>
+              <option value="validator">Validator</option>
+              <option value="rpc">RPC Node</option>
+              <option value="archival">Archival RPC</option>
+            </select>
+          </div>
+          <div className="form-group">
             <label>Version</label>
             <input type="text" value={provVersion} onChange={e => setProvVersion(e.target.value)} placeholder="e.g. 2.1.6" />
           </div>
@@ -333,13 +435,19 @@ function NodeDetail() {
             <label>Identity Keypair Path</label>
             <input type="text" value={provIdentityPath} onChange={e => setProvIdentityPath(e.target.value)} />
           </div>
-          <div className="form-group">
-            <label>Vote Account Keypair Path</label>
-            <input type="text" value={provVotePath} onChange={e => setProvVotePath(e.target.value)} placeholder="/home/sol/vote-account-keypair.json" />
-          </div>
+          {!noVotingActive && (
+            <div className="form-group">
+              <label>Vote Account Keypair Path</label>
+              <input type="text" value={provVotePath} onChange={e => setProvVotePath(e.target.value)} placeholder="/home/sol/vote-account-keypair.json" />
+            </div>
+          )}
           <div className="form-group">
             <label>RPC Port</label>
             <input type="text" value={provRpcPort} onChange={e => setProvRpcPort(e.target.value)} placeholder="8899" />
+          </div>
+          <div className="form-group">
+            <label>Gossip Port</label>
+            <input type="text" value={provGossipPort} onChange={e => setProvGossipPort(e.target.value)} placeholder="8001" />
           </div>
           <div className="form-group">
             <label>Dynamic Port Range</label>
@@ -349,7 +457,7 @@ function NodeDetail() {
 
         <div className="form-group" style={{ marginTop: '1rem' }}>
           <label>Entrypoints</label>
-          <textarea rows={3} value={provEntrypoints} onChange={e => setProvEntrypoints(e.target.value)} placeholder="One per line" />
+          <textarea rows={5} value={provEntrypoints} onChange={e => setProvEntrypoints(e.target.value)} placeholder="One per line" />
         </div>
         <div className="form-group">
           <label>Known Validators</label>
@@ -384,6 +492,77 @@ function NodeDetail() {
             <input type="checkbox" checked={provYellowstoneGrpc} onChange={e => setProvYellowstoneGrpc(e.target.checked)} />
             Yellowstone gRPC
           </label>
+        </div>
+
+        {/* Advanced Settings */}
+        <div style={{ marginTop: '1.5rem', borderTop: '1px solid var(--border)', paddingTop: '1rem' }}>
+          <button
+            className="btn"
+            onClick={() => setShowAdvanced(!showAdvanced)}
+            style={{ marginBottom: '1rem' }}
+          >
+            {showAdvanced ? 'Hide' : 'Show'} Advanced Settings
+          </button>
+
+          {showAdvanced && (
+            <div>
+              <h3 style={{ margin: '0.5rem 0' }}>Validator Flags</h3>
+              <div className="form-group">
+                <label>One flag per line: <code>flag-name</code> (bare) or <code>flag-name=value</code>. Pre-populated from cluster/node-type presets.</label>
+                <textarea
+                  rows={12}
+                  value={provValidatorFlags}
+                  onChange={e => setProvValidatorFlags(e.target.value)}
+                  placeholder="no-port-check&#10;limit-ledger-size&#10;rpc-bind-address=0.0.0.0&#10;expected-genesis-hash=5eykt4..."
+                  style={{ fontFamily: 'monospace' }}
+                />
+              </div>
+
+              {provJitoMev && (
+                <div style={{ margin: '0.5rem 0 1rem', padding: '0.75rem', background: 'var(--surface)', borderRadius: '6px', fontSize: '0.85rem', color: 'var(--text-dim)' }}>
+                  Jito MEV is enabled. Add these flags above if needed: <code>tip-payment-pubkey</code>, <code>tip-distribution-pubkey</code>, <code>commission-bps</code>
+                </div>
+              )}
+
+              <h3 style={{ margin: '1rem 0 0.5rem' }}>Geyser Plugins</h3>
+              <div className="form-group">
+                <label>Plugin Config Paths (one per line)</label>
+                <textarea rows={2} value={provGeyserPluginConfigs} onChange={e => setProvGeyserPluginConfigs(e.target.value)} placeholder="/etc/pillar/custom-geyser.json" />
+              </div>
+
+              <h3 style={{ margin: '1rem 0 0.5rem' }}>Systemd Tuning</h3>
+              <div className="form-grid">
+                <div className="form-group">
+                  <label>RestartSec</label>
+                  <input type="text" value={provRestartSec} onChange={e => setProvRestartSec(e.target.value)} placeholder="1" />
+                </div>
+                <div className="form-group">
+                  <label className="checkbox-label">
+                    <input type="checkbox" checked={provLogRateLimitDisable} onChange={e => setProvLogRateLimitDisable(e.target.checked)} />
+                    LogRateLimitIntervalSec=0
+                  </label>
+                </div>
+                <div className="form-group">
+                  <label className="checkbox-label">
+                    <input type="checkbox" checked={provStartLimitDisable} onChange={e => setProvStartLimitDisable(e.target.checked)} />
+                    StartLimitIntervalSec=0
+                  </label>
+                </div>
+              </div>
+
+              <h3 style={{ margin: '1rem 0 0.5rem' }}>Environment Variables</h3>
+              <div className="form-group">
+                <label>KEY=VALUE (one per line)</label>
+                <textarea rows={3} value={provEnvironmentVars} onChange={e => setProvEnvironmentVars(e.target.value)} placeholder="SOLANA_METRICS_CONFIG=host=https://metrics.solana.com:8086,db=mainnet-beta" />
+              </div>
+
+              <h3 style={{ margin: '1rem 0 0.5rem' }}>Extra CLI Arguments</h3>
+              <div className="form-group">
+                <label>Additional flags (one per line)</label>
+                <textarea rows={3} value={provExtraArgs} onChange={e => setProvExtraArgs(e.target.value)} placeholder="--custom-flag value" />
+              </div>
+            </div>
+          )}
         </div>
 
         <button className="btn primary" onClick={handleProvision} disabled={provSubmitting} style={{ marginTop: '1rem' }}>
