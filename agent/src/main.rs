@@ -54,6 +54,10 @@ fn load_config() -> anyhow::Result<AgentConfig> {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    rustls::crypto::ring::default_provider()
+        .install_default()
+        .ok();
+
     init_logger();
     tracing::info!("{SERVICE_NAME} v{VERSION} starting");
 

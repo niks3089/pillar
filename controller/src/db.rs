@@ -188,12 +188,28 @@ pub async fn update_node_status(db: &Db, node_id: &str, status: &NodeStatus) -> 
         )
         .context("update lifecycle_state")?;
 
-        let status_blob = status.encode_to_vec();
-        conn.execute(
-            "INSERT INTO status_history (node_id, status_blob, received_at) VALUES (?1, ?2, ?3)",
-            params![node_id, status_blob, now],
-        )
-        .context("insert status_history")?;
+        // Only insert history when state changes
+        let last_state: Option<String> = conn
+            .query_row(
+                "SELECT status_blob FROM status_history
+                 WHERE node_id = ?1 ORDER BY received_at DESC LIMIT 1",
+                params![node_id],
+                |row| {
+                    let blob: Vec<u8> = row.get(0)?;
+                    let prev = NodeStatus::decode(blob.as_slice()).unwrap_or_default();
+                    Ok(prev.state)
+                },
+            )
+            .optional()?;
+
+        if last_state.as_deref() != Some(&status.state) {
+            let status_blob = status.encode_to_vec();
+            conn.execute(
+                "INSERT INTO status_history (node_id, status_blob, received_at) VALUES (?1, ?2, ?3)",
+                params![node_id, status_blob, now],
+            )
+            .context("insert status_history")?;
+        }
 
         Ok(())
     })
@@ -671,16 +687,31 @@ mod tests {
         let db = test_db();
         upsert_node(&db, &sample_register_request(), "10.0.0.1").await.unwrap();
 
-        let status = sample_status();
+        let status = sample_status(); // state = "healthy"
         update_node_status(&db, "node-1", &status).await.unwrap();
 
-        let node = get_node(&db, "node-1").await.unwrap().unwrap();
-        assert_eq!(node.lifecycle_state, "healthy");
-        assert!(node.last_seen_at.is_some());
-
+        // First insert creates a history row
         let history = get_status_history(&db, "node-1", 10u32).await.unwrap();
         assert_eq!(history.len(), 1);
         assert_eq!(history[0].status.state, "healthy");
+
+        // Same state again — no new row
+        update_node_status(&db, "node-1", &status).await.unwrap();
+        let history = get_status_history(&db, "node-1", 10u32).await.unwrap();
+        assert_eq!(history.len(), 1);
+
+        // Different state — new row
+        let mut changed = status.clone();
+        changed.state = "behind".to_string();
+        update_node_status(&db, "node-1", &changed).await.unwrap();
+        let history = get_status_history(&db, "node-1", 10u32).await.unwrap();
+        assert_eq!(history.len(), 2);
+        assert_eq!(history[0].status.state, "behind"); // most recent first (ORDER BY DESC)
+
+        // Verify lifecycle + heartbeat still updated
+        let node = get_node(&db, "node-1").await.unwrap().unwrap();
+        assert_eq!(node.lifecycle_state, "behind");
+        assert!(node.last_seen_at.is_some());
     }
 
     #[tokio::test]

@@ -486,6 +486,7 @@ db_path: "$DB_PATH"
 retention_days: $RETENTION_DAYS
 external_url: "$EXTERNAL_URL"
 grafana_url: "$GRAFANA_URL"
+certs_dir: "/etc/pillar/certs"
 EOF
     chown "$PILLAR_USER:$PILLAR_GROUP" "$CONTROLLER_CONFIG"
     chmod 644 "$CONTROLLER_CONFIG"

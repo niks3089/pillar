@@ -220,6 +220,12 @@ pub struct ControllerConfig {
     pub node_id: String,
     #[serde(default = "default_report_interval_secs")]
     pub report_interval_secs: u64,
+    /// Path to CA certificate PEM for server TLS verification. Empty = plaintext.
+    #[serde(default)]
+    pub ca_cert_path: String,
+    /// Bearer token for authenticating with the controller. Empty = no auth.
+    #[serde(default)]
+    pub auth_token: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -17,7 +17,6 @@ pub mod proto {
 }
 
 use pillar_shared::proto::{LogBatch, LogEntry};
-use proto::pillar_controller_client::PillarControllerClient;
 
 /// Map journald priority (0-7) to a level string.
 fn priority_to_level(priority: &str) -> &'static str {
@@ -262,7 +261,7 @@ pub async fn run(
     let mut flush_timer = tokio::time::interval(flush_interval);
     flush_timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
 
-    let mut client: Option<PillarControllerClient<tonic::transport::Channel>> = None;
+    let mut client: Option<crate::grpc::LogClient> = None;
     let mut backoff = Duration::from_secs(1);
     let max_backoff = Duration::from_secs(30);
 
@@ -270,7 +269,7 @@ pub async fn run(
         tokio::select! {
             _ = cancel.cancelled() => {
                 if !buffer.is_empty() {
-                    flush_batch(&mut client, &controller.endpoint, &node_id, &mut buffer, &mut backoff, max_backoff, &agent_health).await;
+                    flush_batch(&mut client, &controller, &node_id, &mut buffer, &mut backoff, max_backoff, &agent_health).await;
                 }
                 break;
             }
@@ -288,13 +287,13 @@ pub async fn run(
                         }
                         buffer.push(e);
                         if buffer.len() >= buffer_size {
-                            flush_batch(&mut client, &controller.endpoint, &node_id, &mut buffer, &mut backoff, max_backoff, &agent_health).await;
+                            flush_batch(&mut client, &controller, &node_id, &mut buffer, &mut backoff, max_backoff, &agent_health).await;
                             flush_timer.reset();
                         }
                     }
                     None => {
                         if !buffer.is_empty() {
-                            flush_batch(&mut client, &controller.endpoint, &node_id, &mut buffer, &mut backoff, max_backoff, &agent_health).await;
+                            flush_batch(&mut client, &controller, &node_id, &mut buffer, &mut backoff, max_backoff, &agent_health).await;
                         }
                         break;
                     }
@@ -302,7 +301,7 @@ pub async fn run(
             }
             _ = flush_timer.tick() => {
                 if !buffer.is_empty() {
-                    flush_batch(&mut client, &controller.endpoint, &node_id, &mut buffer, &mut backoff, max_backoff, &agent_health).await;
+                    flush_batch(&mut client, &controller, &node_id, &mut buffer, &mut backoff, max_backoff, &agent_health).await;
                 }
             }
         }
@@ -312,8 +311,8 @@ pub async fn run(
 }
 
 async fn flush_batch(
-    client: &mut Option<PillarControllerClient<tonic::transport::Channel>>,
-    endpoint: &str,
+    client: &mut Option<crate::grpc::LogClient>,
+    controller_config: &ControllerConfig,
     node_id: &str,
     buffer: &mut Vec<LogEntry>,
     backoff: &mut Duration,
@@ -324,9 +323,9 @@ async fn flush_batch(
     let count = entries.len();
 
     if client.is_none() {
-        match PillarControllerClient::connect(endpoint.to_string()).await {
-            Ok(c) => {
-                *client = Some(c);
+        match crate::grpc::build_channel(controller_config).await {
+            Ok(channel) => {
+                *client = Some(crate::grpc::make_log_client(channel, &controller_config.auth_token));
                 *backoff = Duration::from_secs(1);
             }
             Err(e) => {

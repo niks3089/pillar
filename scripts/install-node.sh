@@ -27,6 +27,8 @@ CLIENT="agave"
 CLUSTER="mainnet-beta"
 REFERENCE_RPC=""
 CONTROLLER_ENDPOINT=""
+HTTP_URL=""
+AUTH_TOKEN=""
 NODE_ID=""
 BINARIES_DIR=""
 SOLANA_VERSION="stable"
@@ -60,6 +62,8 @@ while [[ $# -gt 0 ]]; do
         --cluster)               CLUSTER="$2";               shift 2 ;;
         --reference-rpc)         REFERENCE_RPC="$2";         shift 2 ;;
         --controller-endpoint)   CONTROLLER_ENDPOINT="$2";   shift 2 ;;
+        --http-url)              HTTP_URL="$2";              shift 2 ;;
+        --token)                 AUTH_TOKEN="$2";            shift 2 ;;
         --node-id)               NODE_ID="$2";               shift 2 ;;
         --solana-version)        SOLANA_VERSION="$2";        shift 2 ;;
         --help|-h)
@@ -408,6 +412,30 @@ install -m 755 "$BINARIES_DIR/pillar-agent" "$INSTALL_DIR/pillar-agent"
 ok "installed pillar-agent -> $INSTALL_DIR/pillar-agent"
 
 # ------------------------------------------------------------------------------
+# Phase 4b: Download TLS certificates from controller (if --http-url provided)
+# ------------------------------------------------------------------------------
+
+TLS_ENABLED=false
+CERTS_DIR="$CONFIG_DIR/certs"
+
+if [[ -n "$HTTP_URL" ]]; then
+    section "Downloading CA certificate"
+
+    BUNDLE_URL="${HTTP_URL}/api/certs/client-bundle"
+    BUNDLE_JSON=$(curl -sf --max-time 10 "$BUNDLE_URL" 2>/dev/null || true)
+
+    if [[ -n "$BUNDLE_JSON" ]] && echo "$BUNDLE_JSON" | python3 -c "import sys,json; json.load(sys.stdin)" 2>/dev/null; then
+        mkdir -p "$CERTS_DIR"
+        echo "$BUNDLE_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin)['ca_cert'], end='')" > "$CERTS_DIR/ca.pem"
+        chown -R "$SOL_USER:$SOL_USER" "$CERTS_DIR"
+        TLS_ENABLED=true
+        ok "downloaded CA certificate to $CERTS_DIR/ca.pem"
+    else
+        warn "could not fetch CA certificate from $BUNDLE_URL (controller may not have TLS enabled)"
+    fi
+fi
+
+# ------------------------------------------------------------------------------
 # Phase 5: Write config file (only if it doesn't exist)
 # ------------------------------------------------------------------------------
 
@@ -449,6 +477,16 @@ controller:
   endpoint: "$CONTROLLER_ENDPOINT"
   node_id: "$NODE_ID"
   report_interval_secs: 10
+$(if [[ "$TLS_ENABLED" == "true" ]]; then
+cat <<TLSEOF
+  ca_cert_path: "$CERTS_DIR/ca.pem"
+TLSEOF
+fi)
+$(if [[ -n "$AUTH_TOKEN" ]]; then
+cat <<TOKENEOF
+  auth_token: "$AUTH_TOKEN"
+TOKENEOF
+fi)
 log_collector:
   enabled: true
   units:

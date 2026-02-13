@@ -26,6 +26,7 @@ pub struct ApiState {
     pub db: Db,
     pub registry: NodeRegistry,
     pub config: ControllerConfig,
+    pub auth_token: String,
 }
 
 pub fn router(state: ApiState) -> Router {
@@ -757,11 +758,14 @@ async fn onboard_command(State(state): State<ApiState>) -> impl IntoResponse {
         state.config.external_url.clone()
     };
 
-    Json(OnboardCommandResponse {
-        command: format!(
-            "curl -sSL https://get.pillar.sh | bash -s -- --controller {endpoint}"
-        ),
-    })
+    let mut cmd = format!(
+        "curl -sSL https://get.pillar.sh | bash -s -- --controller {endpoint}"
+    );
+    if !state.auth_token.is_empty() {
+        cmd.push_str(&format!(" \\\n  --token {}", state.auth_token));
+    }
+
+    Json(OnboardCommandResponse { command: cmd })
 }
 
 // ---------------------------------------------------------------------------

@@ -2,6 +2,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use tokio::sync::mpsc;
+use tonic::transport::{Certificate, Channel, ClientTlsConfig};
 use tokio_util::sync::CancellationToken;
 
 use crate::agent_health::AgentHealth;
@@ -16,6 +17,43 @@ pub mod proto {
 use proto::pillar_controller_client::PillarControllerClient;
 
 use pillar_shared::proto::{CommandStreamRequest, ControllerCommand, ReportStatusRequest};
+
+/// Type alias for the client with an optional auth interceptor.
+type AuthClient = PillarControllerClient<tonic::service::interceptor::InterceptedService<Channel, AuthInterceptor>>;
+
+/// Public alias for use by the log collector.
+pub type LogClient = AuthClient;
+
+/// Create an authenticated client from a channel (for use by the log collector).
+pub fn make_log_client(channel: Channel, token: &str) -> LogClient {
+    let interceptor = make_interceptor(token);
+    PillarControllerClient::with_interceptor(channel, interceptor)
+}
+
+/// Interceptor that injects a bearer token into every gRPC request.
+#[derive(Clone)]
+pub struct AuthInterceptor {
+    token: Option<tonic::metadata::MetadataValue<tonic::metadata::Ascii>>,
+}
+
+impl tonic::service::Interceptor for AuthInterceptor {
+    fn call(&mut self, mut req: tonic::Request<()>) -> Result<tonic::Request<()>, tonic::Status> {
+        if let Some(ref token) = self.token {
+            req.metadata_mut().insert("authorization", token.clone());
+        }
+        Ok(req)
+    }
+}
+
+fn make_interceptor(token: &str) -> AuthInterceptor {
+    let token = if token.is_empty() {
+        None
+    } else {
+        let val = format!("Bearer {token}");
+        Some(val.parse().expect("valid metadata value"))
+    };
+    AuthInterceptor { token }
+}
 
 /// Connection to the centralized controller.
 ///
@@ -62,8 +100,10 @@ impl ControllerLink {
 
             tracing::info!(endpoint = %self.config.endpoint, "connecting to controller");
 
-            match PillarControllerClient::connect(self.config.endpoint.clone()).await {
-                Ok(client) => {
+            match build_channel(&self.config).await {
+                Ok(channel) => {
+                    let interceptor = make_interceptor(&self.config.auth_token);
+                    let client = PillarControllerClient::with_interceptor(channel, interceptor);
                     backoff = Duration::from_secs(1);
                     self.agent_health.set_controller_connected(true);
                     self.run_connected(client, cancel.clone()).await;
@@ -91,7 +131,7 @@ impl ControllerLink {
 
     async fn run_connected(
         &self,
-        client: PillarControllerClient<tonic::transport::Channel>,
+        client: AuthClient,
         cancel: CancellationToken,
     ) {
         // Register with controller on every (re-)connect
@@ -155,7 +195,7 @@ impl ControllerLink {
 
 /// Push enriched NodeStatus to controller on a timer.
 async fn run_report_loop(
-    client: &mut PillarControllerClient<tonic::transport::Channel>,
+    client: &mut AuthClient,
     node_id: &str,
     shared_status: SharedStatus,
     interval: Duration,
@@ -197,7 +237,7 @@ async fn run_report_loop(
 
 /// Listen for commands from controller via server-streaming RPC.
 async fn run_command_stream(
-    client: &mut PillarControllerClient<tonic::transport::Channel>,
+    client: &mut AuthClient,
     node_id: &str,
     agent_health: Arc<AgentHealth>,
     cmd_tx: mpsc::Sender<AgentCommand>,
@@ -319,6 +359,23 @@ async fn handle_command(cmd: ControllerCommand, cmd_tx: &mpsc::Sender<AgentComma
             tracing::warn!("received empty controller command");
         }
     }
+}
+
+/// Build a tonic Channel with optional server TLS from the controller config.
+pub async fn build_channel(config: &ControllerConfig) -> Result<Channel, tonic::transport::Error> {
+    let endpoint = Channel::from_shared(config.endpoint.clone()).expect("valid endpoint URI");
+
+    let endpoint = if !config.ca_cert_path.is_empty() {
+        let ca =
+            std::fs::read_to_string(&config.ca_cert_path).expect("reading CA cert");
+        let tls = ClientTlsConfig::new().ca_certificate(Certificate::from_pem(&ca));
+        tracing::info!("TLS enabled for controller connection");
+        endpoint.tls_config(tls)?
+    } else {
+        endpoint
+    };
+
+    endpoint.connect().await
 }
 
 fn gethostname() -> String {

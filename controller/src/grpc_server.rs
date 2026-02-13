@@ -17,6 +17,29 @@ pub mod proto {
 use proto::pillar_controller_server::PillarController;
 pub use proto::pillar_controller_server::PillarControllerServer;
 
+/// Validate the bearer token on incoming gRPC requests.
+/// If `expected_token` is empty, auth is disabled (all requests pass).
+pub fn check_auth_token(
+    expected_token: &str,
+    req: tonic::Request<()>,
+) -> Result<tonic::Request<()>, Status> {
+    if expected_token.is_empty() {
+        return Ok(req);
+    }
+    match req.metadata().get("authorization") {
+        Some(val) => {
+            let val = val.to_str().unwrap_or("");
+            let provided = val.strip_prefix("Bearer ").unwrap_or(val);
+            if provided == expected_token {
+                Ok(req)
+            } else {
+                Err(Status::unauthenticated("invalid auth token"))
+            }
+        }
+        None => Err(Status::unauthenticated("missing authorization header")),
+    }
+}
+
 pub struct GrpcServer {
     db: Db,
     registry: NodeRegistry,

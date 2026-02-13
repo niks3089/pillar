@@ -1,4 +1,5 @@
 mod api;
+mod certs;
 mod config;
 mod db;
 mod grpc_server;
@@ -46,6 +47,11 @@ fn load_config() -> anyhow::Result<ControllerConfig> {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    // Install the ring crypto provider for rustls (required when both ring and aws-lc features exist)
+    rustls::crypto::ring::default_provider()
+        .install_default()
+        .ok();
+
     init_logger();
     tracing::info!("{SERVICE_NAME} v{VERSION} starting");
 
@@ -88,6 +94,36 @@ async fn main() -> anyhow::Result<()> {
         }
     });
 
+    // Optionally generate TLS certs (server-only TLS, no client certs)
+    let tls_config = if !config.certs_dir.is_empty() {
+        let cert_paths = certs::ensure_certs(&config.certs_dir, &config.external_url)?;
+        let server_cert = std::fs::read_to_string(&cert_paths.server_cert)
+            .context("reading server cert")?;
+        let server_key = std::fs::read_to_string(&cert_paths.server_key)
+            .context("reading server key")?;
+
+        let identity = tonic::transport::Identity::from_pem(&server_cert, &server_key);
+        let tls = tonic::transport::ServerTlsConfig::new().identity(identity);
+        tracing::info!(certs_dir = %config.certs_dir, "TLS enabled on gRPC server");
+        Some(tls)
+    } else {
+        tracing::info!("TLS disabled (certs_dir not set), gRPC server running plaintext");
+        None
+    };
+
+    // Ensure auth token exists: use config value, else load from DB, else generate + persist.
+    let auth_token = if !config.auth_token.is_empty() {
+        config.auth_token.clone()
+    } else if let Some(stored) = db::get_setting(&database, "auth_token").await? {
+        tracing::info!("loaded auth_token from database");
+        stored
+    } else {
+        let token = certs::generate_token();
+        db::set_setting(&database, "auth_token", &token).await?;
+        tracing::info!("generated new auth_token and persisted to database");
+        token
+    };
+
     // Spawn gRPC server
     let grpc_addr = config
         .grpc_listen
@@ -95,10 +131,18 @@ async fn main() -> anyhow::Result<()> {
         .context("parsing grpc_listen address")?;
     let grpc = GrpcServer::new(database.clone(), registry.clone(), &config.external_url);
     let grpc_cancel = cancel.clone();
+    let grpc_token = auth_token.clone();
     tokio::spawn(async move {
         tracing::info!(addr = %grpc_addr, "gRPC server starting");
-        if let Err(e) = tonic::transport::Server::builder()
-            .add_service(PillarControllerServer::new(grpc))
+        let mut builder = tonic::transport::Server::builder();
+        if let Some(tls) = tls_config {
+            builder = builder.tls_config(tls).expect("invalid TLS config");
+        }
+        let svc = PillarControllerServer::with_interceptor(grpc, move |req: tonic::Request<()>| {
+            grpc_server::check_auth_token(&grpc_token, req)
+        });
+        if let Err(e) = builder
+            .add_service(svc)
             .serve_with_shutdown(grpc_addr, async move { grpc_cancel.cancelled().await })
             .await
         {
@@ -138,6 +182,7 @@ async fn main() -> anyhow::Result<()> {
         db: database.clone(),
         registry: registry.clone(),
         config: config.clone(),
+        auth_token: auth_token.clone(),
     };
 
     let grafana_state = api_state.clone();

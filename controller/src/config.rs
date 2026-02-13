@@ -19,6 +19,14 @@ pub struct ControllerConfig {
     pub external_url: String,
     #[serde(default)]
     pub grafana_url: String,
+    /// Directory for TLS certificates. Empty = plaintext (no TLS).
+    /// Production installs set `/etc/pillar/certs`.
+    #[serde(default)]
+    pub certs_dir: String,
+    /// Bearer token for agent authentication. Empty = no auth.
+    /// Auto-generated on first startup and persisted to the DB `settings` table.
+    #[serde(default)]
+    pub auth_token: String,
 }
 
 impl ControllerConfig {
@@ -84,6 +92,8 @@ mod tests {
             retention_days: DEFAULT_RETENTION_DAYS,
             external_url: String::new(),
             grafana_url: String::new(),
+            certs_dir: String::new(),
+            auth_token: String::new(),
         };
         let err = config.validate().unwrap_err();
         assert!(err.contains("grpc_listen"));
@@ -98,6 +108,8 @@ mod tests {
             retention_days: 0,
             external_url: String::new(),
             grafana_url: String::new(),
+            certs_dir: String::new(),
+            auth_token: String::new(),
         };
         let err = config.validate().unwrap_err();
         assert!(err.contains("retention_days"));
