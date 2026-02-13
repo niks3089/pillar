@@ -28,7 +28,7 @@ thiserror = "2.0.18"
 tokio = { version = "1.21", default-features = false, features = ["full", "tracing"] }
 tokio-stream = "0.1"
 tokio-util = "0.7.10"
-tonic = "0.14.3"
+tonic = { version = "0.14.3", features = ["tls"] }
 tonic-prost = "0.14"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["json", "env-filter"] }

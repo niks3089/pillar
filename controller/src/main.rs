@@ -140,7 +140,9 @@ async fn main() -> anyhow::Result<()> {
         config: config.clone(),
     };
 
+    let grafana_state = api_state.clone();
     let app = api::router(api_state)
+        .nest("/grafana", api::grafana_router(grafana_state))
         .merge(web::router())
         .layer(CorsLayer::permissive());
 

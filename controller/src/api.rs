@@ -1,11 +1,12 @@
 use axum::{
+    body::Body,
     extract::{Path, Query, State},
     http::StatusCode,
     response::{
         sse::{Event, Sse},
-        IntoResponse,
+        IntoResponse, Response,
     },
-    routing::{get, post},
+    routing::{any, get, post},
     Json, Router,
 };
 use serde::{Deserialize, Serialize};
@@ -825,4 +826,85 @@ async fn dashboard_node_detail() -> impl IntoResponse {
         [(axum::http::header::CONTENT_TYPE, "application/json")],
         include_str!("../dashboards/grafana/node-detail.json"),
     )
+}
+
+// ---------------------------------------------------------------------------
+// Grafana reverse proxy
+// ---------------------------------------------------------------------------
+
+pub fn grafana_router(state: ApiState) -> Router {
+    Router::new()
+        .route("/{*path}", any(grafana_proxy))
+        .with_state(state)
+}
+
+async fn grafana_proxy(
+    State(state): State<ApiState>,
+    Path(path): Path<String>,
+    req: axum::extract::Request,
+) -> Response {
+    let grafana_url = match db::get_setting(&state.db, "grafana_url").await {
+        Ok(Some(url)) if !url.is_empty() => url,
+        _ => {
+            return (
+                StatusCode::BAD_GATEWAY,
+                "Grafana URL not configured",
+            )
+                .into_response();
+        }
+    };
+
+    let upstream = format!(
+        "{}/grafana/{}{}",
+        grafana_url.trim_end_matches('/'),
+        path,
+        req.uri()
+            .query()
+            .map(|q| format!("?{q}"))
+            .unwrap_or_default()
+    );
+
+    let client = reqwest::Client::new();
+    let method = req.method().clone();
+    let mut builder = client.request(method, &upstream);
+
+    // Forward relevant headers
+    for (name, value) in req.headers() {
+        if name == axum::http::header::HOST {
+            continue;
+        }
+        if let Ok(v) = value.to_str() {
+            builder = builder.header(name.as_str(), v);
+        }
+    }
+
+    // Forward body
+    let body_bytes = match axum::body::to_bytes(req.into_body(), 10 * 1024 * 1024).await {
+        Ok(b) => b,
+        Err(_) => return (StatusCode::BAD_REQUEST, "body too large").into_response(),
+    };
+    if !body_bytes.is_empty() {
+        builder = builder.body(body_bytes.to_vec());
+    }
+
+    let upstream_resp = match builder.send().await {
+        Ok(r) => r,
+        Err(e) => {
+            tracing::warn!(error = %e, "grafana proxy error");
+            return (StatusCode::BAD_GATEWAY, "Grafana unreachable").into_response();
+        }
+    };
+
+    let status = StatusCode::from_u16(upstream_resp.status().as_u16())
+        .unwrap_or(StatusCode::BAD_GATEWAY);
+    let mut resp_builder = Response::builder().status(status);
+
+    for (name, value) in upstream_resp.headers() {
+        resp_builder = resp_builder.header(name, value);
+    }
+
+    let resp_bytes = upstream_resp.bytes().await.unwrap_or_default();
+    resp_builder
+        .body(Body::from(resp_bytes))
+        .unwrap_or_else(|_| (StatusCode::INTERNAL_SERVER_ERROR, "proxy error").into_response())
 }

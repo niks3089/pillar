@@ -356,7 +356,11 @@ import re, sys
 settings = {
     'security': {'allow_embedding': 'true'},
     'auth.anonymous': {'enabled': 'true', 'org_role': 'Viewer'},
-    'server': {'http_port': '${GRAFANA_PORT}'},
+    'server': {
+        'http_port': '${GRAFANA_PORT}',
+        'root_url': '%(protocol)s://%(domain)s:%(http_port)s/grafana/',
+        'serve_from_sub_path': 'true',
+    },
 }
 
 with open('${GRAFANA_CONF}', 'r') as f:

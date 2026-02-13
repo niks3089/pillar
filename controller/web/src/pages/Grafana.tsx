@@ -38,10 +38,10 @@ function Grafana() {
 
   if (loading) return <div className="content"><p style={{ color: 'var(--text-dim)' }}>Loading...</p></div>
 
-  // Embedded view
+  // Embedded view — iframe uses the controller's reverse proxy at /grafana/
   if (grafanaUrl && !showSettings) {
     const dashboardUid = activeTab === 'fleet-overview' ? 'pillar-fleet-overview' : 'pillar-node-detail'
-    const iframeSrc = `${grafanaUrl.replace(/\/$/, '')}/d/${dashboardUid}?orgId=1&kiosk`
+    const iframeSrc = `/grafana/d/${dashboardUid}?orgId=1&kiosk`
 
     return (
       <div className="content grafana-fullwidth">
@@ -62,7 +62,7 @@ function Grafana() {
           </div>
           <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
             <a
-              href={`${grafanaUrl.replace(/\/$/, '')}/d/${dashboardUid}`}
+              href={`/grafana/d/${dashboardUid}`}
               target="_blank"
               rel="noopener noreferrer"
               className="btn"
@@ -94,11 +94,11 @@ function Grafana() {
         </h2>
         <p style={{ color: 'var(--text-dim)', fontSize: '0.875rem', margin: '0.5rem 0 1.5rem' }}>
           {grafanaUrl
-            ? 'Update the Grafana URL below.'
-            : 'Grafana is installed and configured automatically by the controller installer. Enter the Grafana URL to embed dashboards here.'}
+            ? 'Update the local Grafana URL that the controller proxies to.'
+            : 'Enter the local Grafana URL (e.g. http://localhost:3000). The controller reverse-proxies it so dashboards are accessible remotely.'}
         </p>
         <div className="form-group" style={{ maxWidth: '500px' }}>
-          <label>Grafana URL</label>
+          <label>Local Grafana URL</label>
           <div style={{ display: 'flex', gap: '0.75rem' }}>
             <input
               type="text"
