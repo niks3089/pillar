@@ -82,6 +82,10 @@ pub struct Metrics {
     link_log_batches_dropped: IntGauge,
     link_uptime_secs: IntGauge,
     link_commands_received: IntGauge,
+
+    // Start times (unix epoch, stable per process lifetime)
+    operator_started_at_unix_secs: IntGauge,
+    link_started_at_unix_secs: IntGauge,
 }
 
 impl Metrics {
@@ -130,6 +134,10 @@ impl Metrics {
             link_log_batches_dropped: register_int_gauge(&registry, "pillar_link_log_batches_dropped", "Log batches dropped on controller unreachable"),
             link_uptime_secs: register_int_gauge(&registry, "pillar_link_uptime_secs", "Seconds since link started"),
             link_commands_received: register_int_gauge(&registry, "pillar_link_commands_received", "Commands received via CommandStream"),
+
+            // Start times
+            operator_started_at_unix_secs: register_int_gauge(&registry, "pillar_operator_started_at_unix_secs", "Operator process start time (unix epoch)"),
+            link_started_at_unix_secs: register_int_gauge(&registry, "pillar_link_started_at_unix_secs", "Link process start time (unix epoch)"),
 
             registry,
         }
@@ -247,6 +255,12 @@ impl Metrics {
         self.link_uptime_secs.set(status.link_uptime_secs as i64);
         self.link_commands_received
             .set(status.link_commands_received as i64);
+
+        // Start times
+        self.operator_started_at_unix_secs
+            .set(status.operator_started_at_unix_secs);
+        self.link_started_at_unix_secs
+            .set(status.link_started_at_unix_secs);
     }
 
     /// Increment state read error counter.

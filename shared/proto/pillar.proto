@@ -79,6 +79,11 @@ message NodeStatus {
     uint64 link_log_batches_dropped = 47;
     uint64 link_uptime_secs = 48;
     uint64 link_commands_received = 49;
+
+    // --- Process start times (unix epoch, stable per process lifetime) ---
+    // Only changes on restart — use changes(field[1h]) > 0 to detect restarts.
+    int64  operator_started_at_unix_secs = 50;
+    int64  link_started_at_unix_secs = 51;
 }
 
 // Commands pushed from controller to link.

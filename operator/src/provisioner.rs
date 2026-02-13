@@ -1,6 +1,7 @@
 //! Validator provisioner — handles installing and configuring a validator
 //! binary on the node, triggered by a PendingCommand from Link.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use pillar_shared::proto::ProvisionCommand;
@@ -12,6 +13,8 @@ pub struct ProvisionConfig {
     pub version: String,
     #[allow(dead_code)]
     pub cluster: String,
+    #[allow(dead_code)]
+    pub node_type: String,
     pub identity_keypair_path: PathBuf,
     pub vote_account_keypair_path: PathBuf,
     pub ledger_path: PathBuf,
@@ -28,6 +31,16 @@ pub struct ProvisionConfig {
     pub yellowstone_grpc: bool,
     pub rpc_port: u32,
     pub dynamic_port_range: String,
+    pub gossip_port: u32,
+    /// Client-specific CLI flags: "flag-name" -> "value" (empty for bare flags).
+    /// Rendered as `--{key}` or `--{key} {value}` for Agave/Jito.
+    pub validator_flags: HashMap<String, String>,
+    pub geyser_plugin_configs: Vec<String>,
+    pub environment_vars: HashMap<String, String>,
+    pub extra_args: Vec<String>,
+    pub restart_sec: u32,
+    pub log_rate_limit_disable: bool,
+    pub start_limit_disable: bool,
 }
 
 impl ProvisionConfig {
@@ -55,6 +68,7 @@ impl ProvisionConfig {
             client,
             version: cmd.version.clone(),
             cluster: cmd.cluster.clone(),
+            node_type: cmd.node_type.clone(),
             identity_keypair_path: PathBuf::from(&cmd.identity_keypair_path),
             vote_account_keypair_path: PathBuf::from(&cmd.vote_account_keypair_path),
             ledger_path: PathBuf::from(&cmd.ledger_path),
@@ -73,6 +87,14 @@ impl ProvisionConfig {
             } else {
                 cmd.dynamic_port_range.clone()
             },
+            gossip_port: if cmd.gossip_port == 0 { 8001 } else { cmd.gossip_port },
+            validator_flags: cmd.validator_flags.clone(),
+            geyser_plugin_configs: cmd.geyser_plugin_configs.clone(),
+            environment_vars: cmd.environment_vars.clone(),
+            extra_args: cmd.extra_args.clone(),
+            restart_sec: if cmd.restart_sec == 0 { 1 } else { cmd.restart_sec },
+            log_rate_limit_disable: cmd.log_rate_limit_disable,
+            start_limit_disable: cmd.start_limit_disable,
         })
     }
 }
@@ -141,10 +163,13 @@ impl ClientInstaller {
     pub fn exec_start(&self, config: &ProvisionConfig) -> String {
         match config.client {
             ClientKind::Firedancer | ClientKind::Frankendancer => {
-                format!("{} run --config /etc/pillar/validator.toml", self.binary_path.display())
+                format!(
+                    "{} run --config /etc/pillar/validator.toml",
+                    self.binary_path.display()
+                )
             }
             _ => {
-                // agave / jito: CLI flags
+                // Agave / Jito: CLI flags
                 let mut args = vec![
                     self.binary_path.display().to_string(),
                     format!("--identity {}", config.identity_keypair_path.display()),
@@ -152,10 +177,14 @@ impl ClientInstaller {
                     format!("--snapshots {}", config.snapshot_path.display()),
                     format!("--accounts {}", config.accounts_path.display()),
                     format!("--rpc-port {}", config.rpc_port),
+                    format!("--gossip-port {}", config.gossip_port),
                     format!("--dynamic-port-range {}", config.dynamic_port_range),
                 ];
 
-                if !config.vote_account_keypair_path.as_os_str().is_empty() {
+                // Vote account: only if path set and "no-voting" isn't in flags
+                if !config.vote_account_keypair_path.as_os_str().is_empty()
+                    && !config.validator_flags.contains_key("no-voting")
+                {
                     args.push(format!(
                         "--vote-account {}",
                         config.vote_account_keypair_path.display()
@@ -175,27 +204,62 @@ impl ClientInstaller {
                     args.push("--no-genesis-fetch".to_string());
                 }
 
-                // Jito MEV flags
+                // Jito MEV: block-engine-url from explicit field, pubkeys/commission from
+                // validator_flags with hardcoded defaults as safety net.
                 if config.jito_mev && config.client == ClientKind::Jito {
                     args.push(format!(
                         "--block-engine-url {}",
                         config.jito_block_engine_url
                     ));
-                    args.push("--tip-payment-program-pubkey T1pyyaTNZsKv2WcRAB8oVnk93mLJw2XzjtVYqCsaHqt".to_string());
-                    args.push("--tip-distribution-program-pubkey 4R3gSG8BpU4t19KYj8CfnBtxhxJBjKHHaBnQ4SYnHNDn".to_string());
-                    args.push("--commission-bps 800".to_string());
+                    if !config
+                        .validator_flags
+                        .contains_key("tip-payment-program-pubkey")
+                    {
+                        args.push("--tip-payment-program-pubkey T1pyyaTNZsKv2WcRAB8oVnk93mLJw2XzjtVYqCsaHqt".to_string());
+                    }
+                    if !config
+                        .validator_flags
+                        .contains_key("tip-distribution-program-pubkey")
+                    {
+                        args.push("--tip-distribution-program-pubkey 4R3gSG8BpU4t19KYj8CfnBtxhxJBjKHHaBnQ4SYnHNDn".to_string());
+                    }
+                    if !config.validator_flags.contains_key("commission-bps") {
+                        args.push("--commission-bps 800".to_string());
+                    }
                 }
 
-                // Yellowstone gRPC geyser plugin
-                if config.yellowstone_grpc {
-                    args.push("--geyser-plugin-config /etc/pillar/yellowstone-grpc.json".to_string());
+                // Yellowstone gRPC — auto-add if not already in geyser_plugin_configs
+                let yellowstone_path = "/etc/pillar/yellowstone-grpc.json";
+                if config.yellowstone_grpc
+                    && !config
+                        .geyser_plugin_configs
+                        .iter()
+                        .any(|p| p == yellowstone_path)
+                {
+                    args.push(format!("--geyser-plugin-config {yellowstone_path}"));
                 }
 
-                // Note: --expected-genesis-hash omitted; validator will fetch
-                // genesis from entrypoints or --no-genesis-fetch handles it
-                // when known validators are present.
-                args.push("--wal-recovery-mode skip_any_corrupted_record".to_string());
-                args.push("--limit-ledger-size".to_string());
+                // Generic geyser plugin configs
+                for path in &config.geyser_plugin_configs {
+                    args.push(format!("--geyser-plugin-config {path}"));
+                }
+
+                // All client-specific flags from the map (sorted for deterministic output)
+                let mut flag_keys: Vec<&String> = config.validator_flags.keys().collect();
+                flag_keys.sort();
+                for key in flag_keys {
+                    let value = &config.validator_flags[key];
+                    if value.is_empty() {
+                        args.push(format!("--{key}"));
+                    } else {
+                        args.push(format!("--{key} {value}"));
+                    }
+                }
+
+                // Extra args (raw pass-through, appended last)
+                for arg in &config.extra_args {
+                    args.push(arg.clone());
+                }
 
                 args.join(" \\\n  ")
             }
@@ -207,22 +271,39 @@ impl ClientInstaller {
         let exec_start = self.exec_start(config);
         let description = format!("Solana Validator ({})", config.client.as_str());
 
-        format!(
+        let mut unit_section = format!(
             "[Unit]\n\
              Description={description}\n\
-             After=network.target\n\
-             \n\
-             [Service]\n\
+             After=network.target\n"
+        );
+        if config.start_limit_disable {
+            unit_section.push_str("StartLimitIntervalSec=0\n");
+        }
+
+        let mut service_section = format!(
+            "\n[Service]\n\
              Type=simple\n\
              User=sol\n\
              ExecStart={exec_start}\n\
              Restart=on-failure\n\
-             RestartSec=10\n\
-             LimitNOFILE=1000000\n\
-             \n\
-             [Install]\n\
-             WantedBy=multi-user.target\n"
-        )
+             RestartSec={restart_sec}\n\
+             LimitNOFILE=1000000\n",
+            restart_sec = config.restart_sec,
+        );
+        if config.log_rate_limit_disable {
+            service_section.push_str("LogRateLimitIntervalSec=0\n");
+        }
+        // Environment variables
+        let mut env_keys: Vec<&String> = config.environment_vars.keys().collect();
+        env_keys.sort();
+        for key in env_keys {
+            let val = &config.environment_vars[key];
+            service_section.push_str(&format!("Environment={key}={val}\n"));
+        }
+
+        let install_section = "\n[Install]\nWantedBy=multi-user.target\n";
+
+        format!("{unit_section}{service_section}{install_section}")
     }
 }
 
@@ -270,11 +351,15 @@ pub async fn write_unit_file(service_name: &str, content: &str) -> Result<(), St
 
     use tokio::io::AsyncWriteExt;
     if let Some(mut stdin) = child.stdin.take() {
-        stdin.write_all(content.as_bytes()).await
+        stdin
+            .write_all(content.as_bytes())
+            .await
             .map_err(|e| format!("write to sudo tee: {e}"))?;
     }
 
-    let status = child.wait().await
+    let status = child
+        .wait()
+        .await
         .map_err(|e| format!("sudo tee wait: {e}"))?;
     if !status.success() {
         return Err(format!("sudo tee {path} failed with {status}"));
@@ -350,7 +435,9 @@ pub async fn restart_service(service_name: &str) -> Result<(), String> {
 pub async fn install_binary(src: &Path, dest: &Path) -> Result<(), String> {
     let output = tokio::process::Command::new("sudo")
         .args([
-            "install", "-m", "755",
+            "install",
+            "-m",
+            "755",
             &src.display().to_string(),
             &dest.display().to_string(),
         ])
@@ -360,7 +447,10 @@ pub async fn install_binary(src: &Path, dest: &Path) -> Result<(), String> {
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("sudo install {} failed: {stderr}", dest.display()));
+        return Err(format!(
+            "sudo install {} failed: {stderr}",
+            dest.display()
+        ));
     }
 
     tracing::info!(path = %dest.display(), "binary installed");
@@ -464,8 +554,8 @@ pub fn process_pending_command() -> Result<Option<pillar_shared::PendingCommand>
         return Ok(None);
     }
 
-    let data = std::fs::read_to_string(path)
-        .map_err(|e| format!("read pending command: {e}"))?;
+    let data =
+        std::fs::read_to_string(path).map_err(|e| format!("read pending command: {e}"))?;
 
     // Delete immediately to avoid re-processing on crash
     if let Err(e) = std::fs::remove_file(path) {
@@ -495,7 +585,10 @@ fn reference_rpc_for_cluster(cluster: &str) -> Vec<String> {
 /// Update the operator config file to match the provisioned client/cluster.
 /// This ensures the operator uses the correct health checker, service name,
 /// and reference RPCs after a restart.
-pub async fn update_operator_config(config: &ProvisionConfig, installer: &ClientInstaller) -> Result<(), String> {
+pub async fn update_operator_config(
+    config: &ProvisionConfig,
+    installer: &ClientInstaller,
+) -> Result<(), String> {
     let config_path = std::env::var("PILLAR_CONFIG")
         .unwrap_or_else(|_| "/etc/pillar/operator.yaml".to_string());
 
@@ -505,10 +598,11 @@ pub async fn update_operator_config(config: &ProvisionConfig, installer: &Client
         .map_err(|e| format!("read {config_path}: {e}"))?;
 
     // Parse as serde_yaml::Value so we preserve unknown fields
-    let mut doc: serde_yaml::Value = serde_yaml::from_str(&yaml_str)
-        .map_err(|e| format!("parse {config_path}: {e}"))?;
+    let mut doc: serde_yaml::Value =
+        serde_yaml::from_str(&yaml_str).map_err(|e| format!("parse {config_path}: {e}"))?;
 
-    let map = doc.as_mapping_mut()
+    let map = doc
+        .as_mapping_mut()
         .ok_or_else(|| "operator config is not a YAML mapping".to_string())?;
 
     // Update client
@@ -548,8 +642,8 @@ pub async fn update_operator_config(config: &ProvisionConfig, installer: &Client
     }
 
     // Write back
-    let new_yaml = serde_yaml::to_string(&doc)
-        .map_err(|e| format!("serialize config: {e}"))?;
+    let new_yaml =
+        serde_yaml::to_string(&doc).map_err(|e| format!("serialize config: {e}"))?;
     tokio::fs::write(&config_path, &new_yaml)
         .await
         .map_err(|e| format!("write {config_path}: {e}"))?;
@@ -569,10 +663,7 @@ pub async fn update_operator_config(config: &ProvisionConfig, installer: &Client
 // ---------------------------------------------------------------------------
 
 /// Execute a full provision sequence: install binary, write configs, start service.
-pub async fn provision(
-    cmd: &ProvisionCommand,
-    staged_binary: &Path,
-) -> Result<(), String> {
+pub async fn provision(cmd: &ProvisionCommand, staged_binary: &Path) -> Result<(), String> {
     let config = ProvisionConfig::from_command(cmd)?;
     let installer = ClientInstaller::for_client(config.client);
 
@@ -672,6 +763,7 @@ mod tests {
             yellowstone_grpc: false,
             rpc_port: 0,
             dynamic_port_range: String::new(),
+            ..Default::default()
         }
     }
 
@@ -708,6 +800,7 @@ mod tests {
         assert!(exec.contains("--entrypoint entrypoint.mainnet-beta.solana.com:8001"));
         assert!(exec.contains("--known-validator"));
         assert!(exec.contains("--only-known-rpc"));
+        assert!(exec.contains("--gossip-port 8001"));
     }
 
     #[test]
@@ -740,10 +833,8 @@ mod tests {
         }
     }
 
-    // --- Chunk 2 tests: addon flags ---
-
     #[test]
-    fn exec_start_jito_with_mev_flags() {
+    fn exec_start_jito_with_mev_defaults() {
         let mut cmd = sample_command();
         cmd.client = "jito".to_string();
         cmd.jito_mev = true;
@@ -752,9 +843,39 @@ mod tests {
         let installer = ClientInstaller::for_client(config.client);
         let exec = installer.exec_start(&config);
         assert!(exec.contains("--block-engine-url https://block-engine.example.com"));
-        assert!(exec.contains("--tip-payment-program-pubkey"));
-        assert!(exec.contains("--tip-distribution-program-pubkey"));
-        assert!(exec.contains("--commission-bps"));
+        assert!(exec.contains("--tip-payment-program-pubkey T1pyya"));
+        assert!(exec.contains("--tip-distribution-program-pubkey 4R3gSG"));
+        assert!(exec.contains("--commission-bps 800"));
+    }
+
+    #[test]
+    fn exec_start_jito_custom_pubkeys_via_flags() {
+        let mut cmd = sample_command();
+        cmd.client = "jito".to_string();
+        cmd.jito_mev = true;
+        cmd.jito_block_engine_url = "https://block-engine.example.com".to_string();
+        // Override via validator_flags
+        cmd.validator_flags.insert(
+            "tip-payment-program-pubkey".to_string(),
+            "CustomTipPayment111111111111111111111111111".to_string(),
+        );
+        cmd.validator_flags.insert(
+            "tip-distribution-program-pubkey".to_string(),
+            "CustomTipDistribution1111111111111111111111".to_string(),
+        );
+        cmd.validator_flags
+            .insert("commission-bps".to_string(), "1000".to_string());
+        let config = ProvisionConfig::from_command(&cmd).unwrap();
+        let installer = ClientInstaller::for_client(config.client);
+        let exec = installer.exec_start(&config);
+        // Should NOT contain the defaults since flags map overrides
+        assert!(!exec.contains("T1pyya"));
+        assert!(!exec.contains("4R3gSG"));
+        assert!(!exec.contains("--commission-bps 800"));
+        // Should contain the custom values from the map
+        assert!(exec.contains("--commission-bps 1000"));
+        assert!(exec.contains("--tip-payment-program-pubkey CustomTipPayment"));
+        assert!(exec.contains("--tip-distribution-program-pubkey CustomTipDistribution"));
     }
 
     #[test]
@@ -796,8 +917,6 @@ mod tests {
         assert!(parsed.get("libpath").is_some());
     }
 
-    // --- Chunk 3 tests: install_binary ---
-
     #[tokio::test]
     async fn install_binary_permissions_and_move() {
         let dir = tempfile::tempdir().unwrap();
@@ -805,7 +924,6 @@ mod tests {
         let dest = dir.path().join("dest-binary");
         std::fs::write(&src, b"#!/bin/sh\necho hi").unwrap();
 
-        // install_binary uses sudo, which works in dev but skip if sudo isn't available
         match install_binary(&src, &dest).await {
             Ok(()) => {
                 assert!(dest.exists());
@@ -819,11 +937,8 @@ mod tests {
         }
     }
 
-    // --- Chunk 5 tests: command file processing ---
-
     #[test]
     fn process_pending_command_no_file() {
-        // PENDING_COMMAND_PATH doesn't exist in test env
         let result = process_pending_command();
         assert!(result.unwrap().is_none());
     }
@@ -840,7 +955,6 @@ mod tests {
         let json = serde_json::to_string(&cmd).unwrap();
         std::fs::write(&path, &json).unwrap();
 
-        // Read it back manually (can't override PENDING_COMMAND_PATH const)
         let data = std::fs::read_to_string(&path).unwrap();
         let parsed: pillar_shared::PendingCommand = serde_json::from_str(&data).unwrap();
         assert_eq!(parsed.command_type(), "provision");
@@ -858,7 +972,6 @@ mod tests {
         cmd.cluster = "devnet".to_string();
         cmd.known_validators = vec![];
         cmd.entrypoints = vec!["entrypoint.devnet.solana.com:8001".to_string()];
-        // rpc_port=0 and empty dynamic_port_range should get defaults
         cmd.rpc_port = 0;
         cmd.dynamic_port_range = String::new();
         let config = ProvisionConfig::from_command(&cmd).unwrap();
@@ -878,5 +991,136 @@ mod tests {
         let result = rt.block_on(provision(&cmd, std::path::Path::new("/tmp/fake")));
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("version is required"));
+    }
+
+    // --- validator_flags map tests ---
+
+    #[test]
+    fn validator_flags_bare_and_valued() {
+        let mut cmd = sample_command();
+        cmd.validator_flags
+            .insert("no-voting".to_string(), String::new());
+        cmd.validator_flags
+            .insert("limit-ledger-size".to_string(), "50000000".to_string());
+        cmd.validator_flags
+            .insert("rpc-bind-address".to_string(), "0.0.0.0".to_string());
+        cmd.vote_account_keypair_path = String::new();
+        let config = ProvisionConfig::from_command(&cmd).unwrap();
+        let installer = ClientInstaller::for_client(config.client);
+        let exec = installer.exec_start(&config);
+        assert!(exec.contains("--no-voting"));
+        assert!(exec.contains("--limit-ledger-size 50000000"));
+        assert!(exec.contains("--rpc-bind-address 0.0.0.0"));
+        // no-voting in flags should suppress --vote-account
+        assert!(!exec.contains("--vote-account"));
+    }
+
+    #[test]
+    fn validator_flags_rpc_preset() {
+        let mut cmd = sample_command();
+        cmd.vote_account_keypair_path = String::new();
+        // Simulate what the UI sends for RPC node type
+        for flag in [
+            "no-voting",
+            "private-rpc",
+            "full-rpc-api",
+            "enable-rpc-transaction-history",
+            "no-port-check",
+            "no-skip-initial-accounts-db-clean",
+            "wal-recovery-mode",
+            "limit-ledger-size",
+        ] {
+            cmd.validator_flags.insert(flag.to_string(), String::new());
+        }
+        cmd.validator_flags.insert(
+            "rpc-bind-address".to_string(),
+            "0.0.0.0".to_string(),
+        );
+        cmd.validator_flags.insert(
+            "expected-genesis-hash".to_string(),
+            "5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d".to_string(),
+        );
+        // Override wal-recovery-mode with value
+        cmd.validator_flags.insert(
+            "wal-recovery-mode".to_string(),
+            "skip_any_corrupted_record".to_string(),
+        );
+        let config = ProvisionConfig::from_command(&cmd).unwrap();
+        let installer = ClientInstaller::for_client(config.client);
+        let exec = installer.exec_start(&config);
+        assert!(exec.contains("--no-voting"));
+        assert!(exec.contains("--private-rpc"));
+        assert!(exec.contains("--full-rpc-api"));
+        assert!(exec.contains("--enable-rpc-transaction-history"));
+        assert!(exec.contains("--no-port-check"));
+        assert!(exec.contains("--expected-genesis-hash 5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d"));
+        assert!(exec.contains("--wal-recovery-mode skip_any_corrupted_record"));
+        assert!(!exec.contains("--vote-account"));
+    }
+
+    #[test]
+    fn validator_flags_sorted_deterministic() {
+        let mut cmd = sample_command();
+        cmd.validator_flags
+            .insert("zzz-flag".to_string(), String::new());
+        cmd.validator_flags
+            .insert("aaa-flag".to_string(), "value".to_string());
+        let config = ProvisionConfig::from_command(&cmd).unwrap();
+        let installer = ClientInstaller::for_client(config.client);
+        let exec = installer.exec_start(&config);
+        let aaa_pos = exec.find("--aaa-flag").unwrap();
+        let zzz_pos = exec.find("--zzz-flag").unwrap();
+        assert!(aaa_pos < zzz_pos, "flags should be sorted alphabetically");
+    }
+
+    #[test]
+    fn extra_args_appended_after_flags() {
+        let mut cmd = sample_command();
+        cmd.validator_flags
+            .insert("private-rpc".to_string(), String::new());
+        cmd.extra_args = vec!["--custom-escape-hatch".to_string()];
+        let config = ProvisionConfig::from_command(&cmd).unwrap();
+        let installer = ClientInstaller::for_client(config.client);
+        let exec = installer.exec_start(&config);
+        let flags_pos = exec.find("--private-rpc").unwrap();
+        let extra_pos = exec.find("--custom-escape-hatch").unwrap();
+        assert!(extra_pos > flags_pos, "extra_args should come after flags");
+    }
+
+    #[test]
+    fn systemd_unit_environment_vars() {
+        let mut cmd = sample_command();
+        cmd.environment_vars.insert(
+            "SOLANA_METRICS_CONFIG".to_string(),
+            "host=https://metrics.solana.com:8086,db=mainnet-beta".to_string(),
+        );
+        cmd.restart_sec = 1;
+        cmd.log_rate_limit_disable = true;
+        cmd.start_limit_disable = true;
+        let config = ProvisionConfig::from_command(&cmd).unwrap();
+        let installer = ClientInstaller::for_client(config.client);
+        let unit = installer.systemd_unit(&config);
+        assert!(unit.contains("Environment=SOLANA_METRICS_CONFIG="));
+        assert!(unit.contains("RestartSec=1"));
+        assert!(unit.contains("LogRateLimitIntervalSec=0"));
+        assert!(unit.contains("StartLimitIntervalSec=0"));
+    }
+
+    #[test]
+    fn geyser_plugin_configs() {
+        let mut cmd = sample_command();
+        cmd.geyser_plugin_configs = vec!["/etc/pillar/custom-geyser.json".to_string()];
+        let config = ProvisionConfig::from_command(&cmd).unwrap();
+        let installer = ClientInstaller::for_client(config.client);
+        let exec = installer.exec_start(&config);
+        assert!(exec.contains("--geyser-plugin-config /etc/pillar/custom-geyser.json"));
+    }
+
+    #[test]
+    fn defaults_gossip_port_and_restart_sec() {
+        let cmd = sample_command();
+        let config = ProvisionConfig::from_command(&cmd).unwrap();
+        assert_eq!(config.gossip_port, 8001);
+        assert_eq!(config.restart_sec, 1);
     }
 }

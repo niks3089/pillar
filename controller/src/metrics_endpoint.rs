@@ -44,6 +44,9 @@ const METRIC_HEADERS: &[(&str, &str)] = &[
     ("pillar_link_log_batches_dropped", "Log batches dropped on controller unreachable"),
     ("pillar_link_uptime_secs", "Seconds since link started"),
     ("pillar_link_commands_received", "Commands received via CommandStream"),
+    // Process start times (unix epoch, stable per process lifetime)
+    ("pillar_operator_started_at_unix_secs", "Operator process start time (unix epoch)"),
+    ("pillar_link_started_at_unix_secs", "Link process start time (unix epoch)"),
 ];
 
 fn emit_node_metrics(out: &mut String, node_id: &str, status: &NodeStatus) {
@@ -94,10 +97,17 @@ fn emit_node_metrics(out: &mut String, node_id: &str, status: &NodeStatus) {
         ("pillar_link_commands_received", status.link_commands_received as f64),
     ];
 
+    // Process start times
+    let start_time_metrics: &[(&str, f64)] = &[
+        ("pillar_operator_started_at_unix_secs", status.operator_started_at_unix_secs as f64),
+        ("pillar_link_started_at_unix_secs", status.link_started_at_unix_secs as f64),
+    ];
+
     for (name, value) in node_metrics
         .iter()
         .chain(operator_metrics.iter())
         .chain(link_metrics.iter())
+        .chain(start_time_metrics.iter())
     {
         let _ = writeln!(out, "{name}{{{base}}} {value}");
     }

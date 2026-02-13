@@ -5,6 +5,7 @@ use std::time::Instant;
 /// Shared across async tasks via `Arc<LinkHealth>`, updated with `Relaxed` ordering.
 pub struct LinkHealth {
     pub started_at: Instant,
+    pub started_at_unix_secs: i64,
     pub controller_connected: AtomicBool,
     pub controller_latency_ms: AtomicU64,
     pub status_reports_sent: AtomicU64,
@@ -19,6 +20,7 @@ impl LinkHealth {
     pub fn new() -> Self {
         Self {
             started_at: Instant::now(),
+            started_at_unix_secs: chrono::Utc::now().timestamp(),
             controller_connected: AtomicBool::new(false),
             controller_latency_ms: AtomicU64::new(0),
             status_reports_sent: AtomicU64::new(0),

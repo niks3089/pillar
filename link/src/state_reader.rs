@@ -58,6 +58,7 @@ fn enrich_status(
     status.link_log_batches_dropped = link_health.log_batches_dropped.load(Ordering::Relaxed);
     status.link_uptime_secs = link_health.started_at.elapsed().as_secs();
     status.link_commands_received = link_health.commands_received.load(Ordering::Relaxed);
+    status.link_started_at_unix_secs = link_health.started_at_unix_secs;
 
     // State file age
     if status.updated_at_unix_secs > 0 {

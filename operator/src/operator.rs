@@ -1,7 +1,10 @@
 use std::collections::VecDeque;
+use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
+use notify::Watcher;
+use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
 use crate::config::OperatorConfig;
@@ -24,12 +27,21 @@ pub struct Operator {
     // Internal state
     current_state: NodeState,
     state_entered_at: Instant,
+    started_at: Instant,
     restart_timestamps: VecDeque<Instant>,
     last_health: NodeHealth,
     last_check_duration_secs: f64,
     consecutive_off_count: usize,
     /// Set while a provision/upgrade is in progress. Prevents recovery from triggering.
     upgrading: bool,
+
+    // Self-health counters
+    started_at_unix_secs: i64,
+    reconcile_count: u64,
+    health_check_error_count: u64,
+    recovery_count: u64,
+    state_write_error_count: u64,
+    pending_cmd_error_count: u64,
 
     // Version mismatch detection
     local_validator_version: Option<String>,
@@ -66,11 +78,18 @@ impl Operator {
             validator_process,
             current_state: NodeState::Off,
             state_entered_at: Instant::now(),
+            started_at: Instant::now(),
             restart_timestamps: VecDeque::new(),
             last_health: NodeHealth::default(),
             last_check_duration_secs: 0.0,
             consecutive_off_count: 0,
             upgrading: false,
+            started_at_unix_secs: chrono::Utc::now().timestamp(),
+            reconcile_count: 0,
+            health_check_error_count: 0,
+            recovery_count: 0,
+            state_write_error_count: 0,
+            pending_cmd_error_count: 0,
             local_validator_version,
             cluster_version: None,
             version_mismatch: false,
@@ -98,10 +117,82 @@ impl Operator {
         self.restart_timestamps.push_back(Instant::now());
     }
 
+    /// Set up a file watcher on the pending command directory.
+    ///
+    /// Returns the watcher handle (must be kept alive for notifications to fire)
+    /// and a receiver that fires when the pending command file is created or modified.
+    /// If the watcher cannot be set up, returns `None` — the operator falls back
+    /// to discovering commands on the next regular reconcile tick.
+    fn setup_command_watcher(
+        &self,
+    ) -> (
+        Option<notify::RecommendedWatcher>,
+        mpsc::UnboundedReceiver<()>,
+    ) {
+        let (tx, rx) = mpsc::unbounded_channel();
+
+        let cmd_path = PathBuf::from(pillar_shared::PENDING_COMMAND_PATH);
+        let cmd_filename: OsString = cmd_path
+            .file_name()
+            .map(|n| n.to_os_string())
+            .unwrap_or_default();
+
+        let watcher_result =
+            notify::recommended_watcher(move |res: Result<notify::Event, notify::Error>| {
+                if let Ok(event) = res {
+                    let matches = event
+                        .paths
+                        .iter()
+                        .any(|p| p.file_name().is_some_anden == cmd_filename));
+                    if matches {
+                        let _ = tx.send(());
+                    }
+                }
+            });
+
+        match watcher_result {
+            Ok(mut watcher) => {
+                let watch_dir = cmd_path
+                    .parent()
+                    .unwrap_or(Path::new("/var/run/pillar"));
+                match watcher.watch(watch_dir, notify::RecursiveMode::NonRecursive) {
+                    Ok(()) => {
+                        tracing::info!(
+                            dir = %watch_dir.display(),
+                            "watching for pending commands via inotify"
+                        );
+                        (Some(watcher), rx)
+                    }
+                    Err(e) => {
+                        tracing::warn!(
+                            error = %e,
+                            "failed to watch pending command dir, falling back to polling"
+                        );
+                        (None, rx)
+                    }
+                }
+            }
+            Err(e) => {
+                tracing::warn!(
+                    error = %e,
+                    "failed to create file watcher, falling back to polling"
+                );
+                (None, rx)
+            }
+        }
+    }
+
     /// Run the reconciliation loop until cancelled.
+    ///
+    /// Uses inotify to wake immediately when Link writes a pending command
+    /// file, instead of waiting up to one full reconcile interval.
+    /// Falls back to pure polling if the watcher fails.
     pub async fn run(&mut self, cancel: CancellationToken) {
         let interval = Duration::from_secs(self.config.health.check_interval_secs);
         tracing::info!(interval_secs = interval.as_secs(), "operator loop starting");
+
+        // _watcher must stay alive on the stack — dropping it stops notifications.
+        let (_watcher, mut cmd_rx) = self.setup_command_watcher();
 
         loop {
             tokio::select! {
@@ -112,11 +203,20 @@ impl Operator {
                 _ = tokio::time::sleep(interval) => {
                     self.reconcile().await;
                 }
+                Some(()) = cmd_rx.recv() => {
+                    // Drain any extra notifications (file watcher can fire multiple
+                    // events for a single write: create, modify, close_write, etc.)
+                    while cmd_rx.try_recv().is_ok() {}
+                    tracing::info!("pending command detected via file watcher");
+                    self.reconcile().await;
+                }
             }
         }
     }
 
     async fn reconcile(&mut self) {
+        self.reconcile_count += 1;
+
         // 0. Check for pending command from Link
         match crate::provisioner::process_pending_command() {
             Ok(Some(cmd)) => {
@@ -212,6 +312,7 @@ impl Operator {
             }
             Ok(None) => {}
             Err(e) => {
+                self.pending_cmd_error_count += 1;
                 tracing::warn!(error = %e, "failed to read pending command");
             }
         }
@@ -230,6 +331,7 @@ impl Operator {
             }
             Err(e) => {
                 self.consecutive_off_count += 1;
+                self.health_check_error_count += 1;
                 tracing::warn!(
                     error = %e,
                     consecutive_off = self.consecutive_off_count,
@@ -372,6 +474,8 @@ impl Operator {
             return;
         }
 
+        self.recovery_count += 1;
+
         let reference_slot = self.last_health.slot_info.reference_slot.unwrap_or(0);
 
         let recovery = SnapshotRecovery::new(
@@ -447,7 +551,7 @@ impl Operator {
         let _ = reference_slot; // suppress unused binding warning
     }
 
-    async fn publish_state(&self) {
+    async fn publish_state(&mut self) {
         let status = state::NodeStatus {
             state: self.current_state.as_str().to_string(),
             local_slot: self.last_health.slot_info.local_slot.unwrap_or(0) as i64,
@@ -475,11 +579,22 @@ impl Operator {
             } else {
                 String::new()
             },
+            // Operator self-health
+            operator_reconcile_count: self.reconcile_count,
+            operator_health_check_errors: self.health_check_error_count,
+            operator_consecutive_off_count: self.consecutive_off_count as u32,
+            operator_recovery_count: self.recovery_count,
+            operator_state_write_errors: self.state_write_error_count,
+            operator_pending_cmd_errors: self.pending_cmd_error_count,
+            operator_uptime_secs: self.started_at.elapsed().as_secs(),
+            operator_version_mismatch: self.version_mismatch,
+            operator_started_at_unix_secs: self.started_at_unix_secs,
             // System metrics left as 0 — enriched by Link
             ..Default::default()
         };
 
         if let Err(e) = state::write_state(&status, &self.state_path) {
+            self.state_write_error_count += 1;
             tracing::warn!(error = %e, "failed to write operator state");
         }
     }
