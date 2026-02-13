@@ -66,6 +66,15 @@ async fn main() -> anyhow::Result<()> {
     }
 
     let database = db::open_db(&config.db_path)?;
+
+    // Seed grafana_url from config into DB if not already set
+    if !config.grafana_url.is_empty()
+        && db::get_setting(&database, "grafana_url").await?.is_none()
+    {
+        db::set_setting(&database, "grafana_url", &config.grafana_url).await?;
+        tracing::info!("seeded grafana_url from config");
+    }
+
     let registry = NodeRegistry::new();
     let cancel = CancellationToken::new();
 

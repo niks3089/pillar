@@ -611,6 +611,40 @@ Post-install: open controller UI → select the new node → "Setup Validator" t
 - Cluster: **testnet only** (box is small)
 - Reference RPC: `https://api.testnet.solana.com`
 
+## Building & Deploying
+
+Development host is macOS (aarch64). Dev box is Linux x86_64. Cross-compiling from Mac fails for `libsqlite3-sys` (needs a C cross-compiler). Instead, build on the dev box using the `sol` user's Rust toolchain.
+
+### Deploy controller to dev box
+
+```bash
+# 1. Build frontend (from Mac)
+cd controller/web && npm run build
+
+# 2. Sync source to dev box (excludes target/, node_modules/, .git/)
+rsync -az --exclude target --exclude node_modules --exclude .git . root@139.84.215.43:/tmp/pillar-build/
+
+# 3. Build on dev box (sol user has Rust installed)
+ssh root@139.84.215.43 "cd /tmp/pillar-build && export PATH=/home/sol/.cargo/bin:\$PATH && cargo build --release -p pillar-controller"
+
+# 4. Stop, swap binary, restart
+ssh root@139.84.215.43 "systemctl stop pillar-controller && cp /tmp/pillar-build/target/release/controller /usr/local/bin/pillar-controller && systemctl start pillar-controller"
+```
+
+### Deploy agent to dev box
+
+```bash
+# Same rsync + build flow, then:
+ssh root@139.84.215.43 "cd /tmp/pillar-build && export PATH=/home/sol/.cargo/bin:\$PATH && cargo build --release -p pillar-agent"
+ssh root@139.84.215.43 "systemctl stop pillar-agent && cp /tmp/pillar-build/target/release/agent /usr/local/bin/pillar-agent && systemctl start pillar-agent"
+```
+
+### Service files
+- Controller: `/etc/systemd/system/pillar-controller.service` (runs as `pillar` user)
+- Agent: `/etc/systemd/system/pillar-agent.service` (runs as `sol` user)
+- Controller config: `/etc/pillar/controller.yaml`
+- Agent config: `/etc/pillar/agent.yaml`
+
 ## Current Status
 
 **Production-ready**:

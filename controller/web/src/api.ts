@@ -147,3 +147,15 @@ export async function provisionNode(id: string, config: ProvisionRequest): Promi
     body: JSON.stringify(config),
   })
 }
+
+export async function fetchGrafanaSettings(): Promise<{ grafana_url: string }> {
+  return api('/api/settings/grafana')
+}
+
+export async function saveGrafanaUrl(url: string): Promise<{ grafana_url: string }> {
+  return api('/api/settings/grafana', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ grafana_url: url }),
+  })
+}

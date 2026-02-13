@@ -232,6 +232,14 @@ pub struct LogCollectorConfig {
     pub buffer_size: usize,
     #[serde(default = "default_log_collector_flush_interval_ms")]
     pub flush_interval_ms: u64,
+    /// Minimum log level to stream for the validator service.
+    /// Default "warn" — validator info logs are extremely chatty.
+    #[serde(default = "default_validator_min_level")]
+    pub validator_min_level: String,
+    /// Minimum log level to stream for all other services (agent, controller).
+    /// Default "debug" — stream everything.
+    #[serde(default = "default_default_min_level")]
+    pub default_min_level: String,
 }
 
 impl Default for LogCollectorConfig {
@@ -241,6 +249,8 @@ impl Default for LogCollectorConfig {
             units: default_log_collector_units(),
             buffer_size: default_log_collector_buffer_size(),
             flush_interval_ms: default_log_collector_flush_interval_ms(),
+            validator_min_level: default_validator_min_level(),
+            default_min_level: default_default_min_level(),
         }
     }
 }
@@ -254,6 +264,8 @@ fn default_log_collector_units() -> Vec<String> {
 }
 fn default_log_collector_buffer_size() -> usize { 100 }
 fn default_log_collector_flush_interval_ms() -> u64 { 1000 }
+fn default_validator_min_level() -> String { "warn".to_string() }
+fn default_default_min_level() -> String { "debug".to_string() }
 
 // Serde default functions
 fn default_service_name() -> String { DEFAULT_SERVICE_NAME.to_string() }

@@ -43,6 +43,15 @@ pub fn router(state: ApiState) -> Router {
         .route("/api/nodes/{id}/cancel", post(cancel_deployment))
         .route("/api/cluster-defaults/{cluster}", get(cluster_defaults))
         .route("/api/onboard-command", get(onboard_command))
+        .route(
+            "/api/settings/grafana",
+            get(get_grafana_settings).put(set_grafana_settings),
+        )
+        .route(
+            "/api/dashboards/fleet-overview",
+            get(dashboard_fleet_overview),
+        )
+        .route("/api/dashboards/node-detail", get(dashboard_node_detail))
         .route("/metrics", get(crate::metrics_endpoint::metrics_handler))
         .with_state(state)
 }
@@ -752,4 +761,68 @@ async fn onboard_command(State(state): State<ApiState>) -> impl IntoResponse {
             "curl -sSL https://get.pillar.sh | bash -s -- --controller {endpoint}"
         ),
     })
+}
+
+// ---------------------------------------------------------------------------
+// Grafana settings
+// ---------------------------------------------------------------------------
+
+#[derive(Serialize, Deserialize)]
+struct GrafanaSettings {
+    grafana_url: String,
+}
+
+async fn get_grafana_settings(State(state): State<ApiState>) -> impl IntoResponse {
+    match db::get_setting(&state.db, "grafana_url").await {
+        Ok(val) => Json(GrafanaSettings {
+            grafana_url: val.unwrap_or_default(),
+        })
+        .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"error": e.to_string()})),
+        )
+            .into_response(),
+    }
+}
+
+async fn set_grafana_settings(
+    State(state): State<ApiState>,
+    Json(body): Json<GrafanaSettings>,
+) -> impl IntoResponse {
+    let url = body.grafana_url.trim().to_string();
+    if !url.is_empty() && !url.starts_with("http://") && !url.starts_with("https://") {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({"error": "grafana_url must start with http:// or https://"})),
+        )
+            .into_response();
+    }
+
+    match db::set_setting(&state.db, "grafana_url", &url).await {
+        Ok(()) => Json(GrafanaSettings { grafana_url: url }).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"error": e.to_string()})),
+        )
+            .into_response(),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Dashboard JSON endpoints
+// ---------------------------------------------------------------------------
+
+async fn dashboard_fleet_overview() -> impl IntoResponse {
+    (
+        [(axum::http::header::CONTENT_TYPE, "application/json")],
+        include_str!("../dashboards/grafana/fleet-overview.json"),
+    )
+}
+
+async fn dashboard_node_detail() -> impl IntoResponse {
+    (
+        [(axum::http::header::CONTENT_TYPE, "application/json")],
+        include_str!("../dashboards/grafana/node-detail.json"),
+    )
 }

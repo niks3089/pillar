@@ -3,3 +3,4 @@ http_listen: "0.0.0.0:8080"
 db_path: "/var/lib/pillar/controller.db"
 retention_days: 30
 external_url: ""
+grafana_url: ""

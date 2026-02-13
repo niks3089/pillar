@@ -57,6 +57,22 @@ fn detect_level_from_message(message: &str) -> Option<&'static str> {
     None
 }
 
+/// Map a level string to a numeric rank for filtering (higher = more severe).
+fn level_rank(level: &str) -> u8 {
+    match level {
+        "error" => 4,
+        "warn" => 3,
+        "info" => 2,
+        "debug" => 1,
+        _ => 0,
+    }
+}
+
+/// Returns true if `entry_level` meets the `min_level` threshold.
+pub fn level_passes(entry_level: &str, min_level: &str) -> bool {
+    level_rank(entry_level) >= level_rank(min_level)
+}
+
 /// Derive a service name from a systemd unit name.
 fn unit_to_service(unit: &str) -> &str {
     if unit.contains("validator") {
@@ -239,6 +255,8 @@ pub async fn run(
     let node_id = controller.node_id.clone();
     let flush_interval = Duration::from_millis(config.flush_interval_ms);
     let buffer_size = config.buffer_size;
+    let validator_min_level = config.validator_min_level.clone();
+    let default_min_level = config.default_min_level.clone();
 
     let mut buffer: Vec<LogEntry> = Vec::with_capacity(buffer_size);
     let mut flush_timer = tokio::time::interval(flush_interval);
@@ -259,6 +277,15 @@ pub async fn run(
             entry = rx.recv() => {
                 match entry {
                     Some(e) => {
+                        // Filter by min level: validator defaults to warn, others to debug.
+                        let min = if e.service == "validator" {
+                            &validator_min_level
+                        } else {
+                            &default_min_level
+                        };
+                        if !level_passes(&e.level, min) {
+                            continue;
+                        }
                         buffer.push(e);
                         if buffer.len() >= buffer_size {
                             flush_batch(&mut client, &controller.endpoint, &node_id, &mut buffer, &mut backoff, max_backoff, &agent_health).await;
@@ -401,5 +428,20 @@ mod tests {
         assert_eq!(unit_to_service("pillar-agent.service"), "agent");
         assert_eq!(unit_to_service("controller.service"), "controller");
         assert_eq!(unit_to_service("custom.service"), "custom");
+    }
+
+    #[test]
+    fn level_filtering() {
+        // validator defaults to warn — info/debug should be dropped
+        assert!(level_passes("error", "warn"));
+        assert!(level_passes("warn", "warn"));
+        assert!(!level_passes("info", "warn"));
+        assert!(!level_passes("debug", "warn"));
+
+        // agent defaults to debug — everything passes
+        assert!(level_passes("error", "debug"));
+        assert!(level_passes("warn", "debug"));
+        assert!(level_passes("info", "debug"));
+        assert!(level_passes("debug", "debug"));
     }
 }

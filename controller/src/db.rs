@@ -3,6 +3,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result};
+use prost::Message;
 use rusqlite::{params, Connection};
 use serde::Serialize;
 
@@ -39,7 +40,7 @@ fn init_schema(conn: &Connection) -> Result<()> {
         CREATE TABLE IF NOT EXISTS status_history (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             node_id TEXT NOT NULL,
-            status_json TEXT NOT NULL,
+            status_blob BLOB NOT NULL,
             received_at INTEGER NOT NULL
         );
         CREATE INDEX IF NOT EXISTS idx_status_history_node_time
@@ -58,6 +59,11 @@ fn init_schema(conn: &Connection) -> Result<()> {
             ON logs(node_id, timestamp_ms);
         CREATE INDEX IF NOT EXISTS idx_logs_node_service
             ON logs(node_id, service, timestamp_ms);
+
+        CREATE TABLE IF NOT EXISTS settings (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+        );
         ",
     )
     .context("initializing schema")?;
@@ -106,7 +112,7 @@ pub struct NodeRow {
 pub struct StatusHistoryRow {
     pub id: i64,
     pub node_id: String,
-    pub status_json: String,
+    pub status: NodeStatus,
     pub received_at: i64,
 }
 
@@ -182,11 +188,10 @@ pub async fn update_node_status(db: &Db, node_id: &str, status: &NodeStatus) -> 
         )
         .context("update lifecycle_state")?;
 
-        let status_json =
-            serde_json::to_string(&status).context("serialize NodeStatus to JSON")?;
+        let status_blob = status.encode_to_vec();
         conn.execute(
-            "INSERT INTO status_history (node_id, status_json, received_at) VALUES (?1, ?2, ?3)",
-            params![node_id, status_json, now],
+            "INSERT INTO status_history (node_id, status_blob, received_at) VALUES (?1, ?2, ?3)",
+            params![node_id, status_blob, now],
         )
         .context("insert status_history")?;
 
@@ -306,7 +311,7 @@ pub async fn get_status_history(
         let limit_i64 = limit as i64;
         let mut stmt = conn
             .prepare(
-                "SELECT id, node_id, status_json, received_at
+                "SELECT id, node_id, status_blob, received_at
                  FROM status_history
                  WHERE node_id = ?1
                  ORDER BY received_at DESC
@@ -316,11 +321,17 @@ pub async fn get_status_history(
 
         let rows = stmt
             .query_map(params![node_id, limit_i64], |row| {
+                let id: i64 = row.get(0)?;
+                let node_id: String = row.get(1)?;
+                let blob: Vec<u8> = row.get(2)?;
+                let received_at: i64 = row.get(3)?;
+                let status = NodeStatus::decode(blob.as_slice())
+                    .unwrap_or_default();
                 Ok(StatusHistoryRow {
-                    id: row.get(0)?,
-                    node_id: row.get(1)?,
-                    status_json: row.get(2)?,
-                    received_at: row.get(3)?,
+                    id,
+                    node_id,
+                    status,
+                    received_at,
                 })
             })
             .context("query get_status_history")?
@@ -461,6 +472,40 @@ pub async fn get_fleet_overview(db: &Db) -> Result<FleetOverview> {
             by_state,
             connected_nodes: 0,
         })
+    })
+    .await?
+}
+
+pub async fn get_setting(db: &Db, key: &str) -> Result<Option<String>> {
+    let db = db.clone();
+    let key = key.to_owned();
+    tokio::task::spawn_blocking(move || {
+        let conn = db.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
+        let value: Option<String> = conn
+            .query_row(
+                "SELECT value FROM settings WHERE key = ?1",
+                params![key],
+                |row| row.get(0),
+            )
+            .optional()
+            .context("get_setting")?;
+        Ok(value)
+    })
+    .await?
+}
+
+pub async fn set_setting(db: &Db, key: &str, value: &str) -> Result<()> {
+    let db = db.clone();
+    let key = key.to_owned();
+    let value = value.to_owned();
+    tokio::task::spawn_blocking(move || {
+        let conn = db.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
+        conn.execute(
+            "INSERT OR REPLACE INTO settings (key, value) VALUES (?1, ?2)",
+            params![key, value],
+        )
+        .context("set_setting")?;
+        Ok(())
     })
     .await?
 }
@@ -635,7 +680,7 @@ mod tests {
 
         let history = get_status_history(&db, "node-1", 10u32).await.unwrap();
         assert_eq!(history.len(), 1);
-        assert!(history[0].status_json.contains("healthy"));
+        assert_eq!(history[0].status.state, "healthy");
     }
 
     #[tokio::test]
@@ -720,15 +765,42 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn get_set_setting() {
+        let db = test_db();
+
+        // Missing key returns None
+        assert!(get_setting(&db, "grafana_url").await.unwrap().is_none());
+
+        // Set and get
+        set_setting(&db, "grafana_url", "https://grafana.example.com")
+            .await
+            .unwrap();
+        assert_eq!(
+            get_setting(&db, "grafana_url").await.unwrap().as_deref(),
+            Some("https://grafana.example.com")
+        );
+
+        // Overwrite
+        set_setting(&db, "grafana_url", "https://new.example.com")
+            .await
+            .unwrap();
+        assert_eq!(
+            get_setting(&db, "grafana_url").await.unwrap().as_deref(),
+            Some("https://new.example.com")
+        );
+    }
+
+    #[tokio::test]
     async fn prune_removes_old_data() {
         let db = test_db();
         // Insert old status_history directly
         {
             let conn = db.lock().unwrap();
             let old_time = now_epoch_secs() - 100 * 86400; // 100 days ago
+            let empty_status = NodeStatus::default().encode_to_vec();
             conn.execute(
-                "INSERT INTO status_history (node_id, status_json, received_at) VALUES (?1, ?2, ?3)",
-                params!["node-old", "{}", old_time],
+                "INSERT INTO status_history (node_id, status_blob, received_at) VALUES (?1, ?2, ?3)",
+                params!["node-old", empty_status, old_time],
             )
             .unwrap();
             let old_time_ms = old_time * 1000;

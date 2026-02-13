@@ -17,6 +17,8 @@ pub struct ControllerConfig {
     pub retention_days: u32,
     #[serde(default)]
     pub external_url: String,
+    #[serde(default)]
+    pub grafana_url: String,
 }
 
 impl ControllerConfig {
@@ -81,6 +83,7 @@ mod tests {
             db_path: "/tmp/test.db".to_string(),
             retention_days: DEFAULT_RETENTION_DAYS,
             external_url: String::new(),
+            grafana_url: String::new(),
         };
         let err = config.validate().unwrap_err();
         assert!(err.contains("grpc_listen"));
@@ -94,6 +97,7 @@ mod tests {
             db_path: "/tmp/test.db".to_string(),
             retention_days: 0,
             external_url: String::new(),
+            grafana_url: String::new(),
         };
         let err = config.validate().unwrap_err();
         assert!(err.contains("retention_days"));
