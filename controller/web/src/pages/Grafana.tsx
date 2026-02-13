@@ -9,7 +9,6 @@ function Grafana() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
-  const [copied, setCopied] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState<Tab>('fleet-overview')
   const [showSettings, setShowSettings] = useState(false)
 
@@ -34,18 +33,6 @@ function Grafana() {
       setError(e instanceof Error ? e.message : 'Failed to save')
     } finally {
       setSaving(false)
-    }
-  }
-
-  const copyDashboard = async (name: string) => {
-    try {
-      const res = await fetch(`/api/dashboards/${name}`)
-      const text = await res.text()
-      await navigator.clipboard.writeText(text)
-      setCopied(name)
-      setTimeout(() => setCopied(null), 2000)
-    } catch {
-      /* ignore */
     }
   }
 
@@ -98,82 +85,18 @@ function Grafana() {
     )
   }
 
-  // Setup / settings view
+  // Not configured / settings view
   return (
     <div className="content">
-      <h2 className="section-heading" style={{ marginBottom: '1.5rem' }}>
-        {showSettings ? 'Grafana Settings' : 'Grafana Setup'}
-      </h2>
-
-      {!showSettings && (
-        <div className="grafana-setup">
-          <div className="grafana-step">
-            <div className="grafana-step-number">1</div>
-            <div className="grafana-step-content">
-              <h3>Install Grafana</h3>
-              <p>
-                Install and start Grafana on your machine.{' '}
-                <a
-                  href="https://grafana.com/docs/grafana/latest/setup-grafana/installation/"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  Installation docs
-                </a>
-              </p>
-            </div>
-          </div>
-
-          <div className="grafana-step">
-            <div className="grafana-step-number">2</div>
-            <div className="grafana-step-content">
-              <h3>Add Prometheus Data Source</h3>
-              <p>
-                In Grafana, go to <strong>Configuration &gt; Data Sources &gt; Add data source</strong> and select Prometheus. Set the URL to:
-              </p>
-              <code className="grafana-code-block">{window.location.origin}/metrics</code>
-            </div>
-          </div>
-
-          <div className="grafana-step">
-            <div className="grafana-step-number">3</div>
-            <div className="grafana-step-content">
-              <h3>Import Dashboards</h3>
-              <p>
-                Copy the dashboard JSON and import via <strong>Dashboards &gt; Import</strong> in Grafana.
-              </p>
-              <div style={{ display: 'flex', gap: '0.75rem', marginTop: '0.5rem' }}>
-                <button className="btn primary" onClick={() => copyDashboard('fleet-overview')}>
-                  {copied === 'fleet-overview' ? 'Copied!' : 'Copy Fleet Overview JSON'}
-                </button>
-                <button className="btn primary" onClick={() => copyDashboard('node-detail')}>
-                  {copied === 'node-detail' ? 'Copied!' : 'Copy Node Detail JSON'}
-                </button>
-              </div>
-            </div>
-          </div>
-
-          <div className="grafana-step">
-            <div className="grafana-step-number">4</div>
-            <div className="grafana-step-content">
-              <h3>Enable Embedding</h3>
-              <p>
-                In <code>grafana.ini</code>, set <code>allow_embedding = true</code> under <code>[security]</code> to allow iframe embedding.
-              </p>
-            </div>
-          </div>
-
-          <div className="grafana-step">
-            <div className="grafana-step-number">5</div>
-            <div className="grafana-step-content">
-              <h3>Enter Grafana URL</h3>
-              <p>Paste your Grafana URL to embed dashboards in this page.</p>
-            </div>
-          </div>
-        </div>
-      )}
-
-      <div style={{ marginTop: showSettings ? 0 : '1.5rem' }}>
+      <div className="grafana-not-configured">
+        <h2 className="section-heading">
+          {showSettings ? 'Grafana Settings' : 'Grafana'}
+        </h2>
+        <p style={{ color: 'var(--text-dim)', fontSize: '0.875rem', margin: '0.5rem 0 1.5rem' }}>
+          {grafanaUrl
+            ? 'Update the Grafana URL below.'
+            : 'Grafana is installed and configured automatically by the controller installer. Enter the Grafana URL to embed dashboards here.'}
+        </p>
         <div className="form-group" style={{ maxWidth: '500px' }}>
           <label>Grafana URL</label>
           <div style={{ display: 'flex', gap: '0.75rem' }}>
@@ -181,7 +104,7 @@ function Grafana() {
               type="text"
               value={urlInput}
               onChange={(e) => setUrlInput(e.target.value)}
-              placeholder="https://grafana.example.com"
+              placeholder="http://localhost:3000"
               style={{ flex: 1 }}
             />
             <button className="btn primary" onClick={handleSave} disabled={saving}>
