@@ -45,6 +45,7 @@ pub fn router(state: ApiState) -> Router {
         .route("/api/nodes/{id}/cancel", post(cancel_deployment))
         .route("/api/cluster-defaults/{cluster}", get(cluster_defaults))
         .route("/api/onboard-command", get(onboard_command))
+        .route("/api/certs/client-bundle", get(client_cert_bundle))
         .route(
             "/api/settings/grafana",
             get(get_grafana_settings).put(set_grafana_settings),
@@ -761,11 +762,64 @@ async fn onboard_command(State(state): State<ApiState>) -> impl IntoResponse {
     let mut cmd = format!(
         "curl -sSL https://get.pillar.sh | bash -s -- --controller {endpoint}"
     );
+
     if !state.auth_token.is_empty() {
         cmd.push_str(&format!(" \\\n  --token {}", state.auth_token));
     }
 
+    // When TLS is enabled, include the HTTP base URL so install script can fetch ca.pem
+    if !state.config.certs_dir.is_empty() {
+        let http_base = if state.config.external_url.is_empty() {
+            format!(
+                "http://localhost:{}",
+                state.config.http_listen.rsplit_once(':').map(|(_, p)| p).unwrap_or("8080")
+            )
+        } else {
+            let host = state
+                .config
+                .external_url
+                .trim_start_matches("http://")
+                .trim_start_matches("https://")
+                .rsplit_once(':')
+                .map(|(h, _)| h)
+                .unwrap_or(&state.config.external_url);
+            let http_port = state
+                .config
+                .http_listen
+                .rsplit_once(':')
+                .map(|(_, p)| p)
+                .unwrap_or("8080");
+            format!("http://{host}:{http_port}")
+        };
+        cmd.push_str(&format!(" \\\n  --http-url {http_base}"));
+    }
+
     Json(OnboardCommandResponse { command: cmd })
+}
+
+#[derive(Serialize)]
+struct CertBundleResponse {
+    ca_cert: String,
+}
+
+async fn client_cert_bundle(State(state): State<ApiState>) -> impl IntoResponse {
+    if state.config.certs_dir.is_empty() {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({"error": "TLS not enabled (certs_dir not configured)"})),
+        )
+            .into_response();
+    }
+
+    let ca_path = std::path::Path::new(&state.config.certs_dir).join("ca.pem");
+    match std::fs::read_to_string(&ca_path) {
+        Ok(ca) => Json(CertBundleResponse { ca_cert: ca }).into_response(),
+        Err(_) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"error": "failed to read ca.pem"})),
+        )
+            .into_response(),
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -904,6 +958,10 @@ async fn grafana_proxy(
     let mut resp_builder = Response::builder().status(status);
 
     for (name, value) in upstream_resp.headers() {
+        // Let axum set these based on the actual body we send
+        if name == "transfer-encoding" || name == "content-length" {
+            continue;
+        }
         resp_builder = resp_builder.header(name, value);
     }
 

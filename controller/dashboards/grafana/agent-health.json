@@ -1,0 +1,422 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "id": 100,
+      "title": "Controller Connectivity",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "#f44336", "value": null }, { "color": "#4caf50", "value": 1 }] },
+          "color": { "mode": "thresholds" },
+          "mappings": [{ "options": { "0": { "text": "DISCONNECTED", "color": "#f44336" }, "1": { "text": "CONNECTED", "color": "#4caf50" } }, "type": "value" }]
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 1 },
+      "id": 1,
+      "options": { "colorMode": "background", "graphMode": "none", "justifyMode": "center", "textMode": "value", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } },
+      "title": "Controller Link",
+      "type": "stat",
+      "targets": [{ "expr": "pillar_controller_connected{node_id=\"$node_id\"}", "legendFormat": "", "refId": "A" }]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "#4caf50", "value": null }, { "color": "#ffc107", "value": 100 }, { "color": "#f44336", "value": 500 }] },
+          "color": { "mode": "thresholds" },
+          "unit": "ms"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 1 },
+      "id": 2,
+      "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "textMode": "value", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } },
+      "title": "gRPC Latency",
+      "type": "stat",
+      "targets": [{ "expr": "pillar_controller_latency_ms{node_id=\"$node_id\"}", "legendFormat": "", "refId": "A" }]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "#2196f3", "value": null }] },
+          "color": { "mode": "thresholds" }
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 1 },
+      "id": 3,
+      "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "textMode": "value", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } },
+      "title": "Reports Sent",
+      "type": "stat",
+      "targets": [{ "expr": "pillar_status_reports_sent{node_id=\"$node_id\"}", "legendFormat": "", "refId": "A" }]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "#4caf50", "value": null }, { "color": "#f44336", "value": 1 }] },
+          "color": { "mode": "thresholds" }
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 1 },
+      "id": 4,
+      "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "textMode": "value", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } },
+      "title": "Reports Failed",
+      "type": "stat",
+      "targets": [{ "expr": "pillar_status_reports_failed{node_id=\"$node_id\"}", "legendFormat": "", "refId": "A" }]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "#4caf50", "value": null }, { "color": "#ffc107", "value": 1 }] },
+          "color": { "mode": "thresholds" }
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 16, "y": 1 },
+      "id": 5,
+      "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "textMode": "value", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } },
+      "title": "Log Batches Dropped",
+      "type": "stat",
+      "targets": [{ "expr": "pillar_log_batches_dropped{node_id=\"$node_id\"}", "legendFormat": "", "refId": "A" }]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "#2196f3", "value": null }] },
+          "color": { "mode": "thresholds" }
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 20, "y": 1 },
+      "id": 6,
+      "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "textMode": "value", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } },
+      "title": "Commands Received",
+      "type": "stat",
+      "targets": [{ "expr": "pillar_commands_received{node_id=\"$node_id\"}", "legendFormat": "", "refId": "A" }]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "axisBorderShow": false, "axisLabel": "ms", "drawStyle": "line", "fillOpacity": 10, "lineWidth": 1, "pointSize": 5, "showPoints": "never", "spanNulls": false, "stacking": { "mode": "none" } },
+          "unit": "ms"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 5 },
+      "id": 7,
+      "options": {
+        "legend": { "calcs": ["lastNotNull", "max", "mean"], "displayMode": "table", "placement": "bottom" },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "title": "gRPC Latency Over Time",
+      "type": "timeseries",
+      "targets": [{ "expr": "pillar_controller_latency_ms{node_id=\"$node_id\"}", "legendFormat": "latency ms", "refId": "A" }]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "axisBorderShow": false, "axisLabel": "reports/s", "drawStyle": "line", "fillOpacity": 10, "lineWidth": 1, "pointSize": 5, "showPoints": "never", "spanNulls": false, "stacking": { "mode": "none" } }
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 5 },
+      "id": 8,
+      "options": {
+        "legend": { "calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom" },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "title": "Status Report Rate",
+      "type": "timeseries",
+      "targets": [
+        { "expr": "rate(pillar_status_reports_sent{node_id=\"$node_id\"}[5m])", "legendFormat": "sent/s", "refId": "A" },
+        { "expr": "rate(pillar_status_reports_failed{node_id=\"$node_id\"}[5m])", "legendFormat": "failed/s", "refId": "B" }
+      ]
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 13 },
+      "id": 101,
+      "title": "Reconciler Health",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "#2196f3", "value": null }] },
+          "color": { "mode": "thresholds" }
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 14 },
+      "id": 10,
+      "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "textMode": "value", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } },
+      "title": "Reconcile Count",
+      "type": "stat",
+      "targets": [{ "expr": "pillar_reconcile_count{node_id=\"$node_id\"}", "legendFormat": "", "refId": "A" }]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "#4caf50", "value": null }, { "color": "#f44336", "value": 1 }] },
+          "color": { "mode": "thresholds" }
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 14 },
+      "id": 11,
+      "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "textMode": "value", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } },
+      "title": "Health Check Errors",
+      "type": "stat",
+      "targets": [{ "expr": "pillar_health_check_errors{node_id=\"$node_id\"}", "legendFormat": "", "refId": "A" }]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "#4caf50", "value": null }, { "color": "#ffc107", "value": 1 }, { "color": "#f44336", "value": 3 }] },
+          "color": { "mode": "thresholds" }
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 14 },
+      "id": 12,
+      "options": { "colorMode": "value", "graphMode": "none", "justifyMode": "auto", "textMode": "value", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } },
+      "title": "Consecutive Off",
+      "type": "stat",
+      "targets": [{ "expr": "pillar_consecutive_off_count{node_id=\"$node_id\"}", "legendFormat": "", "refId": "A" }]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "#4caf50", "value": null }, { "color": "#ffc107", "value": 1 }] },
+          "color": { "mode": "thresholds" }
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 14 },
+      "id": 13,
+      "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "textMode": "value", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } },
+      "title": "Recovery Count",
+      "type": "stat",
+      "targets": [{ "expr": "pillar_recovery_count{node_id=\"$node_id\"}", "legendFormat": "", "refId": "A" }]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "#2196f3", "value": null }] },
+          "color": { "mode": "thresholds" },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 16, "y": 14 },
+      "id": 14,
+      "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "textMode": "value", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } },
+      "title": "Agent Uptime",
+      "type": "stat",
+      "targets": [{ "expr": "pillar_agent_uptime_secs{node_id=\"$node_id\"}", "legendFormat": "", "refId": "A" }]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "#4caf50", "value": null }, { "color": "#f44336", "value": 1 }] },
+          "color": { "mode": "thresholds" },
+          "mappings": [{ "options": { "0": { "text": "Match" }, "1": { "text": "MISMATCH", "color": "#f44336" } }, "type": "value" }]
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 20, "y": 14 },
+      "id": 15,
+      "options": { "colorMode": "background", "graphMode": "none", "justifyMode": "center", "textMode": "value", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } },
+      "title": "Version Mismatch",
+      "type": "stat",
+      "targets": [{ "expr": "pillar_version_mismatch{node_id=\"$node_id\"}", "legendFormat": "", "refId": "A" }]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "axisBorderShow": false, "axisLabel": "", "drawStyle": "line", "fillOpacity": 10, "lineWidth": 1, "pointSize": 5, "showPoints": "never", "spanNulls": false, "stacking": { "mode": "none" } }
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 18 },
+      "id": 16,
+      "options": {
+        "legend": { "calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom" },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "title": "Reconcile Rate",
+      "type": "timeseries",
+      "targets": [
+        { "expr": "rate(pillar_reconcile_count{node_id=\"$node_id\"}[5m])", "legendFormat": "reconciles/s", "refId": "A" },
+        { "expr": "rate(pillar_health_check_errors{node_id=\"$node_id\"}[5m])", "legendFormat": "health check errors/s", "refId": "B" }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "axisBorderShow": false, "axisLabel": "%", "drawStyle": "line", "fillOpacity": 10, "lineWidth": 1, "pointSize": 5, "showPoints": "never", "spanNulls": false, "stacking": { "mode": "none" } },
+          "unit": "percent", "max": 100, "min": 0
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 18 },
+      "id": 17,
+      "options": {
+        "legend": { "calcs": ["lastNotNull", "max", "mean"], "displayMode": "table", "placement": "bottom" },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "title": "Agent Process Resources",
+      "type": "timeseries",
+      "targets": [
+        { "expr": "pillar_process_cpu_percent{node_id=\"$node_id\", process=\"agent\"}", "legendFormat": "agent CPU %", "refId": "A" }
+      ]
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 26 },
+      "id": 102,
+      "title": "Fleet Agent Overview (all nodes)",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "align": "auto", "cellOptions": { "type": "auto" }, "inspect": false },
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "connected" },
+            "properties": [
+              { "id": "custom.cellOptions", "value": { "mode": "basic", "type": "color-background" } },
+              { "id": "thresholds", "value": { "mode": "absolute", "steps": [{ "color": "#f44336", "value": null }, { "color": "#4caf50", "value": 1 }] } },
+              { "id": "mappings", "value": [{ "options": { "0": { "text": "NO" }, "1": { "text": "YES" } }, "type": "value" }] }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "latency ms" },
+            "properties": [
+              { "id": "unit", "value": "ms" },
+              { "id": "thresholds", "value": { "mode": "absolute", "steps": [{ "color": "#4caf50", "value": null }, { "color": "#ffc107", "value": 100 }, { "color": "#f44336", "value": 500 }] } },
+              { "id": "custom.cellOptions", "value": { "mode": "basic", "type": "color-text" } }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "reports failed" },
+            "properties": [
+              { "id": "thresholds", "value": { "mode": "absolute", "steps": [{ "color": "#4caf50", "value": null }, { "color": "#f44336", "value": 1 }] } },
+              { "id": "custom.cellOptions", "value": { "mode": "basic", "type": "color-text" } }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "uptime" },
+            "properties": [
+              { "id": "unit", "value": "s" }
+            ]
+          }
+        ]
+      },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 27 },
+      "id": 20,
+      "options": { "showHeader": true, "sortBy": [{ "desc": false, "displayName": "node_id" }] },
+      "title": "Agent Status (all nodes)",
+      "type": "table",
+      "targets": [
+        { "expr": "pillar_controller_connected", "format": "table", "instant": true, "refId": "connected" },
+        { "expr": "pillar_controller_latency_ms", "format": "table", "instant": true, "refId": "latency" },
+        { "expr": "pillar_status_reports_sent", "format": "table", "instant": true, "refId": "sent" },
+        { "expr": "pillar_status_reports_failed", "format": "table", "instant": true, "refId": "failed" },
+        { "expr": "pillar_agent_uptime_secs", "format": "table", "instant": true, "refId": "uptime" }
+      ],
+      "transformations": [
+        { "id": "merge", "options": {} },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": { "Time": true, "__name__": true, "instance": true, "job": true, "process": true },
+            "renameByName": {
+              "Value #connected": "connected",
+              "Value #latency": "latency ms",
+              "Value #sent": "reports sent",
+              "Value #failed": "reports failed",
+              "Value #uptime": "uptime"
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "schemaVersion": 39,
+  "tags": ["pillar", "solana", "agent"],
+  "templating": {
+    "list": [
+      {
+        "current": { "selected": true, "text": "Pillar Prometheus", "value": "pillar-prometheus" },
+        "hide": 0,
+        "includeAll": false,
+        "label": "Datasource",
+        "multi": false,
+        "name": "datasource",
+        "options": [],
+        "query": "prometheus",
+        "refresh": 1,
+        "regex": "",
+        "type": "datasource"
+      },
+      {
+        "current": {},
+        "datasource": { "type": "prometheus", "uid": "${datasource}" },
+        "definition": "label_values(pillar_controller_connected, node_id)",
+        "hide": 0,
+        "includeAll": false,
+        "label": "Node",
+        "multi": false,
+        "name": "node_id",
+        "options": [],
+        "query": "label_values(pillar_controller_connected, node_id)",
+        "refresh": 2,
+        "regex": "",
+        "sort": 1,
+        "type": "query"
+      }
+    ]
+  },
+  "time": { "from": "now-1h", "to": "now" },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "Pillar Agent Health",
+  "uid": "pillar-agent-health",
+  "version": 1
+}

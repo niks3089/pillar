@@ -1,7 +1,5 @@
 {
-  "annotations": {
-    "list": []
-  },
+  "annotations": { "list": [] },
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 1,
@@ -12,12 +10,7 @@
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "fieldConfig": {
         "defaults": {
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              { "color": "#2196f3", "value": null }
-            ]
-          },
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "#2196f3", "value": null }] },
           "color": { "mode": "thresholds" }
         },
         "overrides": []
@@ -25,32 +18,18 @@
       "gridPos": { "h": 4, "w": 4, "x": 0, "y": 0 },
       "id": 1,
       "options": {
-        "colorMode": "value",
-        "graphMode": "none",
-        "justifyMode": "auto",
-        "textMode": "value",
+        "colorMode": "value", "graphMode": "none", "justifyMode": "auto", "textMode": "value",
         "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }
       },
       "title": "Total Nodes",
       "type": "stat",
-      "targets": [
-        {
-          "expr": "count(pillar_node_healthy)",
-          "legendFormat": "",
-          "refId": "A"
-        }
-      ]
+      "targets": [{ "expr": "count(pillar_node_healthy)", "legendFormat": "", "refId": "A" }]
     },
     {
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "fieldConfig": {
         "defaults": {
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              { "color": "#4caf50", "value": null }
-            ]
-          },
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "#4caf50", "value": null }] },
           "color": { "mode": "thresholds" }
         },
         "overrides": []
@@ -58,33 +37,18 @@
       "gridPos": { "h": 4, "w": 4, "x": 4, "y": 0 },
       "id": 2,
       "options": {
-        "colorMode": "value",
-        "graphMode": "none",
-        "justifyMode": "auto",
-        "textMode": "value",
+        "colorMode": "value", "graphMode": "none", "justifyMode": "auto", "textMode": "value",
         "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }
       },
       "title": "Healthy Nodes",
       "type": "stat",
-      "targets": [
-        {
-          "expr": "count(pillar_node_healthy == 1)",
-          "legendFormat": "",
-          "refId": "A"
-        }
-      ]
+      "targets": [{ "expr": "count(pillar_node_healthy == 1) or vector(0)", "legendFormat": "", "refId": "A" }]
     },
     {
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "fieldConfig": {
         "defaults": {
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              { "color": "#4caf50", "value": null },
-              { "color": "#f44336", "value": 1 }
-            ]
-          },
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "#4caf50", "value": null }, { "color": "#f44336", "value": 1 }] },
           "color": { "mode": "thresholds" }
         },
         "overrides": []
@@ -92,143 +56,146 @@
       "gridPos": { "h": 4, "w": 4, "x": 8, "y": 0 },
       "id": 3,
       "options": {
-        "colorMode": "value",
-        "graphMode": "none",
-        "justifyMode": "auto",
-        "textMode": "value",
+        "colorMode": "value", "graphMode": "none", "justifyMode": "auto", "textMode": "value",
         "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }
       },
       "title": "Unhealthy / Offline",
       "type": "stat",
-      "targets": [
-        {
-          "expr": "count(pillar_node_healthy == 0) or vector(0)",
-          "legendFormat": "",
-          "refId": "A"
-        }
-      ]
+      "targets": [{ "expr": "count(pillar_node_healthy == 0) or vector(0)", "legendFormat": "", "refId": "A" }]
     },
     {
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "fieldConfig": {
         "defaults": {
-          "custom": {
-            "align": "auto",
-            "cellOptions": { "type": "auto" },
-            "inspect": false
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              { "color": "green", "value": null }
-            ]
-          }
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "#4caf50", "value": null }, { "color": "#f44336", "value": 1 }] },
+          "color": { "mode": "thresholds" }
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 0 },
+      "id": 8,
+      "options": {
+        "colorMode": "value", "graphMode": "none", "justifyMode": "auto", "textMode": "value",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }
+      },
+      "title": "Crash Looping",
+      "type": "stat",
+      "targets": [{ "expr": "count(pillar_node_crash_looping == 1) or vector(0)", "legendFormat": "", "refId": "A" }]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "#2196f3", "value": null }] },
+          "color": { "mode": "thresholds" }
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 16, "y": 0 },
+      "id": 9,
+      "options": {
+        "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "textMode": "value",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }
+      },
+      "title": "Avg CPU %",
+      "type": "stat",
+      "targets": [{ "expr": "avg(pillar_system_cpu_usage_percent)", "legendFormat": "", "refId": "A" }]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "#2196f3", "value": null }] },
+          "color": { "mode": "thresholds" }
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 20, "y": 0 },
+      "id": 10,
+      "options": {
+        "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "textMode": "value",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }
+      },
+      "title": "Avg Memory %",
+      "type": "stat",
+      "targets": [{ "expr": "avg(pillar_system_memory_used_bytes / pillar_system_memory_total_bytes * 100)", "legendFormat": "", "refId": "A" }]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "align": "auto", "cellOptions": { "type": "auto" }, "inspect": false },
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] }
         },
         "overrides": [
           {
             "matcher": { "id": "byName", "options": "healthy" },
             "properties": [
-              {
-                "id": "custom.cellOptions",
-                "value": {
-                  "mode": "basic",
-                  "type": "color-background"
-                }
-              },
-              {
-                "id": "thresholds",
-                "value": {
-                  "mode": "absolute",
-                  "steps": [
-                    { "color": "#f44336", "value": null },
-                    { "color": "#4caf50", "value": 1 }
-                  ]
-                }
-              }
+              { "id": "custom.cellOptions", "value": { "mode": "basic", "type": "color-background" } },
+              { "id": "thresholds", "value": { "mode": "absolute", "steps": [{ "color": "#f44336", "value": null }, { "color": "#4caf50", "value": 1 }] } },
+              { "id": "mappings", "value": [{ "options": { "0": { "text": "DOWN" }, "1": { "text": "UP" } }, "type": "value" }] }
             ]
           },
           {
             "matcher": { "id": "byName", "options": "slots_behind" },
             "properties": [
-              {
-                "id": "thresholds",
-                "value": {
-                  "mode": "absolute",
-                  "steps": [
-                    { "color": "#4caf50", "value": null },
-                    { "color": "#ffc107", "value": 50 },
-                    { "color": "#f44336", "value": 200 }
-                  ]
-                }
-              },
-              {
-                "id": "custom.cellOptions",
-                "value": {
-                  "mode": "basic",
-                  "type": "color-text"
-                }
-              }
+              { "id": "thresholds", "value": { "mode": "absolute", "steps": [{ "color": "#4caf50", "value": null }, { "color": "#ffc107", "value": 50 }, { "color": "#f44336", "value": 200 }] } },
+              { "id": "custom.cellOptions", "value": { "mode": "basic", "type": "color-text" } }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "cpu %" },
+            "properties": [
+              { "id": "unit", "value": "percent" },
+              { "id": "decimals", "value": 1 },
+              { "id": "thresholds", "value": { "mode": "absolute", "steps": [{ "color": "#4caf50", "value": null }, { "color": "#ffc107", "value": 70 }, { "color": "#f44336", "value": 90 }] } },
+              { "id": "custom.cellOptions", "value": { "mode": "basic", "type": "color-text" } }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "memory %" },
+            "properties": [
+              { "id": "unit", "value": "percent" },
+              { "id": "decimals", "value": 1 },
+              { "id": "thresholds", "value": { "mode": "absolute", "steps": [{ "color": "#4caf50", "value": null }, { "color": "#ffc107", "value": 70 }, { "color": "#f44336", "value": 90 }] } },
+              { "id": "custom.cellOptions", "value": { "mode": "basic", "type": "color-text" } }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "disk %" },
+            "properties": [
+              { "id": "unit", "value": "percent" },
+              { "id": "decimals", "value": 1 },
+              { "id": "thresholds", "value": { "mode": "absolute", "steps": [{ "color": "#4caf50", "value": null }, { "color": "#ffc107", "value": 80 }, { "color": "#f44336", "value": 90 }] } },
+              { "id": "custom.cellOptions", "value": { "mode": "basic", "type": "color-text" } }
             ]
           }
         ]
       },
       "gridPos": { "h": 10, "w": 24, "x": 0, "y": 4 },
       "id": 4,
-      "options": {
-        "showHeader": true,
-        "sortBy": [{ "desc": false, "displayName": "node_id" }]
-      },
+      "options": { "showHeader": true, "sortBy": [{ "desc": false, "displayName": "node_id" }] },
       "title": "Node List",
       "type": "table",
       "targets": [
-        {
-          "expr": "pillar_node_healthy",
-          "format": "table",
-          "instant": true,
-          "legendFormat": "",
-          "refId": "healthy"
-        },
-        {
-          "expr": "pillar_node_slots_behind",
-          "format": "table",
-          "instant": true,
-          "legendFormat": "",
-          "refId": "slots_behind"
-        },
-        {
-          "expr": "pillar_system_cpu_usage_percent",
-          "format": "table",
-          "instant": true,
-          "legendFormat": "",
-          "refId": "cpu"
-        },
-        {
-          "expr": "pillar_system_memory_used_bytes / pillar_system_memory_total_bytes * 100",
-          "format": "table",
-          "instant": true,
-          "legendFormat": "",
-          "refId": "memory_pct"
-        }
+        { "expr": "pillar_node_healthy", "format": "table", "instant": true, "refId": "healthy" },
+        { "expr": "pillar_node_slots_behind", "format": "table", "instant": true, "refId": "slots_behind" },
+        { "expr": "pillar_system_cpu_usage_percent", "format": "table", "instant": true, "refId": "cpu" },
+        { "expr": "pillar_system_memory_used_bytes / pillar_system_memory_total_bytes * 100", "format": "table", "instant": true, "refId": "memory_pct" },
+        { "expr": "pillar_system_disk_used_bytes / pillar_system_disk_total_bytes * 100", "format": "table", "instant": true, "refId": "disk_pct" }
       ],
       "transformations": [
-        {
-          "id": "merge",
-          "options": {}
-        },
+        { "id": "merge", "options": {} },
         {
           "id": "organize",
           "options": {
-            "excludeByName": {
-              "Time": true,
-              "__name__": true,
-              "instance": true,
-              "job": true
-            },
+            "excludeByName": { "Time": true, "__name__": true, "instance": true, "job": true },
             "renameByName": {
               "Value #healthy": "healthy",
               "Value #slots_behind": "slots_behind",
               "Value #cpu": "cpu %",
-              "Value #memory_pct": "memory %"
+              "Value #memory_pct": "memory %",
+              "Value #disk_pct": "disk %"
             }
           }
         }
@@ -240,24 +207,11 @@
         "defaults": {
           "color": { "mode": "palette-classic" },
           "custom": {
-            "axisBorderShow": false,
-            "axisLabel": "slots",
-            "drawStyle": "line",
-            "fillOpacity": 10,
-            "lineWidth": 1,
-            "pointSize": 5,
-            "showPoints": "never",
-            "spanNulls": false,
-            "stacking": { "mode": "none" }
+            "axisBorderShow": false, "axisLabel": "slots", "drawStyle": "line",
+            "fillOpacity": 10, "lineWidth": 1, "pointSize": 5, "showPoints": "never",
+            "spanNulls": false, "stacking": { "mode": "none" }
           },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              { "color": "green", "value": null },
-              { "color": "yellow", "value": 50 },
-              { "color": "red", "value": 200 }
-            ]
-          }
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 50 }, { "color": "red", "value": 200 }] }
         },
         "overrides": []
       },
@@ -269,13 +223,7 @@
       },
       "title": "Slots Behind per Node",
       "type": "timeseries",
-      "targets": [
-        {
-          "expr": "pillar_node_slots_behind",
-          "legendFormat": "{{ node_id }}",
-          "refId": "A"
-        }
-      ]
+      "targets": [{ "expr": "pillar_node_slots_behind", "legendFormat": "{{ node_id }}", "refId": "A" }]
     },
     {
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
@@ -283,19 +231,11 @@
         "defaults": {
           "color": { "mode": "palette-classic" },
           "custom": {
-            "axisBorderShow": false,
-            "axisLabel": "%",
-            "drawStyle": "line",
-            "fillOpacity": 10,
-            "lineWidth": 1,
-            "pointSize": 5,
-            "showPoints": "never",
-            "spanNulls": false,
-            "stacking": { "mode": "none" }
+            "axisBorderShow": false, "axisLabel": "%", "drawStyle": "line",
+            "fillOpacity": 10, "lineWidth": 1, "pointSize": 5, "showPoints": "never",
+            "spanNulls": false, "stacking": { "mode": "none" }
           },
-          "max": 100,
-          "min": 0,
-          "unit": "percent"
+          "max": 100, "min": 0, "unit": "percent"
         },
         "overrides": []
       },
@@ -307,12 +247,81 @@
       },
       "title": "CPU Usage per Node",
       "type": "timeseries",
+      "targets": [{ "expr": "pillar_system_cpu_usage_percent", "legendFormat": "{{ node_id }}", "refId": "A" }]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "axisBorderShow": false, "axisLabel": "%", "drawStyle": "line",
+            "fillOpacity": 10, "lineWidth": 1, "pointSize": 5, "showPoints": "never",
+            "spanNulls": false, "stacking": { "mode": "none" }
+          },
+          "max": 100, "min": 0, "unit": "percent"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 22 },
+      "id": 11,
+      "options": {
+        "legend": { "calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom" },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "title": "Memory Usage % per Node",
+      "type": "timeseries",
+      "targets": [{ "expr": "pillar_system_memory_used_bytes / pillar_system_memory_total_bytes * 100", "legendFormat": "{{ node_id }}", "refId": "A" }]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "axisBorderShow": false, "axisLabel": "%", "drawStyle": "line",
+            "fillOpacity": 10, "lineWidth": 1, "pointSize": 5, "showPoints": "never",
+            "spanNulls": false, "stacking": { "mode": "none" }
+          },
+          "max": 100, "min": 0, "unit": "percent"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 22 },
+      "id": 12,
+      "options": {
+        "legend": { "calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom" },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "title": "Disk Usage % per Node",
+      "type": "timeseries",
+      "targets": [{ "expr": "pillar_system_disk_used_bytes / pillar_system_disk_total_bytes * 100", "legendFormat": "{{ node_id }}", "refId": "A" }]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "axisBorderShow": false, "axisLabel": "", "drawStyle": "line",
+            "fillOpacity": 10, "lineWidth": 1, "pointSize": 5, "showPoints": "never",
+            "spanNulls": false, "stacking": { "mode": "none" }
+          },
+          "unit": "Bps"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 30 },
+      "id": 7,
+      "options": {
+        "legend": { "calcs": ["lastNotNull", "max"], "displayMode": "table", "placement": "bottom" },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "title": "Network I/O (all nodes)",
+      "type": "timeseries",
       "targets": [
-        {
-          "expr": "pillar_system_cpu_usage_percent",
-          "legendFormat": "{{ node_id }}",
-          "refId": "A"
-        }
+        { "expr": "rate(pillar_system_network_rx_bytes[5m])", "legendFormat": "{{ node_id }} rx", "refId": "A" },
+        { "expr": "rate(pillar_system_network_tx_bytes[5m])", "legendFormat": "{{ node_id }} tx", "refId": "B" }
       ]
     }
   ],
@@ -321,7 +330,7 @@
   "templating": {
     "list": [
       {
-        "current": {},
+        "current": { "selected": true, "text": "Pillar Prometheus", "value": "pillar-prometheus" },
         "hide": 0,
         "includeAll": false,
         "label": "Datasource",
