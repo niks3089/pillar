@@ -8,50 +8,6 @@ use std::path::Path;
 
 use prost::Message;
 
-/// Default path for the pending-command JSON file (Link writes, Operator reads).
-/// Deprecated: In the merged agent binary, commands flow via in-memory mpsc channel.
-#[deprecated(note = "Use agent's in-memory AgentCommand channel instead")]
-pub const PENDING_COMMAND_PATH: &str = "/var/run/pillar/pending-command.json";
-
-/// A command written by Link for Operator to pick up and execute.
-/// Deprecated: In the merged agent binary, commands flow via in-memory AgentCommand enum.
-#[deprecated(note = "Use agent's in-memory AgentCommand enum instead")]
-#[allow(deprecated)]
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-#[serde(tag = "command_type")]
-pub enum PendingCommand {
-    #[serde(rename = "provision")]
-    Provision {
-        staged_binary_path: String,
-        provision: Box<proto::ProvisionCommand>,
-    },
-    #[serde(rename = "upgrade")]
-    Upgrade {
-        staged_binary_path: String,
-        upgrade: proto::UpgradeCommand,
-    },
-    #[serde(rename = "restart")]
-    Restart { reason: String },
-    #[serde(rename = "recover")]
-    Recover { reason: String },
-    #[serde(rename = "stop")]
-    Stop { reason: String },
-}
-
-#[allow(deprecated)]
-impl PendingCommand {
-    /// Return the command type as a string for logging.
-    pub fn command_type(&self) -> &'static str {
-        match self {
-            PendingCommand::Provision { .. } => "provision",
-            PendingCommand::Upgrade { .. } => "upgrade",
-            PendingCommand::Restart { .. } => "restart",
-            PendingCommand::Recover { .. } => "recover",
-            PendingCommand::Stop { .. } => "stop",
-        }
-    }
-}
-
 /// Read operator state from a binary proto file on disk.
 ///
 /// Returns `Ok(None)` if the file does not exist (operator hasn't written yet).
@@ -70,7 +26,7 @@ pub fn read_state(path: &Path) -> Result<Option<proto::NodeStatus>, String> {
 }
 
 /// Write operator state atomically to a binary proto file.
-/// Uses write-to-temp + rename to avoid partial reads by Link.
+/// Uses write-to-temp + rename to avoid partial reads.
 pub fn write_state(status: &proto::NodeStatus, path: &Path) -> Result<(), String> {
     let bytes = status.encode_to_vec();
     let tmp = path.with_extension("tmp");

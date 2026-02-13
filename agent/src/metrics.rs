@@ -34,7 +34,7 @@ fn register_gauge_vec(registry: &Registry, name: &str, help: &str, labels: &[&st
 pub struct Metrics {
     registry: Registry,
 
-    // Operator state metrics
+    // Node state metrics
     node_state: GaugeVec,
     node_slots_behind: IntGauge,
     node_local_slot: IntGauge,
@@ -54,32 +54,28 @@ pub struct Metrics {
     system_disk_used_bytes: IntGauge,
     system_disk_total_bytes: IntGauge,
 
-    // Process metrics — labeled by process: "validator", "operator", "link"
+    // Process metrics — labeled by process: "validator", "agent"
     process_cpu_percent: GaugeVec,
     process_memory_bytes: GaugeVec,
 
-    // Operator self-health (pass-through from proto)
-    operator_reconcile_count: IntGauge,
-    operator_health_check_errors: IntGauge,
-    operator_consecutive_off_count: IntGauge,
-    operator_recovery_count: IntGauge,
-    operator_state_write_errors: IntGauge,
-    operator_pending_cmd_errors: IntGauge,
-    operator_uptime_secs: IntGauge,
-    operator_version_mismatch: IntGauge,
+    // Reconciler health
+    reconcile_count: IntGauge,
+    health_check_errors: IntGauge,
+    consecutive_off_count: IntGauge,
+    recovery_count: IntGauge,
+    agent_uptime_secs: IntGauge,
+    version_mismatch: IntGauge,
 
-    // Link self-health (from enriched proto)
-    link_controller_connected: IntGauge,
-    link_controller_latency_ms: IntGauge,
-    link_status_reports_sent: IntGauge,
-    link_status_reports_failed: IntGauge,
-    link_log_batches_dropped: IntGauge,
-    link_uptime_secs: IntGauge,
-    link_commands_received: IntGauge,
+    // Controller connectivity
+    controller_connected: IntGauge,
+    controller_latency_ms: IntGauge,
+    status_reports_sent: IntGauge,
+    status_reports_failed: IntGauge,
+    log_batches_dropped: IntGauge,
+    commands_received: IntGauge,
 
-    // Start times (unix epoch, stable per process lifetime)
-    operator_started_at_unix_secs: IntGauge,
-    link_started_at_unix_secs: IntGauge,
+    // Start time (unix epoch, stable per process lifetime)
+    agent_started_at_unix_secs: IntGauge,
 }
 
 impl Metrics {
@@ -106,28 +102,24 @@ impl Metrics {
             process_cpu_percent: register_gauge_vec(&registry, "pillar_process_cpu_percent", "Process CPU usage percentage", &["process"]),
             process_memory_bytes: register_gauge_vec(&registry, "pillar_process_memory_bytes", "Process RSS memory in bytes", &["process"]),
 
-            // Operator self-health
-            operator_reconcile_count: register_int_gauge(&registry, "pillar_operator_reconcile_count", "Total reconciliation ticks"),
-            operator_health_check_errors: register_int_gauge(&registry, "pillar_operator_health_check_errors", "Cumulative health check failures"),
-            operator_consecutive_off_count: register_int_gauge(&registry, "pillar_operator_consecutive_off_count", "Current consecutive Off debounce counter"),
-            operator_recovery_count: register_int_gauge(&registry, "pillar_operator_recovery_count", "Snapshot recoveries attempted"),
-            operator_state_write_errors: register_int_gauge(&registry, "pillar_operator_state_write_errors", "State file write failures (deprecated, always 0)"),
-            operator_pending_cmd_errors: register_int_gauge(&registry, "pillar_operator_pending_cmd_errors", "Command errors (deprecated, always 0)"),
-            operator_uptime_secs: register_int_gauge(&registry, "pillar_operator_uptime_secs", "Seconds since agent started"),
-            operator_version_mismatch: register_int_gauge(&registry, "pillar_operator_version_mismatch", "Validator/cluster version mismatch (1/0)"),
+            // Reconciler health
+            reconcile_count: register_int_gauge(&registry, "pillar_reconcile_count", "Total reconciliation ticks"),
+            health_check_errors: register_int_gauge(&registry, "pillar_health_check_errors", "Cumulative health check failures"),
+            consecutive_off_count: register_int_gauge(&registry, "pillar_consecutive_off_count", "Current consecutive Off debounce counter"),
+            recovery_count: register_int_gauge(&registry, "pillar_recovery_count", "Snapshot recoveries attempted"),
+            agent_uptime_secs: register_int_gauge(&registry, "pillar_agent_uptime_secs", "Seconds since agent started"),
+            version_mismatch: register_int_gauge(&registry, "pillar_version_mismatch", "Validator/cluster version mismatch (1/0)"),
 
-            // Link self-health
-            link_controller_connected: register_int_gauge(&registry, "pillar_link_controller_connected", "Active gRPC connection to controller (1/0)"),
-            link_controller_latency_ms: register_int_gauge(&registry, "pillar_link_controller_latency_ms", "Last ReportStatus round-trip in ms"),
-            link_status_reports_sent: register_int_gauge(&registry, "pillar_link_status_reports_sent", "Successful status report count"),
-            link_status_reports_failed: register_int_gauge(&registry, "pillar_link_status_reports_failed", "Failed status report count"),
-            link_log_batches_dropped: register_int_gauge(&registry, "pillar_link_log_batches_dropped", "Log batches dropped on controller unreachable"),
-            link_uptime_secs: register_int_gauge(&registry, "pillar_link_uptime_secs", "Seconds since agent started"),
-            link_commands_received: register_int_gauge(&registry, "pillar_link_commands_received", "Commands received via CommandStream"),
+            // Controller connectivity
+            controller_connected: register_int_gauge(&registry, "pillar_controller_connected", "Active gRPC connection to controller (1/0)"),
+            controller_latency_ms: register_int_gauge(&registry, "pillar_controller_latency_ms", "Last ReportStatus round-trip in ms"),
+            status_reports_sent: register_int_gauge(&registry, "pillar_status_reports_sent", "Successful status report count"),
+            status_reports_failed: register_int_gauge(&registry, "pillar_status_reports_failed", "Failed status report count"),
+            log_batches_dropped: register_int_gauge(&registry, "pillar_log_batches_dropped", "Log batches dropped on controller unreachable"),
+            commands_received: register_int_gauge(&registry, "pillar_commands_received", "Commands received via CommandStream"),
 
-            // Start times
-            operator_started_at_unix_secs: register_int_gauge(&registry, "pillar_operator_started_at_unix_secs", "Agent process start time (unix epoch)"),
-            link_started_at_unix_secs: register_int_gauge(&registry, "pillar_link_started_at_unix_secs", "Agent process start time (unix epoch)"),
+            // Start time
+            agent_started_at_unix_secs: register_int_gauge(&registry, "pillar_agent_started_at_unix_secs", "Agent process start time (unix epoch)"),
 
             registry,
         }
@@ -188,57 +180,43 @@ impl Metrics {
             .set(status.validator_memory_bytes as f64);
 
         self.process_cpu_percent
-            .with_label_values(&["operator"])
-            .set(status.operator_cpu_percent);
+            .with_label_values(&["agent"])
+            .set(status.agent_cpu_percent);
         self.process_memory_bytes
-            .with_label_values(&["operator"])
-            .set(status.operator_memory_bytes as f64);
+            .with_label_values(&["agent"])
+            .set(status.agent_memory_bytes as f64);
 
-        self.process_cpu_percent
-            .with_label_values(&["link"])
-            .set(status.link_cpu_percent);
-        self.process_memory_bytes
-            .with_label_values(&["link"])
-            .set(status.link_memory_bytes as f64);
+        // Reconciler health
+        self.reconcile_count
+            .set(status.reconcile_count as i64);
+        self.health_check_errors
+            .set(status.health_check_errors as i64);
+        self.consecutive_off_count
+            .set(status.consecutive_off_count as i64);
+        self.recovery_count
+            .set(status.recovery_count as i64);
+        self.agent_uptime_secs
+            .set(status.agent_uptime_secs as i64);
+        self.version_mismatch
+            .set(if status.version_mismatch { 1 } else { 0 });
 
-        // Operator self-health
-        self.operator_reconcile_count
-            .set(status.operator_reconcile_count as i64);
-        self.operator_health_check_errors
-            .set(status.operator_health_check_errors as i64);
-        self.operator_consecutive_off_count
-            .set(status.operator_consecutive_off_count as i64);
-        self.operator_recovery_count
-            .set(status.operator_recovery_count as i64);
-        self.operator_state_write_errors
-            .set(status.operator_state_write_errors as i64);
-        self.operator_pending_cmd_errors
-            .set(status.operator_pending_cmd_errors as i64);
-        self.operator_uptime_secs
-            .set(status.operator_uptime_secs as i64);
-        self.operator_version_mismatch
-            .set(if status.operator_version_mismatch { 1 } else { 0 });
+        // Controller connectivity
+        self.controller_connected
+            .set(if status.controller_connected { 1 } else { 0 });
+        self.controller_latency_ms
+            .set(status.controller_latency_ms as i64);
+        self.status_reports_sent
+            .set(status.status_reports_sent as i64);
+        self.status_reports_failed
+            .set(status.status_reports_failed as i64);
+        self.log_batches_dropped
+            .set(status.log_batches_dropped as i64);
+        self.commands_received
+            .set(status.commands_received as i64);
 
-        // Link self-health
-        self.link_controller_connected
-            .set(if status.link_controller_connected { 1 } else { 0 });
-        self.link_controller_latency_ms
-            .set(status.link_controller_latency_ms as i64);
-        self.link_status_reports_sent
-            .set(status.link_status_reports_sent as i64);
-        self.link_status_reports_failed
-            .set(status.link_status_reports_failed as i64);
-        self.link_log_batches_dropped
-            .set(status.link_log_batches_dropped as i64);
-        self.link_uptime_secs.set(status.link_uptime_secs as i64);
-        self.link_commands_received
-            .set(status.link_commands_received as i64);
-
-        // Start times
-        self.operator_started_at_unix_secs
-            .set(status.operator_started_at_unix_secs);
-        self.link_started_at_unix_secs
-            .set(status.link_started_at_unix_secs);
+        // Start time
+        self.agent_started_at_unix_secs
+            .set(status.agent_started_at_unix_secs);
     }
 
     /// Gather all metrics and encode as Prometheus text format.
@@ -345,5 +323,7 @@ mod tests {
         let output = m.gather();
         assert!(output.contains(r#"pillar_process_cpu_percent{process="validator"}"#));
         assert!(output.contains(r#"pillar_process_memory_bytes{process="validator"}"#));
+        assert!(output.contains(r#"pillar_process_cpu_percent{process="agent"}"#));
+        assert!(output.contains(r#"pillar_process_memory_bytes{process="agent"}"#));
     }
 }

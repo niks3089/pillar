@@ -39,27 +39,19 @@ fn enrich_status(
         }
     }
 
-    // Process metrics: agent (reported as both operator + link for backward compat)
+    // Process metrics: agent
     if let Some(stats) = sys.process_stats(agent_pid) {
-        status.operator_cpu_percent = stats.cpu_usage_percent as f64;
-        status.operator_memory_bytes = stats.memory_rss_bytes;
-        status.link_cpu_percent = stats.cpu_usage_percent as f64;
-        status.link_memory_bytes = stats.memory_rss_bytes;
+        status.agent_cpu_percent = stats.cpu_usage_percent as f64;
+        status.agent_memory_bytes = stats.memory_rss_bytes;
     }
 
-    // Agent health (mapped to link_* fields for backward compat)
-    status.link_controller_connected = agent_health.controller_connected.load(Ordering::Relaxed);
-    status.link_controller_latency_ms = agent_health.controller_latency_ms.load(Ordering::Relaxed);
-    status.link_status_reports_sent = agent_health.status_reports_sent.load(Ordering::Relaxed);
-    status.link_status_reports_failed = agent_health.status_reports_failed.load(Ordering::Relaxed);
-    status.link_log_batches_dropped = agent_health.log_batches_dropped.load(Ordering::Relaxed);
-    status.link_uptime_secs = agent_health.started_at.elapsed().as_secs();
-    status.link_commands_received = agent_health.commands_received.load(Ordering::Relaxed);
-    status.link_started_at_unix_secs = agent_health.started_at_unix_secs;
-
-    // Deprecated IPC metrics — always 0 (no file IPC in agent)
-    status.link_state_file_age_secs = 0;
-    status.link_state_read_errors = 0;
+    // Controller connectivity health
+    status.controller_connected = agent_health.controller_connected.load(Ordering::Relaxed);
+    status.controller_latency_ms = agent_health.controller_latency_ms.load(Ordering::Relaxed);
+    status.status_reports_sent = agent_health.status_reports_sent.load(Ordering::Relaxed);
+    status.status_reports_failed = agent_health.status_reports_failed.load(Ordering::Relaxed);
+    status.log_batches_dropped = agent_health.log_batches_dropped.load(Ordering::Relaxed);
+    status.commands_received = agent_health.commands_received.load(Ordering::Relaxed);
 }
 
 /// Run the metrics updater loop: refresh sysinfo, enrich shared status, update Prometheus.

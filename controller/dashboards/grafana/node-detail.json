@@ -157,14 +157,9 @@
           "refId": "B"
         },
         {
-          "expr": "pillar_process_cpu_percent{node_id=\"$node_id\", process=\"operator\"}",
-          "legendFormat": "operator",
+          "expr": "pillar_process_cpu_percent{node_id=\"$node_id\", process=\"agent\"}",
+          "legendFormat": "agent",
           "refId": "C"
-        },
-        {
-          "expr": "pillar_process_cpu_percent{node_id=\"$node_id\", process=\"link\"}",
-          "legendFormat": "link",
-          "refId": "D"
         }
       ]
     },
@@ -213,14 +208,9 @@
           "refId": "C"
         },
         {
-          "expr": "pillar_process_memory_bytes{node_id=\"$node_id\", process=\"operator\"}",
-          "legendFormat": "operator",
+          "expr": "pillar_process_memory_bytes{node_id=\"$node_id\", process=\"agent\"}",
+          "legendFormat": "agent",
           "refId": "D"
-        },
-        {
-          "expr": "pillar_process_memory_bytes{node_id=\"$node_id\", process=\"link\"}",
-          "legendFormat": "link",
-          "refId": "E"
         }
       ]
     },

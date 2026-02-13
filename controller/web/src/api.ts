@@ -27,8 +27,7 @@ export interface Node {
   cluster?: string
   hostname?: string
   ip_address?: string
-  operator_version?: string
-  link_version?: string
+  agent_version?: string
   last_seen_at?: number
   registered_at?: number
   live_status?: NodeStatus

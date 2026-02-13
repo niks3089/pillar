@@ -99,6 +99,7 @@ impl ControllerLink {
         let reg_req = tonic::Request::new(pillar_shared::proto::RegisterNodeRequest {
             node_id: self.config.node_id.clone(),
             hostname: gethostname(),
+            agent_version: env!("CARGO_PKG_VERSION").to_string(),
             ..Default::default()
         });
         match reg_client.register_node(reg_req).await {

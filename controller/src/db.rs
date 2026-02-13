@@ -30,8 +30,7 @@ fn init_schema(conn: &Connection) -> Result<()> {
             hostname TEXT,
             architecture TEXT,
             os TEXT,
-            operator_version TEXT,
-            link_version TEXT,
+            agent_version TEXT,
             ip_address TEXT,
             last_seen_at INTEGER,
             registered_at INTEGER
@@ -69,6 +68,9 @@ fn init_schema(conn: &Connection) -> Result<()> {
     // Migration: add provision_config_json column if missing
     let _ = conn.execute_batch("ALTER TABLE nodes ADD COLUMN provision_config_json TEXT;");
 
+    // Migration: merge operator_version + link_version → agent_version
+    let _ = conn.execute_batch("ALTER TABLE nodes ADD COLUMN agent_version TEXT;");
+
     Ok(())
 }
 
@@ -91,8 +93,7 @@ pub struct NodeRow {
     pub client: Option<String>,
     pub cluster: Option<String>,
     pub hostname: Option<String>,
-    pub operator_version: Option<String>,
-    pub link_version: Option<String>,
+    pub agent_version: Option<String>,
     pub ip_address: Option<String>,
     pub last_seen_at: Option<i64>,
     pub registered_at: Option<i64>,
@@ -143,8 +144,8 @@ pub async fn upsert_node(db: &Db, req: &RegisterNodeRequest, ip_address: &str) -
         conn.execute(
             "INSERT OR REPLACE INTO nodes
                 (node_id, role, client, cluster, hostname, architecture, os,
-                 operator_version, link_version, ip_address, registered_at, lifecycle_state)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, 'registered')",
+                 agent_version, ip_address, registered_at, lifecycle_state)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, 'registered')",
             params![
                 req.node_id,
                 optional_str(&req.role),
@@ -153,8 +154,7 @@ pub async fn upsert_node(db: &Db, req: &RegisterNodeRequest, ip_address: &str) -
                 optional_str(&req.hostname),
                 optional_str(&req.architecture),
                 optional_str(&req.os),
-                optional_str(&req.operator_version),
-                optional_str(&req.link_version),
+                optional_str(&req.agent_version),
                 optional_str(&ip_address),
                 now,
             ],
@@ -521,7 +521,7 @@ use rusqlite::OptionalExtension;
 
 const NODE_SELECT_COLUMNS: &str =
     "node_id, lifecycle_state, role, client, cluster, hostname,
-     operator_version, link_version, ip_address, last_seen_at, registered_at";
+     agent_version, ip_address, last_seen_at, registered_at";
 
 fn row_to_node(row: &rusqlite::Row) -> rusqlite::Result<NodeRow> {
     Ok(NodeRow {
@@ -531,11 +531,10 @@ fn row_to_node(row: &rusqlite::Row) -> rusqlite::Result<NodeRow> {
         client: row.get(3)?,
         cluster: row.get(4)?,
         hostname: row.get(5)?,
-        operator_version: row.get(6)?,
-        link_version: row.get(7)?,
-        ip_address: row.get(8)?,
-        last_seen_at: row.get(9)?,
-        registered_at: row.get(10)?,
+        agent_version: row.get(6)?,
+        ip_address: row.get(7)?,
+        last_seen_at: row.get(8)?,
+        registered_at: row.get(9)?,
         live_status: None,
     })
 }
@@ -564,8 +563,7 @@ mod tests {
             hostname: "host-1".to_string(),
             architecture: "x86_64".to_string(),
             os: "linux".to_string(),
-            operator_version: "0.1.0".to_string(),
-            link_version: "0.1.0".to_string(),
+            agent_version: "0.1.0".to_string(),
         }
     }
 

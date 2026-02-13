@@ -482,23 +482,18 @@ impl Reconciler {
             String::new()
         };
 
-        // Operator self-health
-        status.operator_reconcile_count = self.reconcile_count;
-        status.operator_health_check_errors = self.health_check_error_count;
-        status.operator_consecutive_off_count = self.consecutive_off_count as u32;
-        status.operator_recovery_count = self.recovery_count;
-        status.operator_state_write_errors = 0; // deprecated: no file IPC
-        status.operator_pending_cmd_errors = 0; // deprecated: no file IPC
-        status.operator_uptime_secs = self.started_at.elapsed().as_secs();
-        status.operator_version_mismatch = self.version_mismatch;
-        status.operator_started_at_unix_secs = self.started_at_unix_secs;
-
-        // Set both version fields to agent version (backward compat)
-        status.operator_version = env!("CARGO_PKG_VERSION").to_string();
-        status.link_version = env!("CARGO_PKG_VERSION").to_string();
+        // Agent self-health
+        status.reconcile_count = self.reconcile_count;
+        status.health_check_errors = self.health_check_error_count;
+        status.consecutive_off_count = self.consecutive_off_count as u32;
+        status.recovery_count = self.recovery_count;
+        status.agent_uptime_secs = self.started_at.elapsed().as_secs();
+        status.version_mismatch = self.version_mismatch;
+        status.agent_started_at_unix_secs = self.started_at_unix_secs;
+        status.agent_version = env!("CARGO_PKG_VERSION").to_string();
 
         // DO NOT touch: cpu_usage_percent, memory_*, disk_*, network_*, validator_*,
-        // link_controller_*, link_status_reports_*, etc. (written by metrics_updater)
+        // controller_*, status_reports_*, etc. (written by metrics_updater)
 
         // Optionally write debug state file
         if !self.config.debug_state_file.is_empty() {

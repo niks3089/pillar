@@ -25,28 +25,22 @@ const METRIC_HEADERS: &[(&str, &str)] = &[
     ("pillar_system_network_tx_bytes", "Network bytes transmitted"),
     ("pillar_process_cpu_percent", "Per-process CPU usage percentage"),
     ("pillar_process_memory_bytes", "Per-process memory usage in bytes"),
-    // Operator self-health
-    ("pillar_operator_reconcile_count", "Total operator reconciliation ticks"),
-    ("pillar_operator_health_check_errors", "Cumulative health check failures"),
-    ("pillar_operator_consecutive_off_count", "Current consecutive Off debounce counter"),
-    ("pillar_operator_recovery_count", "Snapshot recoveries attempted"),
-    ("pillar_operator_state_write_errors", "State file write failures (deprecated, always 0 in agent)"),
-    ("pillar_operator_pending_cmd_errors", "Command errors (deprecated, always 0 in agent)"),
-    ("pillar_operator_uptime_secs", "Seconds since operator started"),
-    ("pillar_operator_version_mismatch", "Validator/cluster version mismatch (1/0)"),
-    // Link self-health
-    ("pillar_link_controller_connected", "Active gRPC connection to controller (1/0)"),
-    ("pillar_link_controller_latency_ms", "Last ReportStatus round-trip in ms"),
-    ("pillar_link_status_reports_sent", "Successful status report count"),
-    ("pillar_link_status_reports_failed", "Failed status report count"),
-    ("pillar_link_state_file_age_secs", "State file age in seconds (deprecated, always 0 in agent)"),
-    ("pillar_link_state_read_errors", "State file read errors (deprecated, always 0 in agent)"),
-    ("pillar_link_log_batches_dropped", "Log batches dropped on controller unreachable"),
-    ("pillar_link_uptime_secs", "Seconds since link started"),
-    ("pillar_link_commands_received", "Commands received via CommandStream"),
-    // Process start times (unix epoch, stable per process lifetime)
-    ("pillar_operator_started_at_unix_secs", "Operator process start time (unix epoch)"),
-    ("pillar_link_started_at_unix_secs", "Link process start time (unix epoch)"),
+    // Reconciler health
+    ("pillar_reconcile_count", "Total reconciliation ticks"),
+    ("pillar_health_check_errors", "Cumulative health check failures"),
+    ("pillar_consecutive_off_count", "Current consecutive Off debounce counter"),
+    ("pillar_recovery_count", "Snapshot recoveries attempted"),
+    ("pillar_agent_uptime_secs", "Seconds since agent started"),
+    ("pillar_version_mismatch", "Validator/cluster version mismatch (1/0)"),
+    // Controller connectivity
+    ("pillar_controller_connected", "Active gRPC connection to controller (1/0)"),
+    ("pillar_controller_latency_ms", "Last ReportStatus round-trip in ms"),
+    ("pillar_status_reports_sent", "Successful status report count"),
+    ("pillar_status_reports_failed", "Failed status report count"),
+    ("pillar_log_batches_dropped", "Log batches dropped on controller unreachable"),
+    ("pillar_commands_received", "Commands received via CommandStream"),
+    // Process start time (unix epoch, stable per process lifetime)
+    ("pillar_agent_started_at_unix_secs", "Agent process start time (unix epoch)"),
 ];
 
 fn emit_node_metrics(out: &mut String, node_id: &str, status: &NodeStatus) {
@@ -72,41 +66,35 @@ fn emit_node_metrics(out: &mut String, node_id: &str, status: &NodeStatus) {
         ("pillar_system_network_tx_bytes", status.network_tx_bytes as f64),
     ];
 
-    // Operator self-health
-    let operator_metrics: &[(&str, f64)] = &[
-        ("pillar_operator_reconcile_count", status.operator_reconcile_count as f64),
-        ("pillar_operator_health_check_errors", status.operator_health_check_errors as f64),
-        ("pillar_operator_consecutive_off_count", status.operator_consecutive_off_count as f64),
-        ("pillar_operator_recovery_count", status.operator_recovery_count as f64),
-        ("pillar_operator_state_write_errors", status.operator_state_write_errors as f64),
-        ("pillar_operator_pending_cmd_errors", status.operator_pending_cmd_errors as f64),
-        ("pillar_operator_uptime_secs", status.operator_uptime_secs as f64),
-        ("pillar_operator_version_mismatch", if status.operator_version_mismatch { 1.0 } else { 0.0 }),
+    // Reconciler health
+    let reconciler_metrics: &[(&str, f64)] = &[
+        ("pillar_reconcile_count", status.reconcile_count as f64),
+        ("pillar_health_check_errors", status.health_check_errors as f64),
+        ("pillar_consecutive_off_count", status.consecutive_off_count as f64),
+        ("pillar_recovery_count", status.recovery_count as f64),
+        ("pillar_agent_uptime_secs", status.agent_uptime_secs as f64),
+        ("pillar_version_mismatch", if status.version_mismatch { 1.0 } else { 0.0 }),
     ];
 
-    // Link self-health
-    let link_metrics: &[(&str, f64)] = &[
-        ("pillar_link_controller_connected", if status.link_controller_connected { 1.0 } else { 0.0 }),
-        ("pillar_link_controller_latency_ms", status.link_controller_latency_ms as f64),
-        ("pillar_link_status_reports_sent", status.link_status_reports_sent as f64),
-        ("pillar_link_status_reports_failed", status.link_status_reports_failed as f64),
-        ("pillar_link_state_file_age_secs", status.link_state_file_age_secs as f64),
-        ("pillar_link_state_read_errors", status.link_state_read_errors as f64),
-        ("pillar_link_log_batches_dropped", status.link_log_batches_dropped as f64),
-        ("pillar_link_uptime_secs", status.link_uptime_secs as f64),
-        ("pillar_link_commands_received", status.link_commands_received as f64),
+    // Controller connectivity
+    let controller_metrics: &[(&str, f64)] = &[
+        ("pillar_controller_connected", if status.controller_connected { 1.0 } else { 0.0 }),
+        ("pillar_controller_latency_ms", status.controller_latency_ms as f64),
+        ("pillar_status_reports_sent", status.status_reports_sent as f64),
+        ("pillar_status_reports_failed", status.status_reports_failed as f64),
+        ("pillar_log_batches_dropped", status.log_batches_dropped as f64),
+        ("pillar_commands_received", status.commands_received as f64),
     ];
 
-    // Process start times
+    // Process start time
     let start_time_metrics: &[(&str, f64)] = &[
-        ("pillar_operator_started_at_unix_secs", status.operator_started_at_unix_secs as f64),
-        ("pillar_link_started_at_unix_secs", status.link_started_at_unix_secs as f64),
+        ("pillar_agent_started_at_unix_secs", status.agent_started_at_unix_secs as f64),
     ];
 
     for (name, value) in node_metrics
         .iter()
-        .chain(operator_metrics.iter())
-        .chain(link_metrics.iter())
+        .chain(reconciler_metrics.iter())
+        .chain(controller_metrics.iter())
         .chain(start_time_metrics.iter())
     {
         let _ = writeln!(out, "{name}{{{base}}} {value}");
@@ -115,8 +103,7 @@ fn emit_node_metrics(out: &mut String, node_id: &str, status: &NodeStatus) {
     // Per-process metrics
     let processes: &[(&str, f64, u64)] = &[
         ("validator", status.validator_cpu_percent, status.validator_memory_bytes),
-        ("operator", status.operator_cpu_percent, status.operator_memory_bytes),
-        ("link", status.link_cpu_percent, status.link_memory_bytes),
+        ("agent", status.agent_cpu_percent, status.agent_memory_bytes),
     ];
 
     for (process, cpu, mem) in processes {
@@ -182,10 +169,8 @@ mod tests {
             network_tx_bytes: 67890,
             validator_cpu_percent: 30.0,
             validator_memory_bytes: 50_000_000,
-            operator_cpu_percent: 1.5,
-            operator_memory_bytes: 20_000_000,
-            link_cpu_percent: 0.5,
-            link_memory_bytes: 10_000_000,
+            agent_cpu_percent: 1.5,
+            agent_memory_bytes: 20_000_000,
             role: "rpc".to_string(),
             cluster: "mainnet".to_string(),
             ..Default::default()
@@ -224,8 +209,7 @@ mod tests {
         assert!(output.contains("pillar_system_cpu_usage_percent{"));
         assert!(output.contains("pillar_process_cpu_percent{"));
         assert!(output.contains("process=\"validator\""));
-        assert!(output.contains("process=\"operator\""));
-        assert!(output.contains("process=\"link\""));
+        assert!(output.contains("process=\"agent\""));
     }
 
     #[tokio::test]

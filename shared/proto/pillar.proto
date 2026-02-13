@@ -2,13 +2,13 @@ syntax = "proto3";
 
 package pillar;
 
-// Link pushes node status to controller on a regular interval.
+// Agent pushes node status to controller on a regular interval.
 service PillarController {
     rpc ReportStatus(ReportStatusRequest) returns (ReportStatusResponse);
     rpc CommandStream(CommandStreamRequest) returns (stream ControllerCommand);
     rpc RegisterNode(RegisterNodeRequest) returns (RegisterNodeResponse);
     rpc ReportUpgradeStatus(UpgradeStatusRequest) returns (UpgradeStatusResponse);
-    // Link streams log batches from validator/operator/link services.
+    // Agent streams log batches from validator/agent services.
     rpc PushLogs(stream LogBatch) returns (LogAck);
 }
 
@@ -23,8 +23,8 @@ message CommandStreamRequest {
     string node_id = 1;
 }
 
-// Flattened operator state + system metrics sent to controller.
-// Operator writes the node-health fields; Link enriches with system/process metrics.
+// Flattened agent state + system metrics sent to controller.
+// Agent writes node-health fields and enriches with system/process metrics.
 message NodeStatus {
     string state = 1;
     int64  local_slot = 2;
@@ -50,43 +50,39 @@ message NodeStatus {
     uint64 network_tx_bytes = 22;
     double validator_cpu_percent = 23;
     uint64 validator_memory_bytes = 24;
-    double operator_cpu_percent = 25;
-    uint64 operator_memory_bytes = 26;
-    double link_cpu_percent = 27;
-    uint64 link_memory_bytes = 28;
-    string operator_version = 29;
-    string link_version = 30;
+    double agent_cpu_percent = 25;
+    uint64 agent_memory_bytes = 26;
+    reserved 27, 28;   // was link_cpu_percent, link_memory_bytes (duplicates of 25, 26)
+    string agent_version = 29;
+    reserved 30;        // was link_version (duplicate of 29)
     string pending_upgrade = 31;
     string hostname = 32;
 
-    // --- Operator self-health (written by operator) ---
-    uint64 operator_reconcile_count = 33;
-    uint64 operator_health_check_errors = 34;
-    uint32 operator_consecutive_off_count = 35;
-    uint64 operator_recovery_count = 36;
-    uint64 operator_state_write_errors = 37;
-    uint64 operator_pending_cmd_errors = 38;
-    uint64 operator_uptime_secs = 39;
-    bool   operator_version_mismatch = 40;
+    // --- Agent reconciler health ---
+    uint64 reconcile_count = 33;
+    uint64 health_check_errors = 34;
+    uint32 consecutive_off_count = 35;
+    uint64 recovery_count = 36;
+    reserved 37, 38;    // was operator_state_write_errors, operator_pending_cmd_errors (dead IPC)
+    uint64 agent_uptime_secs = 39;
+    bool   version_mismatch = 40;
 
-    // --- Link self-health (enriched by link) ---
-    bool   link_controller_connected = 41;
-    uint64 link_controller_latency_ms = 42;
-    uint64 link_status_reports_sent = 43;
-    uint64 link_status_reports_failed = 44;
-    uint64 link_state_file_age_secs = 45;   // deprecated: always 0 in agent (no file IPC)
-    uint64 link_state_read_errors = 46;    // deprecated: always 0 in agent (no file IPC)
-    uint64 link_log_batches_dropped = 47;
-    uint64 link_uptime_secs = 48;
-    uint64 link_commands_received = 49;
+    // --- Controller connectivity ---
+    bool   controller_connected = 41;
+    uint64 controller_latency_ms = 42;
+    uint64 status_reports_sent = 43;
+    uint64 status_reports_failed = 44;
+    reserved 45, 46;    // was link_state_file_age_secs, link_state_read_errors (dead IPC)
+    uint64 log_batches_dropped = 47;
+    reserved 48;        // was link_uptime_secs (duplicate of 39)
+    uint64 commands_received = 49;
 
-    // --- Process start times (unix epoch, stable per process lifetime) ---
-    // Only changes on restart — use changes(field[1h]) > 0 to detect restarts.
-    int64  operator_started_at_unix_secs = 50;
-    int64  link_started_at_unix_secs = 51;
+    // --- Process start time (unix epoch, stable per process lifetime) ---
+    int64  agent_started_at_unix_secs = 50;
+    reserved 51;        // was link_started_at_unix_secs (duplicate of 50)
 }
 
-// Commands pushed from controller to link.
+// Commands pushed from controller to agent.
 message ControllerCommand {
     oneof command {
         RestartCommand restart = 1;
@@ -127,11 +123,10 @@ message RegisterNodeRequest {
     string role = 2;
     string client = 3;
     string cluster = 4;
-    string operator_version = 5;
-    string link_version = 6;
-    string hostname = 7;
-    string architecture = 8;
-    string os = 9;
+    string agent_version = 5;
+    string hostname = 6;
+    string architecture = 7;
+    string os = 8;
 }
 
 message RegisterNodeResponse {
@@ -149,14 +144,14 @@ message UpgradeStatusRequest {
 
 message UpgradeStatusResponse {}
 
-// Log streaming from link to controller.
+// Log streaming from agent to controller.
 message LogBatch {
     string node_id = 1;
     repeated LogEntry entries = 2;
 }
 
 message LogEntry {
-    string service = 1;          // "validator", "operator", "link"
+    string service = 1;          // "validator", "agent"
     int64 timestamp_unix_ms = 2;
     string level = 3;            // "info", "warn", "error", "debug"
     string message = 4;

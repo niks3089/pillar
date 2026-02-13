@@ -578,7 +578,7 @@ function NodeDetail() {
           </span>
         </div>
         <div className="log-tabs">
-          {['all', 'controller', 'validator', 'operator', 'link'].map(tab => (
+          {['all', 'controller', 'validator', 'agent'].map(tab => (
             <button
               key={tab}
               className={`log-tab ${logFilter === tab ? 'active' : ''}`}

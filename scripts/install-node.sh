@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Pillar Node installer — installs operator, link, Solana CLI, Rust toolchain,
+# Pillar Node installer — installs pillar-agent, Solana CLI, Rust toolchain,
 # creates the sol user, applies sysctl tuning, and generates validator keypairs.
 #
 # Usage:
@@ -82,14 +82,11 @@ if [[ -z "$REFERENCE_RPC" ]]; then
 fi
 
 if [[ -z "$BINARIES_DIR" ]]; then
-    die "--binaries-dir is required (path to directory containing operator and link binaries)"
+    die "--binaries-dir is required (path to directory containing pillar-agent binary)"
 fi
 
-if [[ ! -f "$BINARIES_DIR/operator" ]]; then
-    die "operator binary not found in $BINARIES_DIR"
-fi
-if [[ ! -f "$BINARIES_DIR/link" ]]; then
-    die "link binary not found in $BINARIES_DIR"
+if [[ ! -f "$BINARIES_DIR/pillar-agent" ]]; then
+    die "pillar-agent binary not found in $BINARIES_DIR"
 fi
 
 if [[ -z "$CONTROLLER_ENDPOINT" ]]; then
@@ -272,7 +269,7 @@ done
 SUDOERS_FILE="/etc/sudoers.d/sol-systemctl"
 cat > "$SUDOERS_FILE" <<'EOF'
 # Allow sol user to manage systemd services without a password.
-# Used by pillar-operator to start/stop/restart the validator.
+# Used by pillar-agent to start/stop/restart the validator.
 sol ALL=(root) NOPASSWD: /usr/bin/systemctl
 EOF
 chmod 440 "$SUDOERS_FILE"
@@ -407,26 +404,22 @@ fi
 
 section "Installing binaries"
 
-for name in operator link; do
-    DST="$INSTALL_DIR/$name"
-    install -m 755 "$BINARIES_DIR/$name" "$DST"
-    ok "installed $name -> $DST"
-done
+install -m 755 "$BINARIES_DIR/pillar-agent" "$INSTALL_DIR/pillar-agent"
+ok "installed pillar-agent -> $INSTALL_DIR/pillar-agent"
 
 # ------------------------------------------------------------------------------
-# Phase 5: Write config files (only if they don't exist)
+# Phase 5: Write config file (only if it doesn't exist)
 # ------------------------------------------------------------------------------
 
 section "Writing configuration"
 
-OPERATOR_CONFIG="$CONFIG_DIR/operator.yaml"
-if [[ -f "$OPERATOR_CONFIG" ]]; then
-    ok "operator config exists: $OPERATOR_CONFIG (not overwriting)"
+AGENT_CONFIG="$CONFIG_DIR/agent.yaml"
+if [[ -f "$AGENT_CONFIG" ]]; then
+    ok "agent config exists: $AGENT_CONFIG (not overwriting)"
 else
-    cat > "$OPERATOR_CONFIG" <<EOF
+    cat > "$AGENT_CONFIG" <<EOF
 role: $ROLE
 client: $CLIENT
-state_path: $STATE_DIR/operator-state.bin
 network:
   cluster: $CLUSTER
   reference_rpc_urls:
@@ -451,64 +444,51 @@ snapshot:
 paths:
   ledger_path: /mnt/ledger
   snapshot_path: /mnt/snapshots
-EOF
-    chown "$SOL_USER:$SOL_USER" "$OPERATOR_CONFIG"
-    chmod 644 "$OPERATOR_CONFIG"
-    ok "wrote $OPERATOR_CONFIG"
-fi
-
-LINK_CONFIG="$CONFIG_DIR/link.yaml"
-if [[ -f "$LINK_CONFIG" ]]; then
-    ok "link config exists: $LINK_CONFIG (not overwriting)"
-else
-    cat > "$LINK_CONFIG" <<EOF
-state_path: $STATE_DIR/operator-state.bin
-poll_interval_secs: 5
 http_listen: "0.0.0.0:9090"
 controller:
   endpoint: "$CONTROLLER_ENDPOINT"
   node_id: "$NODE_ID"
   report_interval_secs: 10
+log_collector:
+  enabled: true
+  units:
+    - solana-validator.service
+    - pillar-agent.service
+  buffer_size: 100
+  flush_interval_ms: 1000
 EOF
-    chown "$SOL_USER:$SOL_USER" "$LINK_CONFIG"
-    chmod 644 "$LINK_CONFIG"
-    ok "wrote $LINK_CONFIG"
+    chown "$SOL_USER:$SOL_USER" "$AGENT_CONFIG"
+    chmod 644 "$AGENT_CONFIG"
+    ok "wrote $AGENT_CONFIG"
 fi
 
 # ------------------------------------------------------------------------------
-# Phase 6: Systemd services
+# Phase 6: Systemd service
 # ------------------------------------------------------------------------------
 
-section "Installing systemd services"
+section "Installing systemd service"
 
-write_service() {
-    local name="$1"
-    local desc="$2"
-    local env_var="$3"
-    local config_file="$4"
-    local extra_after="${5:-}"
-    local unit_file="/etc/systemd/system/${name}.service"
-
-    cat > "$unit_file" <<EOF
+UNIT_FILE="/etc/systemd/system/pillar-agent.service"
+cat > "$UNIT_FILE" <<EOF
 [Unit]
-Description=Pillar $desc
-After=network-online.target${extra_after}
+Description=Pillar Agent
+After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=simple
 User=$SOL_USER
 Group=$SOL_USER
-ExecStart=$INSTALL_DIR/$name
+ExecStart=$INSTALL_DIR/pillar-agent
 Restart=always
 RestartSec=5
 
-Environment=${env_var}=${config_file}
+Environment=PILLAR_AGENT_CONFIG=$AGENT_CONFIG
 Environment=RUST_LOG=info
 
 StandardOutput=journal
 StandardError=journal
-SyslogIdentifier=$name
+SyslogIdentifier=pillar-agent
 
 RuntimeDirectory=pillar
 RuntimeDirectoryMode=0755
@@ -518,30 +498,22 @@ LimitNOFILE=1000000
 [Install]
 WantedBy=multi-user.target
 EOF
-    ok "wrote $unit_file"
-}
-
-write_service "operator" "Operator" "PILLAR_CONFIG" "$OPERATOR_CONFIG"
-write_service "link" "Link" "PILLAR_LINK_CONFIG" "$LINK_CONFIG" " operator.service"
+ok "wrote $UNIT_FILE"
 
 systemctl daemon-reload
-systemctl enable operator link 2>/dev/null
-ok "services enabled"
+systemctl enable pillar-agent 2>/dev/null
+ok "service enabled"
 
-# Start services
-systemctl restart operator
-sleep 1
-systemctl restart link
+# Start service
+systemctl restart pillar-agent
 sleep 2
 
-for svc in operator link; do
-    if systemctl is-active --quiet "$svc" 2>/dev/null; then
-        ok "$svc is running"
-    else
-        fail "$svc failed to start"
-        journalctl -u "$svc" --no-pager -n 10
-    fi
-done
+if systemctl is-active --quiet pillar-agent 2>/dev/null; then
+    ok "pillar-agent is running"
+else
+    fail "pillar-agent failed to start"
+    journalctl -u pillar-agent --no-pager -n 10
+fi
 
 # ------------------------------------------------------------------------------
 # Summary
@@ -550,10 +522,9 @@ done
 section "Installation complete"
 
 echo ""
-echo "  Binaries:   $INSTALL_DIR/operator, $INSTALL_DIR/link"
-echo "  Config:     $OPERATOR_CONFIG, $LINK_CONFIG"
-echo "  State:      $STATE_DIR/operator-state.bin"
-echo "  Services:   operator.service, link.service"
+echo "  Binary:     $INSTALL_DIR/pillar-agent"
+echo "  Config:     $AGENT_CONFIG"
+echo "  Service:    pillar-agent.service"
 echo "  Controller: $CONTROLLER_ENDPOINT"
 echo "  Node ID:    $NODE_ID"
 echo "  Sol user:   /home/sol"
@@ -575,8 +546,7 @@ fi
 
 echo ""
 echo "  Commands:"
-echo "    journalctl -u operator -f"
-echo "    journalctl -u link -f"
+echo "    journalctl -u pillar-agent -f"
 echo "    curl http://localhost:9090/health"
 echo "    curl http://localhost:9090/status"
 echo ""
