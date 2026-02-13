@@ -18,10 +18,12 @@ const DEFAULT_RPC_TIMEOUT_SECS: u64 = 10;
 const DEFAULT_LOCAL_RPC_URL: &str = "http://127.0.0.1:8899";
 const DEFAULT_LEDGER_PATH: &str = "/mnt/ledger";
 const DEFAULT_SNAPSHOT_PATH: &str = "/mnt/snapshots";
-const DEFAULT_STATE_PATH: &str = "/var/run/pillar/operator-state.bin";
+const DEFAULT_HTTP_LISTEN: &str = "0.0.0.0:9090";
+const DEFAULT_REPORT_INTERVAL_SECS: u64 = 10;
+const DEFAULT_SYSINFO_REFRESH_INTERVAL_SECS: u64 = 5;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct OperatorConfig {
+pub struct AgentConfig {
     pub role: NodeRole,
     #[serde(default)]
     pub client: ClientKind,
@@ -34,11 +36,19 @@ pub struct OperatorConfig {
     pub health: HealthConfig,
     #[serde(default)]
     pub paths: PathConfig,
-    #[serde(default = "default_state_path")]
-    pub state_path: String,
+    #[serde(default = "default_http_listen")]
+    pub http_listen: String,
+    pub controller: ControllerConfig,
+    #[serde(default = "default_sysinfo_refresh_interval_secs")]
+    pub sysinfo_refresh_interval_secs: u64,
+    #[serde(default)]
+    pub log_collector: LogCollectorConfig,
+    /// Optional: write state to a binary file for debugging.
+    #[serde(default)]
+    pub debug_state_file: String,
 }
 
-impl OperatorConfig {
+impl AgentConfig {
     /// Validate config values to catch dangerous misconfigurations at startup.
     pub fn validate(&self) -> Result<(), String> {
         let mut errors = Vec::new();
@@ -69,6 +79,18 @@ impl OperatorConfig {
         }
         if self.snapshot.download_timeout_secs == 0 {
             errors.push("snapshot.download_timeout_secs must be > 0".to_string());
+        }
+        if self.http_listen.is_empty() {
+            errors.push("http_listen must not be empty".to_string());
+        }
+        if self.controller.endpoint.is_empty() {
+            errors.push("controller.endpoint must not be empty".to_string());
+        }
+        if self.controller.node_id.is_empty() {
+            errors.push("controller.node_id must not be empty".to_string());
+        }
+        if self.sysinfo_refresh_interval_secs == 0 {
+            errors.push("sysinfo_refresh_interval_secs must be > 0".to_string());
         }
 
         // Path validation
@@ -192,7 +214,48 @@ impl Default for PathConfig {
     }
 }
 
-// Serde default functions (required for #[serde(default = "...")])
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ControllerConfig {
+    pub endpoint: String,
+    pub node_id: String,
+    #[serde(default = "default_report_interval_secs")]
+    pub report_interval_secs: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LogCollectorConfig {
+    #[serde(default = "default_log_collector_enabled")]
+    pub enabled: bool,
+    #[serde(default = "default_log_collector_units")]
+    pub units: Vec<String>,
+    #[serde(default = "default_log_collector_buffer_size")]
+    pub buffer_size: usize,
+    #[serde(default = "default_log_collector_flush_interval_ms")]
+    pub flush_interval_ms: u64,
+}
+
+impl Default for LogCollectorConfig {
+    fn default() -> Self {
+        Self {
+            enabled: default_log_collector_enabled(),
+            units: default_log_collector_units(),
+            buffer_size: default_log_collector_buffer_size(),
+            flush_interval_ms: default_log_collector_flush_interval_ms(),
+        }
+    }
+}
+
+fn default_log_collector_enabled() -> bool { true }
+fn default_log_collector_units() -> Vec<String> {
+    vec![
+        "solana-validator.service".to_string(),
+        "pillar-agent.service".to_string(),
+    ]
+}
+fn default_log_collector_buffer_size() -> usize { 100 }
+fn default_log_collector_flush_interval_ms() -> u64 { 1000 }
+
+// Serde default functions
 fn default_service_name() -> String { DEFAULT_SERVICE_NAME.to_string() }
 fn default_max_startup_wait_secs() -> u64 { DEFAULT_MAX_STARTUP_WAIT_SECS }
 fn default_max_catchup_wait_secs() -> u64 { DEFAULT_MAX_CATCHUP_WAIT_SECS }
@@ -207,4 +270,6 @@ fn default_rpc_timeout_secs() -> u64 { DEFAULT_RPC_TIMEOUT_SECS }
 fn default_local_rpc_url() -> String { DEFAULT_LOCAL_RPC_URL.to_string() }
 fn default_ledger_path() -> String { DEFAULT_LEDGER_PATH.to_string() }
 fn default_snapshot_path() -> String { DEFAULT_SNAPSHOT_PATH.to_string() }
-fn default_state_path() -> String { DEFAULT_STATE_PATH.to_string() }
+fn default_http_listen() -> String { DEFAULT_HTTP_LISTEN.to_string() }
+fn default_report_interval_secs() -> u64 { DEFAULT_REPORT_INTERVAL_SECS }
+fn default_sysinfo_refresh_interval_secs() -> u64 { DEFAULT_SYSINFO_REFRESH_INTERVAL_SECS }

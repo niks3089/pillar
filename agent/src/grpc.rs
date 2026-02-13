@@ -1,11 +1,13 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
+use crate::agent_health::AgentHealth;
+use crate::command::AgentCommand;
 use crate::config::ControllerConfig;
-use crate::link_health::LinkHealth;
-use crate::state_reader::SharedState;
+use crate::metrics_updater::SharedStatus;
 
 pub mod proto {
     tonic::include_proto!("pillar");
@@ -19,18 +21,20 @@ use pillar_shared::proto::{CommandStreamRequest, ControllerCommand, ReportStatus
 ///
 /// Runs two concurrent loops:
 ///   1. report_status — pushes NodeStatus to controller every N seconds
-///   2. command_stream — listens for commands from controller (restart, recover, update_config)
+///   2. command_stream — listens for commands from controller
 pub struct ControllerLink {
     config: ControllerConfig,
-    operator_state: SharedState,
-    link_health: Arc<LinkHealth>,
+    shared_status: SharedStatus,
+    agent_health: Arc<AgentHealth>,
+    cmd_tx: mpsc::Sender<AgentCommand>,
 }
 
 impl ControllerLink {
     pub fn new(
         config: ControllerConfig,
-        operator_state: SharedState,
-        link_health: Arc<LinkHealth>,
+        shared_status: SharedStatus,
+        agent_health: Arc<AgentHealth>,
+        cmd_tx: mpsc::Sender<AgentCommand>,
     ) -> Self {
         tracing::info!(
             endpoint = %config.endpoint,
@@ -40,8 +44,9 @@ impl ControllerLink {
         );
         Self {
             config,
-            operator_state,
-            link_health,
+            shared_status,
+            agent_health,
+            cmd_tx,
         }
     }
 
@@ -60,12 +65,12 @@ impl ControllerLink {
             match PillarControllerClient::connect(self.config.endpoint.clone()).await {
                 Ok(client) => {
                     backoff = Duration::from_secs(1);
-                    self.link_health.set_controller_connected(true);
+                    self.agent_health.set_controller_connected(true);
                     self.run_connected(client, cancel.clone()).await;
-                    self.link_health.set_controller_connected(false);
+                    self.agent_health.set_controller_connected(false);
                 }
                 Err(e) => {
-                    self.link_health.set_controller_connected(false);
+                    self.agent_health.set_controller_connected(false);
                     tracing::warn!(
                         error = %e,
                         backoff_secs = backoff.as_secs(),
@@ -84,7 +89,6 @@ impl ControllerLink {
         tracing::info!("controller link shutting down");
     }
 
-    /// Run report_status and command_stream concurrently on an established connection.
     async fn run_connected(
         &self,
         client: PillarControllerClient<tonic::transport::Channel>,
@@ -110,9 +114,9 @@ impl ControllerLink {
         let report_cancel = cancel.clone();
         let mut report_client = client.clone();
         let report_node_id = self.config.node_id.clone();
-        let report_shared = self.operator_state.clone();
+        let report_shared = self.shared_status.clone();
         let report_interval = Duration::from_secs(self.config.report_interval_secs);
-        let report_health = self.link_health.clone();
+        let report_health = self.agent_health.clone();
 
         let report_handle = tokio::spawn(async move {
             run_report_loop(
@@ -129,13 +133,13 @@ impl ControllerLink {
         let cmd_cancel = cancel.clone();
         let mut cmd_client = client;
         let cmd_node_id = self.config.node_id.clone();
-        let cmd_health = self.link_health.clone();
+        let cmd_health = self.agent_health.clone();
+        let cmd_tx = self.cmd_tx.clone();
 
         let cmd_handle = tokio::spawn(async move {
-            run_command_stream(&mut cmd_client, &cmd_node_id, cmd_health, cmd_cancel).await
+            run_command_stream(&mut cmd_client, &cmd_node_id, cmd_health, cmd_tx, cmd_cancel).await
         });
 
-        // If either task exits, cancel the other and reconnect
         tokio::select! {
             _ = report_handle => {
                 tracing::warn!("report_status loop exited, will reconnect");
@@ -152,9 +156,9 @@ impl ControllerLink {
 async fn run_report_loop(
     client: &mut PillarControllerClient<tonic::transport::Channel>,
     node_id: &str,
-    operator_state: SharedState,
+    shared_status: SharedStatus,
     interval: Duration,
-    link_health: Arc<LinkHealth>,
+    agent_health: Arc<AgentHealth>,
     cancel: CancellationToken,
 ) {
     loop {
@@ -163,9 +167,9 @@ async fn run_report_loop(
             _ = tokio::time::sleep(interval) => {}
         }
 
-        let state = operator_state.read().await;
+        let state = shared_status.read().await;
         let Some(ref status) = *state else {
-            tracing::debug!("no operator state yet, skipping report");
+            tracing::debug!("no status yet, skipping report");
             continue;
         };
 
@@ -177,12 +181,12 @@ async fn run_report_loop(
         let start = Instant::now();
         match client.report_status(request).await {
             Ok(_) => {
-                link_health.set_controller_latency_ms(start.elapsed().as_millis() as u64);
-                link_health.inc_status_reports_sent();
+                agent_health.set_controller_latency_ms(start.elapsed().as_millis() as u64);
+                agent_health.inc_status_reports_sent();
                 tracing::debug!("reported status to controller");
             }
             Err(e) => {
-                link_health.inc_status_reports_failed();
+                agent_health.inc_status_reports_failed();
                 tracing::warn!(error = %e, "report_status failed");
                 return;
             }
@@ -194,7 +198,8 @@ async fn run_report_loop(
 async fn run_command_stream(
     client: &mut PillarControllerClient<tonic::transport::Channel>,
     node_id: &str,
-    link_health: Arc<LinkHealth>,
+    agent_health: Arc<AgentHealth>,
+    cmd_tx: mpsc::Sender<AgentCommand>,
     cancel: CancellationToken,
 ) {
     let request = tonic::Request::new(CommandStreamRequest {
@@ -216,8 +221,8 @@ async fn run_command_stream(
             msg = stream.message() => {
                 match msg {
                     Ok(Some(cmd)) => {
-                        link_health.inc_commands_received();
-                        handle_command(cmd);
+                        agent_health.inc_commands_received();
+                        handle_command(cmd, &cmd_tx).await;
                     }
                     Ok(None) => {
                         tracing::info!("command stream closed by controller");
@@ -233,36 +238,18 @@ async fn run_command_stream(
     }
 }
 
-fn handle_command(cmd: ControllerCommand) {
+/// Handle a controller command — send directly to reconcile loop via channel,
+/// or spawn a download task for provision/upgrade.
+async fn handle_command(cmd: ControllerCommand, cmd_tx: &mpsc::Sender<AgentCommand>) {
     use pillar_shared::proto::controller_command::Command;
     match cmd.command {
         Some(Command::Restart(r)) => {
             tracing::info!(reason = %r.reason, "received restart command");
-            tokio::spawn(async move {
-                if let Err(e) = crate::provisioner::write_pending_command(
-                    &pillar_shared::PendingCommand::Restart {
-                        reason: r.reason,
-                    },
-                )
-                .await
-                {
-                    tracing::error!(error = %e, "restart command failed");
-                }
-            });
+            let _ = cmd_tx.send(AgentCommand::Restart { reason: r.reason }).await;
         }
         Some(Command::Recover(r)) => {
             tracing::info!(reason = %r.reason, "received recover command");
-            tokio::spawn(async move {
-                if let Err(e) = crate::provisioner::write_pending_command(
-                    &pillar_shared::PendingCommand::Recover {
-                        reason: r.reason,
-                    },
-                )
-                .await
-                {
-                    tracing::error!(error = %e, "recover command failed");
-                }
-            });
+            let _ = cmd_tx.send(AgentCommand::Recover { reason: r.reason }).await;
         }
         Some(Command::UpdateConfig(c)) => {
             tracing::info!(config_size = c.config_yaml.len(), "received config update command");
@@ -277,9 +264,18 @@ fn handle_command(cmd: ControllerCommand) {
             );
             let download_url = u.download_url.clone();
             let sha256 = u.sha256.clone();
+            let tx = cmd_tx.clone();
             tokio::spawn(async move {
-                if let Err(e) = handle_upgrade(u, &download_url, &sha256).await {
-                    tracing::error!(error = %e, "upgrade command failed");
+                match crate::provisioner::download_and_stage(&download_url, &sha256).await {
+                    Ok(staged) => {
+                        let _ = tx.send(AgentCommand::Upgrade {
+                            staged_binary_path: staged,
+                            upgrade: u,
+                        }).await;
+                    }
+                    Err(e) => {
+                        tracing::error!(error = %e, "upgrade download failed");
+                    }
                 }
             });
         }
@@ -292,89 +288,36 @@ fn handle_command(cmd: ControllerCommand) {
             );
             let download_url = p.download_url.clone();
             let sha256 = p.sha256.clone();
+            let tx = cmd_tx.clone();
             tokio::spawn(async move {
-                if let Err(e) = handle_provision(p, &download_url, &sha256).await {
-                    tracing::error!(error = %e, "provision command failed");
+                match crate::provisioner::download_and_stage(&download_url, &sha256).await {
+                    Ok(staged) => {
+                        let _ = tx.send(AgentCommand::Provision {
+                            staged_binary_path: staged,
+                            config: Box::new(p),
+                        }).await;
+                    }
+                    Err(e) => {
+                        tracing::error!(error = %e, "provision download failed");
+                    }
                 }
             });
         }
         Some(Command::Stop(s)) => {
             tracing::info!(reason = %s.reason, "received stop command");
-            tokio::spawn(async move {
-                // Clean up staging dir if a download is in progress
-                let staging_dir = std::path::Path::new("/tmp/pillar-staging");
-                if staging_dir.exists() {
-                    if let Err(e) = tokio::fs::remove_dir_all(staging_dir).await {
-                        tracing::warn!(error = %e, "failed to clean up staging dir");
-                    }
+            // Clean up staging dir if a download is in progress
+            let staging_dir = std::path::Path::new("/tmp/pillar-staging");
+            if staging_dir.exists() {
+                if let Err(e) = tokio::fs::remove_dir_all(staging_dir).await {
+                    tracing::warn!(error = %e, "failed to clean up staging dir");
                 }
-                if let Err(e) = crate::provisioner::write_pending_command(
-                    &pillar_shared::PendingCommand::Stop {
-                        reason: s.reason,
-                    },
-                )
-                .await
-                {
-                    tracing::error!(error = %e, "stop command failed");
-                }
-            });
+            }
+            let _ = cmd_tx.send(AgentCommand::Stop { reason: s.reason }).await;
         }
         None => {
             tracing::warn!("received empty controller command");
         }
     }
-}
-
-async fn handle_provision(
-    p: pillar_shared::proto::ProvisionCommand,
-    download_url: &str,
-    sha256: &str,
-) -> Result<(), String> {
-    use crate::provisioner;
-
-    let staging_dir = std::path::Path::new("/tmp/pillar-staging");
-    tokio::fs::create_dir_all(staging_dir)
-        .await
-        .map_err(|e| format!("create staging dir: {e}"))?;
-    let staged = staging_dir.join("binary");
-
-    let timeout = std::time::Duration::from_secs(3600);
-    provisioner::download_and_verify(download_url, &staged, sha256, timeout).await?;
-
-    provisioner::write_pending_command(&pillar_shared::PendingCommand::Provision {
-        staged_binary_path: staged.display().to_string(),
-        provision: Box::new(p),
-    })
-    .await?;
-
-    tracing::info!("provision command file written for operator");
-    Ok(())
-}
-
-async fn handle_upgrade(
-    u: pillar_shared::proto::UpgradeCommand,
-    download_url: &str,
-    sha256: &str,
-) -> Result<(), String> {
-    use crate::provisioner;
-
-    let staging_dir = std::path::Path::new("/tmp/pillar-staging");
-    tokio::fs::create_dir_all(staging_dir)
-        .await
-        .map_err(|e| format!("create staging dir: {e}"))?;
-    let staged = staging_dir.join("binary");
-
-    let timeout = std::time::Duration::from_secs(3600);
-    provisioner::download_and_verify(download_url, &staged, sha256, timeout).await?;
-
-    provisioner::write_pending_command(&pillar_shared::PendingCommand::Upgrade {
-        staged_binary_path: staged.display().to_string(),
-        upgrade: u,
-    })
-    .await?;
-
-    tracing::info!("upgrade command file written for operator");
-    Ok(())
 }
 
 fn gethostname() -> String {

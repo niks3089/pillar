@@ -166,7 +166,6 @@ mod tests {
         );
     }
 
-    // RPC/gRPC nodes pass is_voting=true (check skipped), so caught-up = healthy
     #[test]
     fn rpc_node_within_threshold_is_healthy() {
         assert_eq!(
@@ -175,7 +174,6 @@ mod tests {
         );
     }
 
-    // RPC/gRPC nodes still report Behind when far behind
     #[test]
     fn rpc_node_far_behind_is_behind() {
         assert_eq!(

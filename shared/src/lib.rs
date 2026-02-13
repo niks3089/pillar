@@ -9,11 +9,14 @@ use std::path::Path;
 use prost::Message;
 
 /// Default path for the pending-command JSON file (Link writes, Operator reads).
+/// Deprecated: In the merged agent binary, commands flow via in-memory mpsc channel.
+#[deprecated(note = "Use agent's in-memory AgentCommand channel instead")]
 pub const PENDING_COMMAND_PATH: &str = "/var/run/pillar/pending-command.json";
 
 /// A command written by Link for Operator to pick up and execute.
-/// Serialized as JSON to `PENDING_COMMAND_PATH`.
-/// Link writes it, Operator polls for it every reconcile tick (20s).
+/// Deprecated: In the merged agent binary, commands flow via in-memory AgentCommand enum.
+#[deprecated(note = "Use agent's in-memory AgentCommand enum instead")]
+#[allow(deprecated)]
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "command_type")]
 pub enum PendingCommand {
@@ -35,6 +38,7 @@ pub enum PendingCommand {
     Stop { reason: String },
 }
 
+#[allow(deprecated)]
 impl PendingCommand {
     /// Return the command type as a string for logging.
     pub fn command_type(&self) -> &'static str {

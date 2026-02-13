@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["operator", "shared", "link", "controller"]
+members = ["agent", "shared", "controller"]
 
 [workspace.package]
 version = "0.1.0"

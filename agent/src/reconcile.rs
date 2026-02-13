@@ -1,28 +1,30 @@
 use std::collections::VecDeque;
-use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-use notify::Watcher;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
-use crate::config::OperatorConfig;
+use crate::command::AgentCommand;
+use crate::config::AgentConfig;
 use crate::event::{EventKind, OperatorEvent};
 use crate::health::{HealthChecker, NodeHealth, NodeState};
 use crate::lifecycle::SystemdManager;
+use crate::metrics_updater::SharedStatus;
 use crate::snapshot::recovery::SnapshotRecovery;
 use crate::snapshot::TcpSnapshotManager;
-use crate::state;
 
-pub struct Operator {
-    config: OperatorConfig,
+use pillar_shared::proto::NodeStatus;
+
+pub struct Reconciler {
+    config: AgentConfig,
     health_checker: Box<dyn HealthChecker>,
     service_manager: SystemdManager,
     snapshot_manager: TcpSnapshotManager,
     ledger_dir: PathBuf,
-    state_path: PathBuf,
     validator_process: String,
+    shared_status: SharedStatus,
+    cmd_rx: mpsc::Receiver<AgentCommand>,
 
     // Internal state
     current_state: NodeState,
@@ -32,7 +34,6 @@ pub struct Operator {
     last_health: NodeHealth,
     last_check_duration_secs: f64,
     consecutive_off_count: usize,
-    /// Set while a provision/upgrade is in progress. Prevents recovery from triggering.
     upgrading: bool,
 
     // Self-health counters
@@ -40,8 +41,6 @@ pub struct Operator {
     reconcile_count: u64,
     health_check_error_count: u64,
     recovery_count: u64,
-    state_write_error_count: u64,
-    pending_cmd_error_count: u64,
 
     // Version mismatch detection
     local_validator_version: Option<String>,
@@ -49,17 +48,18 @@ pub struct Operator {
     version_mismatch: bool,
 }
 
-impl Operator {
+impl Reconciler {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        config: OperatorConfig,
+        config: AgentConfig,
         health_checker: Box<dyn HealthChecker>,
         service_manager: SystemdManager,
         snapshot_manager: TcpSnapshotManager,
         ledger_dir: PathBuf,
-        state_path: PathBuf,
         validator_process: String,
         binary_path: PathBuf,
+        shared_status: SharedStatus,
+        cmd_rx: mpsc::Receiver<AgentCommand>,
     ) -> Self {
         let local_validator_version = detect_validator_version(&binary_path);
         if let Some(ref v) = local_validator_version {
@@ -74,8 +74,9 @@ impl Operator {
             service_manager,
             snapshot_manager,
             ledger_dir,
-            state_path,
             validator_process,
+            shared_status,
+            cmd_rx,
             current_state: NodeState::Off,
             state_entered_at: Instant::now(),
             started_at: Instant::now(),
@@ -88,15 +89,12 @@ impl Operator {
             reconcile_count: 0,
             health_check_error_count: 0,
             recovery_count: 0,
-            state_write_error_count: 0,
-            pending_cmd_error_count: 0,
             local_validator_version,
             cluster_version: None,
             version_mismatch: false,
         }
     }
 
-    /// Remove restart timestamps outside the crash window.
     fn evict_old_restarts(&mut self) {
         let window = Duration::from_secs(self.config.lifecycle.crash_window_secs);
         let cutoff = Instant::now() - window;
@@ -105,110 +103,115 @@ impl Operator {
         }
     }
 
-    /// Count of restarts within the current crash window.
     fn restarts_in_window(&self) -> usize {
         let window = Duration::from_secs(self.config.lifecycle.crash_window_secs);
         let cutoff = Instant::now() - window;
         self.restart_timestamps.iter().filter(|t| **t >= cutoff).count()
     }
 
-    /// Record a restart event.
     fn record_restart(&mut self) {
         self.restart_timestamps.push_back(Instant::now());
     }
 
-    /// Set up a file watcher on the pending command directory.
-    ///
-    /// Returns the watcher handle (must be kept alive for notifications to fire)
-    /// and a receiver that fires when the pending command file is created or modified.
-    /// If the watcher cannot be set up, returns `None` — the operator falls back
-    /// to discovering commands on the next regular reconcile tick.
-    fn setup_command_watcher(
-        &self,
-    ) -> (
-        Option<notify::RecommendedWatcher>,
-        mpsc::UnboundedReceiver<()>,
-    ) {
-        let (tx, rx) = mpsc::unbounded_channel();
-
-        let cmd_path = PathBuf::from(pillar_shared::PENDING_COMMAND_PATH);
-        let cmd_filename: OsString = cmd_path
-            .file_name()
-            .map(|n| n.to_os_string())
-            .unwrap_or_default();
-
-        let watcher_result =
-            notify::recommended_watcher(move |res: Result<notify::Event, notify::Error>| {
-                if let Ok(event) = res {
-                    let matches = event
-                        .paths
-                        .iter()
-                        .any(|p| p.file_name().is_some_anden == cmd_filename));
-                    if matches {
-                        let _ = tx.send(());
-                    }
-                }
-            });
-
-        match watcher_result {
-            Ok(mut watcher) => {
-                let watch_dir = cmd_path
-                    .parent()
-                    .unwrap_or(Path::new("/var/run/pillar"));
-                match watcher.watch(watch_dir, notify::RecursiveMode::NonRecursive) {
-                    Ok(()) => {
-                        tracing::info!(
-                            dir = %watch_dir.display(),
-                            "watching for pending commands via inotify"
-                        );
-                        (Some(watcher), rx)
-                    }
-                    Err(e) => {
-                        tracing::warn!(
-                            error = %e,
-                            "failed to watch pending command dir, falling back to polling"
-                        );
-                        (None, rx)
-                    }
-                }
-            }
-            Err(e) => {
-                tracing::warn!(
-                    error = %e,
-                    "failed to create file watcher, falling back to polling"
-                );
-                (None, rx)
-            }
-        }
-    }
-
     /// Run the reconciliation loop until cancelled.
-    ///
-    /// Uses inotify to wake immediately when Link writes a pending command
-    /// file, instead of waiting up to one full reconcile interval.
-    /// Falls back to pure polling if the watcher fails.
+    /// Wakes immediately when a command arrives via the channel.
     pub async fn run(&mut self, cancel: CancellationToken) {
         let interval = Duration::from_secs(self.config.health.check_interval_secs);
-        tracing::info!(interval_secs = interval.as_secs(), "operator loop starting");
-
-        // _watcher must stay alive on the stack — dropping it stops notifications.
-        let (_watcher, mut cmd_rx) = self.setup_command_watcher();
+        tracing::info!(interval_secs = interval.as_secs(), "reconcile loop starting");
 
         loop {
             tokio::select! {
                 _ = cancel.cancelled() => {
-                    tracing::info!("operator cancelled, shutting down");
+                    tracing::info!("reconciler cancelled, shutting down");
                     return;
                 }
                 _ = tokio::time::sleep(interval) => {
                     self.reconcile().await;
                 }
-                Some(()) = cmd_rx.recv() => {
-                    // Drain any extra notifications (file watcher can fire multiple
-                    // events for a single write: create, modify, close_write, etc.)
-                    while cmd_rx.try_recv().is_ok() {}
-                    tracing::info!("pending command detected via file watcher");
+                Some(cmd) = self.cmd_rx.recv() => {
+                    // Immediate wake on command
+                    self.handle_command(cmd).await;
+                    // Drain any extra commands that arrived simultaneously
+                    while let Ok(cmd) = self.cmd_rx.try_recv() {
+                        self.handle_command(cmd).await;
+                    }
                     self.reconcile().await;
+                }
+            }
+        }
+    }
+
+    /// Handle a command received from the gRPC layer via the channel.
+    async fn handle_command(&mut self, cmd: AgentCommand) {
+        let command_type = cmd.command_type();
+        match cmd {
+            AgentCommand::Provision {
+                staged_binary_path,
+                ref config,
+            } => {
+                self.upgrading = true;
+                let result = crate::provisioner::provision(config, &staged_binary_path).await;
+                self.upgrading = false;
+                match result {
+                    Ok(()) => {
+                        tracing::info!(command_type, "provision completed — exiting for config reload");
+                        self.on_state_transition(self.current_state, NodeState::StartingUp);
+                        self.publish_status().await;
+                        std::process::exit(0);
+                    }
+                    Err(e) => {
+                        tracing::error!(command_type, error = %e, "provision failed");
+                    }
+                }
+            }
+            AgentCommand::Upgrade {
+                staged_binary_path,
+                ref upgrade,
+            } => {
+                self.upgrading = true;
+                let result = crate::provisioner::upgrade(upgrade, &staged_binary_path).await;
+                self.upgrading = false;
+                match result {
+                    Ok(()) => {
+                        tracing::info!(command_type, "upgrade completed successfully");
+                        self.on_state_transition(self.current_state, NodeState::StartingUp);
+                    }
+                    Err(e) => {
+                        tracing::error!(command_type, error = %e, "upgrade failed");
+                    }
+                }
+            }
+            AgentCommand::Restart { reason } => {
+                tracing::info!(reason = %reason, "restart command from controller");
+                match self.service_manager.restart().await {
+                    Ok(()) => {
+                        self.record_restart();
+                        self.emit_event(EventKind::ServiceRestarted {
+                            reason: format!("controller: {reason}"),
+                        });
+                        self.on_state_transition(self.current_state, NodeState::StartingUp);
+                    }
+                    Err(e) => {
+                        tracing::error!(error = %e, "restart command failed");
+                    }
+                }
+            }
+            AgentCommand::Recover { reason } => {
+                tracing::info!(reason = %reason, "recover command from controller");
+                self.force_recovery().await;
+            }
+            AgentCommand::Stop { reason } => {
+                tracing::info!(reason = %reason, "stop command from controller");
+                match self.service_manager.stop().await {
+                    Ok(()) => {
+                        self.emit_event(EventKind::ServiceStopped {
+                            reason: format!("controller: {reason}"),
+                        });
+                        self.on_state_transition(self.current_state, NodeState::Off);
+                    }
+                    Err(e) => {
+                        tracing::error!(error = %e, "stop command failed");
+                    }
                 }
             }
         }
@@ -216,106 +219,6 @@ impl Operator {
 
     async fn reconcile(&mut self) {
         self.reconcile_count += 1;
-
-        // 0. Check for pending command from Link
-        match crate::provisioner::process_pending_command() {
-            Ok(Some(cmd)) => {
-                let command_type = cmd.command_type();
-                match cmd {
-                    pillar_shared::PendingCommand::Provision {
-                        staged_binary_path,
-                        ref provision,
-                    } => {
-                        self.upgrading = true;
-                        let staged = PathBuf::from(&staged_binary_path);
-                        let result = crate::provisioner::provision(provision, &staged).await;
-                        self.upgrading = false;
-                        match result {
-                            Ok(()) => {
-                                tracing::info!(command_type, "provision completed — exiting for config reload");
-                                // Write final state before exiting
-                                self.on_state_transition(
-                                    self.current_state,
-                                    NodeState::StartingUp,
-                                );
-                                self.publish_state().await;
-                                // Exit so systemd restarts us with updated operator config
-                                // (client, cluster, service_name may have changed)
-                                std::process::exit(0);
-                            }
-                            Err(e) => {
-                                tracing::error!(command_type, error = %e, "provision failed");
-                            }
-                        }
-                    }
-                    pillar_shared::PendingCommand::Upgrade {
-                        staged_binary_path,
-                        ref upgrade,
-                    } => {
-                        self.upgrading = true;
-                        let staged = PathBuf::from(&staged_binary_path);
-                        let result = crate::provisioner::upgrade(upgrade, &staged).await;
-                        self.upgrading = false;
-                        match result {
-                            Ok(()) => {
-                                tracing::info!(command_type, "upgrade completed successfully");
-                                self.on_state_transition(
-                                    self.current_state,
-                                    NodeState::StartingUp,
-                                );
-                            }
-                            Err(e) => {
-                                tracing::error!(command_type, error = %e, "upgrade failed");
-                            }
-                        }
-                    }
-                    pillar_shared::PendingCommand::Restart { reason } => {
-                        tracing::info!(reason = %reason, "restart command from controller");
-                        match self.service_manager.restart().await {
-                            Ok(()) => {
-                                self.record_restart();
-                                self.emit_event(EventKind::ServiceRestarted {
-                                    reason: format!("controller: {reason}"),
-                                });
-                                self.on_state_transition(
-                                    self.current_state,
-                                    NodeState::StartingUp,
-                                );
-                            }
-                            Err(e) => {
-                                tracing::error!(error = %e, "restart command failed");
-                            }
-                        }
-                    }
-                    pillar_shared::PendingCommand::Recover { reason } => {
-                        tracing::info!(reason = %reason, "recover command from controller");
-                        self.force_recovery().await;
-                    }
-                    pillar_shared::PendingCommand::Stop { reason } => {
-                        tracing::info!(reason = %reason, "stop command from controller");
-                        match self.service_manager.stop().await {
-                            Ok(()) => {
-                                self.emit_event(EventKind::ServiceStopped {
-                                    reason: format!("controller: {reason}"),
-                                });
-                                self.on_state_transition(
-                                    self.current_state,
-                                    NodeState::Off,
-                                );
-                            }
-                            Err(e) => {
-                                tracing::error!(error = %e, "stop command failed");
-                            }
-                        }
-                    }
-                }
-            }
-            Ok(None) => {}
-            Err(e) => {
-                self.pending_cmd_error_count += 1;
-                tracing::warn!(error = %e, "failed to read pending command");
-            }
-        }
 
         let start = Instant::now();
 
@@ -393,8 +296,8 @@ impl Operator {
             }
         }
 
-        // 3. Write state for Link to read
-        self.publish_state().await;
+        // 3. Publish status to shared Arc (instead of writing to file)
+        self.publish_status().await;
 
         // 4. Check timeouts
         self.check_timeouts().await;
@@ -453,7 +356,6 @@ impl Operator {
             return;
         }
 
-        // Don't try to recover a service that was never installed
         if !self.service_manager.service_exists().await {
             tracing::debug!("validator service not installed, waiting for provisioning");
             return;
@@ -510,14 +412,11 @@ impl Operator {
         }
     }
 
-    /// Force recovery without crash-loop detection. Used for explicit controller requests.
     async fn force_recovery(&mut self) {
         if self.upgrading {
             tracing::info!("upgrade/provision in progress, skipping forced recovery");
             return;
         }
-
-        let reference_slot = self.last_health.slot_info.reference_slot.unwrap_or(0);
 
         let recovery = SnapshotRecovery::new(
             &self.service_manager,
@@ -547,55 +446,66 @@ impl Operator {
                 }
             }
         }
-
-        let _ = reference_slot; // suppress unused binding warning
     }
 
-    async fn publish_state(&mut self) {
-        let status = state::NodeStatus {
-            state: self.current_state.as_str().to_string(),
-            local_slot: self.last_health.slot_info.local_slot.unwrap_or(0) as i64,
-            reference_slot: self.last_health.slot_info.reference_slot.unwrap_or(0) as i64,
-            slots_behind: self.last_health.slots_behind.unwrap_or(0),
-            healthy: self.current_state == NodeState::Healthy,
-            restart_count: self.restarts_in_window() as u64,
-            crash_looping: self.restarts_in_window() >= self.config.lifecycle.crash_threshold,
-            health_check_duration_secs: self.last_check_duration_secs,
-            version: env!("CARGO_PKG_VERSION").to_string(),
-            role: self.config.role.to_string(),
-            client: self.config.client.to_string(),
-            cluster: self.config.network.cluster.clone(),
-            updated_at_unix_secs: chrono::Utc::now().timestamp(),
-            state_duration_secs: self.state_entered_at.elapsed().as_secs(),
-            validator_process: self.validator_process.clone(),
-            pending_upgrade: if self.upgrading {
-                "in-progress".to_string()
-            } else if self.version_mismatch {
-                format!(
-                    "version_mismatch: local={}, cluster={}",
-                    self.local_validator_version.as_deref().unwrap_or("unknown"),
-                    self.cluster_version.as_deref().unwrap_or("unknown")
-                )
-            } else {
-                String::new()
-            },
-            // Operator self-health
-            operator_reconcile_count: self.reconcile_count,
-            operator_health_check_errors: self.health_check_error_count,
-            operator_consecutive_off_count: self.consecutive_off_count as u32,
-            operator_recovery_count: self.recovery_count,
-            operator_state_write_errors: self.state_write_error_count,
-            operator_pending_cmd_errors: self.pending_cmd_error_count,
-            operator_uptime_secs: self.started_at.elapsed().as_secs(),
-            operator_version_mismatch: self.version_mismatch,
-            operator_started_at_unix_secs: self.started_at_unix_secs,
-            // System metrics left as 0 — enriched by Link
-            ..Default::default()
+    /// Write health fields to shared status Arc.
+    /// Preserves sysinfo fields written by metrics_updater.
+    async fn publish_status(&mut self) {
+        let mut guard = self.shared_status.write().await;
+        let status = guard.get_or_insert_with(NodeStatus::default);
+
+        // Overwrite health fields only
+        status.state = self.current_state.as_str().to_string();
+        status.local_slot = self.last_health.slot_info.local_slot.unwrap_or(0) as i64;
+        status.reference_slot = self.last_health.slot_info.reference_slot.unwrap_or(0) as i64;
+        status.slots_behind = self.last_health.slots_behind.unwrap_or(0);
+        status.healthy = self.current_state == NodeState::Healthy;
+        status.restart_count = self.restarts_in_window() as u64;
+        status.crash_looping = self.restarts_in_window() >= self.config.lifecycle.crash_threshold;
+        status.health_check_duration_secs = self.last_check_duration_secs;
+        status.version = env!("CARGO_PKG_VERSION").to_string();
+        status.role = self.config.role.to_string();
+        status.client = self.config.client.to_string();
+        status.cluster = self.config.network.cluster.clone();
+        status.updated_at_unix_secs = chrono::Utc::now().timestamp();
+        status.state_duration_secs = self.state_entered_at.elapsed().as_secs();
+        status.validator_process = self.validator_process.clone();
+        status.pending_upgrade = if self.upgrading {
+            "in-progress".to_string()
+        } else if self.version_mismatch {
+            format!(
+                "version_mismatch: local={}, cluster={}",
+                self.local_validator_version.as_deref().unwrap_or("unknown"),
+                self.cluster_version.as_deref().unwrap_or("unknown")
+            )
+        } else {
+            String::new()
         };
 
-        if let Err(e) = state::write_state(&status, &self.state_path) {
-            self.state_write_error_count += 1;
-            tracing::warn!(error = %e, "failed to write operator state");
+        // Operator self-health
+        status.operator_reconcile_count = self.reconcile_count;
+        status.operator_health_check_errors = self.health_check_error_count;
+        status.operator_consecutive_off_count = self.consecutive_off_count as u32;
+        status.operator_recovery_count = self.recovery_count;
+        status.operator_state_write_errors = 0; // deprecated: no file IPC
+        status.operator_pending_cmd_errors = 0; // deprecated: no file IPC
+        status.operator_uptime_secs = self.started_at.elapsed().as_secs();
+        status.operator_version_mismatch = self.version_mismatch;
+        status.operator_started_at_unix_secs = self.started_at_unix_secs;
+
+        // Set both version fields to agent version (backward compat)
+        status.operator_version = env!("CARGO_PKG_VERSION").to_string();
+        status.link_version = env!("CARGO_PKG_VERSION").to_string();
+
+        // DO NOT touch: cpu_usage_percent, memory_*, disk_*, network_*, validator_*,
+        // link_controller_*, link_status_reports_*, etc. (written by metrics_updater)
+
+        // Optionally write debug state file
+        if !self.config.debug_state_file.is_empty() {
+            let path = std::path::PathBuf::from(&self.config.debug_state_file);
+            if let Err(e) = pillar_shared::write_state(status, &path) {
+                tracing::warn!(error = %e, "failed to write debug state file");
+            }
         }
     }
 
@@ -609,7 +519,6 @@ impl Operator {
 }
 
 /// Run `<binary_path> --version` and extract the version string.
-/// E.g. `"agave-validator 2.1.21 (src:8a085eeb; ...)"` → `"2.1.21"`.
 fn detect_validator_version(binary_path: &Path) -> Option<String> {
     let output = std::process::Command::new(binary_path)
         .arg("--version")
@@ -624,8 +533,6 @@ fn detect_validator_version(binary_path: &Path) -> Option<String> {
     parse_version_output(&stdout)
 }
 
-/// Extract a semver-like version from `--version` output.
-/// Looks for the first token matching `X.Y.Z` (digits separated by dots).
 fn parse_version_output(output: &str) -> Option<String> {
     output.split_whitespace().find_map(|token| {
         let parts: Vec<&str> = token.split('.').collect();
@@ -637,8 +544,6 @@ fn parse_version_output(output: &str) -> Option<String> {
     })
 }
 
-/// Extract the major version number from a version string.
-/// `"3.1.8"` → `Some(3)`, `"2.1.21"` → `Some(2)`, `""` → `None`.
 fn parse_major_version(version: &str) -> Option<u32> {
     version.split('.').next()?.parse().ok()
 }

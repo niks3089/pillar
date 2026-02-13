@@ -1,7 +1,0 @@
-state_path: /var/run/pillar/operator-state.bin
-poll_interval_secs: 5
-http_listen: "0.0.0.0:9090"
-controller:
-  endpoint: "http://127.0.0.1:50051"
-  node_id: "node-1"
-  report_interval_secs: 10

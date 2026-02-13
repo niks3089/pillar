@@ -7,11 +7,11 @@ use axum::routing::get;
 use axum::Router;
 
 use crate::metrics::Metrics;
-use crate::state_reader::SharedState;
+use crate::metrics_updater::SharedStatus;
 
 #[derive(Clone)]
 pub struct AppState {
-    pub shared_state: SharedState,
+    pub shared_status: SharedStatus,
     pub metrics: Arc<Metrics>,
 }
 
@@ -26,7 +26,7 @@ pub fn router(app_state: AppState) -> Router {
 
 /// 200 if the node is healthy, 503 otherwise.
 async fn health(State(app): State<AppState>) -> impl IntoResponse {
-    let state = app.shared_state.read().await;
+    let state = app.shared_status.read().await;
     match state.as_ref() {
         Some(s) if s.healthy => (StatusCode::OK, "healthy"),
         Some(_) => (StatusCode::SERVICE_UNAVAILABLE, "unhealthy"),
@@ -36,7 +36,7 @@ async fn health(State(app): State<AppState>) -> impl IntoResponse {
 
 /// Full node status as JSON (proto types have serde derives).
 async fn status(State(app): State<AppState>) -> impl IntoResponse {
-    let state = app.shared_state.read().await;
+    let state = app.shared_status.read().await;
     match state.as_ref() {
         Some(s) => match serde_json::to_value(s) {
             Ok(v) => (StatusCode::OK, axum::Json(v)).into_response(),
@@ -45,14 +45,14 @@ async fn status(State(app): State<AppState>) -> impl IntoResponse {
                 (StatusCode::INTERNAL_SERVER_ERROR, "serialization error").into_response()
             }
         },
-        None => (StatusCode::SERVICE_UNAVAILABLE, "no operator state available").into_response(),
+        None => (StatusCode::SERVICE_UNAVAILABLE, "no state available").into_response(),
     }
 }
 
 /// Service version info.
 async fn version() -> impl IntoResponse {
     axum::Json(serde_json::json!({
-        "service": "link",
+        "service": "pillar-agent",
         "version": env!("CARGO_PKG_VERSION"),
     }))
 }
@@ -78,7 +78,7 @@ mod tests {
 
     fn test_app(state: Option<NodeStatus>) -> Router {
         let app_state = AppState {
-            shared_state: Arc::new(RwLock::new(state)),
+            shared_status: Arc::new(RwLock::new(state)),
             metrics: Arc::new(crate::metrics::Metrics::new()),
         };
         router(app_state)
@@ -178,7 +178,7 @@ mod tests {
             .await
             .unwrap();
         let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
-        assert_eq!(json["service"], "link");
+        assert_eq!(json["service"], "pillar-agent");
     }
 
     #[tokio::test]

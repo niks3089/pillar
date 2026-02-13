@@ -74,8 +74,8 @@ message NodeStatus {
     uint64 link_controller_latency_ms = 42;
     uint64 link_status_reports_sent = 43;
     uint64 link_status_reports_failed = 44;
-    uint64 link_state_file_age_secs = 45;
-    uint64 link_state_read_errors = 46;
+    uint64 link_state_file_age_secs = 45;   // deprecated: always 0 in agent (no file IPC)
+    uint64 link_state_read_errors = 46;    // deprecated: always 0 in agent (no file IPC)
     uint64 link_log_batches_dropped = 47;
     uint64 link_uptime_secs = 48;
     uint64 link_commands_received = 49;

@@ -30,7 +30,7 @@ fn register_gauge_vec(registry: &Registry, name: &str, help: &str, labels: &[&st
     g
 }
 
-/// All Prometheus metrics exposed by Link.
+/// All Prometheus metrics exposed by the agent.
 pub struct Metrics {
     registry: Registry,
 
@@ -58,10 +58,6 @@ pub struct Metrics {
     process_cpu_percent: GaugeVec,
     process_memory_bytes: GaugeVec,
 
-    // Link health metrics
-    state_file_age_seconds: Gauge,
-    state_read_errors_total: IntCounter,
-
     // Operator self-health (pass-through from proto)
     operator_reconcile_count: IntGauge,
     operator_health_check_errors: IntGauge,
@@ -77,8 +73,6 @@ pub struct Metrics {
     link_controller_latency_ms: IntGauge,
     link_status_reports_sent: IntGauge,
     link_status_reports_failed: IntGauge,
-    link_state_file_age_secs: IntGauge,
-    link_state_read_errors_gauge: IntGauge,
     link_log_batches_dropped: IntGauge,
     link_uptime_secs: IntGauge,
     link_commands_received: IntGauge,
@@ -111,17 +105,15 @@ impl Metrics {
             system_disk_total_bytes: register_int_gauge(&registry, "pillar_system_disk_total_bytes", "Total disk space in bytes"),
             process_cpu_percent: register_gauge_vec(&registry, "pillar_process_cpu_percent", "Process CPU usage percentage", &["process"]),
             process_memory_bytes: register_gauge_vec(&registry, "pillar_process_memory_bytes", "Process RSS memory in bytes", &["process"]),
-            state_file_age_seconds: register_gauge(&registry, "pillar_link_state_file_age_seconds", "Age of the operator state file in seconds"),
-            state_read_errors_total: register_int_counter(&registry, "pillar_link_state_read_errors_total", "Total state file read errors"),
 
             // Operator self-health
-            operator_reconcile_count: register_int_gauge(&registry, "pillar_operator_reconcile_count", "Total operator reconciliation ticks"),
+            operator_reconcile_count: register_int_gauge(&registry, "pillar_operator_reconcile_count", "Total reconciliation ticks"),
             operator_health_check_errors: register_int_gauge(&registry, "pillar_operator_health_check_errors", "Cumulative health check failures"),
             operator_consecutive_off_count: register_int_gauge(&registry, "pillar_operator_consecutive_off_count", "Current consecutive Off debounce counter"),
             operator_recovery_count: register_int_gauge(&registry, "pillar_operator_recovery_count", "Snapshot recoveries attempted"),
-            operator_state_write_errors: register_int_gauge(&registry, "pillar_operator_state_write_errors", "State file write failures"),
-            operator_pending_cmd_errors: register_int_gauge(&registry, "pillar_operator_pending_cmd_errors", "Pending command read/parse failures"),
-            operator_uptime_secs: register_int_gauge(&registry, "pillar_operator_uptime_secs", "Seconds since operator started"),
+            operator_state_write_errors: register_int_gauge(&registry, "pillar_operator_state_write_errors", "State file write failures (deprecated, always 0)"),
+            operator_pending_cmd_errors: register_int_gauge(&registry, "pillar_operator_pending_cmd_errors", "Command errors (deprecated, always 0)"),
+            operator_uptime_secs: register_int_gauge(&registry, "pillar_operator_uptime_secs", "Seconds since agent started"),
             operator_version_mismatch: register_int_gauge(&registry, "pillar_operator_version_mismatch", "Validator/cluster version mismatch (1/0)"),
 
             // Link self-health
@@ -129,15 +121,13 @@ impl Metrics {
             link_controller_latency_ms: register_int_gauge(&registry, "pillar_link_controller_latency_ms", "Last ReportStatus round-trip in ms"),
             link_status_reports_sent: register_int_gauge(&registry, "pillar_link_status_reports_sent", "Successful status report count"),
             link_status_reports_failed: register_int_gauge(&registry, "pillar_link_status_reports_failed", "Failed status report count"),
-            link_state_file_age_secs: register_int_gauge(&registry, "pillar_link_state_file_age_secs", "Operator state file age in seconds"),
-            link_state_read_errors_gauge: register_int_gauge(&registry, "pillar_link_state_read_errors", "State file read errors (fleet-wide)"),
             link_log_batches_dropped: register_int_gauge(&registry, "pillar_link_log_batches_dropped", "Log batches dropped on controller unreachable"),
-            link_uptime_secs: register_int_gauge(&registry, "pillar_link_uptime_secs", "Seconds since link started"),
+            link_uptime_secs: register_int_gauge(&registry, "pillar_link_uptime_secs", "Seconds since agent started"),
             link_commands_received: register_int_gauge(&registry, "pillar_link_commands_received", "Commands received via CommandStream"),
 
             // Start times
-            operator_started_at_unix_secs: register_int_gauge(&registry, "pillar_operator_started_at_unix_secs", "Operator process start time (unix epoch)"),
-            link_started_at_unix_secs: register_int_gauge(&registry, "pillar_link_started_at_unix_secs", "Link process start time (unix epoch)"),
+            operator_started_at_unix_secs: register_int_gauge(&registry, "pillar_operator_started_at_unix_secs", "Agent process start time (unix epoch)"),
+            link_started_at_unix_secs: register_int_gauge(&registry, "pillar_link_started_at_unix_secs", "Agent process start time (unix epoch)"),
 
             registry,
         }
@@ -145,7 +135,6 @@ impl Metrics {
 
     /// Update Prometheus metrics from the enriched NodeStatus.
     pub fn update_from_state(&self, status: &NodeStatus) {
-        // Node state gauge
         for &s in NODE_STATES {
             let val = if s == status.state { 1.0 } else { 0.0 };
             self.node_state.with_label_values(&[s]).set(val);
@@ -166,13 +155,7 @@ impl Metrics {
             .with_label_values(&[&status.role, &status.client, &status.cluster, &status.version])
             .set(1.0);
 
-        // State file age from updated_at_unix_secs
-        if status.updated_at_unix_secs > 0 {
-            let age = chrono::Utc::now().timestamp() - status.updated_at_unix_secs;
-            self.state_file_age_seconds.set(age.max(0) as f64);
-        }
-
-        // System metrics from enriched NodeStatus
+        // System metrics
         self.system_cpu_usage_percent
             .set(status.cpu_usage_percent);
         self.system_memory_used_bytes
@@ -184,7 +167,6 @@ impl Metrics {
         self.system_disk_total_bytes
             .set(status.disk_total_bytes as i64);
 
-        // Network counters: IntCounter only supports inc_by, so we track the delta.
         let rx = status.network_rx_bytes;
         let current_rx = self.system_network_rx_bytes_total.get();
         if rx > current_rx {
@@ -197,7 +179,7 @@ impl Metrics {
             self.system_network_tx_bytes_total.inc_by(tx - current_tx);
         }
 
-        // Process metrics from enriched NodeStatus
+        // Process metrics
         self.process_cpu_percent
             .with_label_values(&["validator"])
             .set(status.validator_cpu_percent);
@@ -246,10 +228,6 @@ impl Metrics {
             .set(status.link_status_reports_sent as i64);
         self.link_status_reports_failed
             .set(status.link_status_reports_failed as i64);
-        self.link_state_file_age_secs
-            .set(status.link_state_file_age_secs as i64);
-        self.link_state_read_errors_gauge
-            .set(status.link_state_read_errors as i64);
         self.link_log_batches_dropped
             .set(status.link_log_batches_dropped as i64);
         self.link_uptime_secs.set(status.link_uptime_secs as i64);
@@ -261,11 +239,6 @@ impl Metrics {
             .set(status.operator_started_at_unix_secs);
         self.link_started_at_unix_secs
             .set(status.link_started_at_unix_secs);
-    }
-
-    /// Increment state read error counter.
-    pub fn inc_state_read_errors(&self) {
-        self.state_read_errors_total.inc();
     }
 
     /// Gather all metrics and encode as Prometheus text format.
@@ -372,15 +345,5 @@ mod tests {
         let output = m.gather();
         assert!(output.contains(r#"pillar_process_cpu_percent{process="validator"}"#));
         assert!(output.contains(r#"pillar_process_memory_bytes{process="validator"}"#));
-    }
-
-    #[test]
-    fn inc_state_read_errors() {
-        let m = Metrics::new();
-        m.inc_state_read_errors();
-        m.inc_state_read_errors();
-
-        let output = m.gather();
-        assert!(output.contains("pillar_link_state_read_errors_total 2"));
     }
 }
