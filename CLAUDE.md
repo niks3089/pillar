@@ -1,12 +1,11 @@
 # Pillar
 
-Solana node operations platform with 3 components:
+Solana node operations platform with 2 components:
 
-- **Operator** (`pillar-operator`) — runs on each node, manages the validator lifecycle (health checks, restarts, snapshot recovery). No HTTP server, no external communication. Writes state to a binary proto file for Link to read.
-- **Link** (`pillar-link`) — runs alongside operator on each node, owns all external communication (HTTP endpoints, gRPC to controller). Reads operator state file, enriches with system/process metrics, and exposes via HTTP + Prometheus metrics + gRPC.
-- **Controller** (`pillar-controller`) — centralized management plane. Receives metrics from all Link instances via gRPC, stores in SQLite, serves web UI, provides Grafana-compatible scrape endpoint, fires alerts, and pushes binary upgrades to nodes.
+- **Agent** (`pillar-agent`) — single binary on each node. Manages the validator lifecycle (health checks, restarts, snapshot recovery), collects system/process metrics, serves HTTP endpoints, streams logs, and connects to the controller via gRPC.
+- **Controller** (`pillar-controller`) — centralized management plane. Receives metrics from all agents via gRPC, stores in SQLite, serves web UI, provides Grafana-compatible scrape endpoint, fires alerts, and pushes binary upgrades to nodes.
 
-Deployment: **operator + link + controller** (no standalone mode). Link always connects to a controller. Link keeps all 4 HTTP endpoints (/health, /status, /metrics, /version) for local debugging and load balancers, but the controller is the primary visibility layer for the fleet.
+Deployment: **agent + controller**. Agent always connects to a controller. Agent keeps all 4 HTTP endpoints (/health, /status, /metrics, /version) for local debugging and load balancers, but the controller is the primary visibility layer for the fleet.
 
 ## End-to-End Onboarding Flow
 
@@ -48,12 +47,12 @@ UI: Add a Node
 ```
 
 The node install script (`install-node.sh`):
-1. Downloads prebuilt `pillar-operator` + `pillar-link` binaries from GitHub Releases
+1. Downloads prebuilt `pillar-agent` binary from GitHub Releases
 2. Runs preflight checks (Linux, CPU, RAM, disk, systemd) with cluster-aware thresholds
 3. Creates `sol` user, applies sysctl tuning, installs Solana CLI, generates validator keypairs
-4. Configures link to connect to the provided controller endpoint
+4. Configures agent to connect to the provided controller endpoint
 5. Sets up sudoers so `sol` can manage validator systemd services via `sudo systemctl`
-6. Starts services, node registers with controller via `RegisterNode` RPC
+6. Starts agent, node registers with controller via `RegisterNode` RPC
 7. Controller UI shows the node as "registered"
 
 ### Step 3: Node Appears in UI with Lifecycle States
@@ -67,10 +66,10 @@ Once a node connects, the UI shows it progressing through states:
 | `starting_up` | Validator process started, waiting for first health check |
 | `behind` | Validator running but catching up to the chain tip |
 | `healthy` | Fully synced, serving traffic (green) |
-| `recovering` | Snapshot recovery in progress (operator triggered) |
+| `recovering` | Snapshot recovery in progress (agent triggered) |
 | `stopped` | Validator explicitly stopped via API (no automatic restart) |
 | `unhealthy` | Health checks failing, validator may be stuck |
-| `offline` | Node stopped reporting (link unreachable for >60s) |
+| `offline` | Node stopped reporting (agent unreachable for >60s) |
 
 ### Step 4: Install Validator from the UI
 
@@ -93,14 +92,14 @@ The UI provides a **"Setup Validator"** panel on every node detail page. The use
 
 Clicking "Install Validator" sends a `ProvisionCommand` via `POST /api/nodes/:id/provision`:
 1. Controller wraps the request in `ControllerCommand::Provision(ProvisionCommand{...})`
-2. Controller pushes command to link via the `CommandStream` gRPC
-3. Link receives the command, stages the binary, writes `PendingCommand` for operator
-4. Operator picks up the pending command, downloads validator, configures systemd, starts the service
+2. Controller pushes command to agent via the `CommandStream` gRPC
+3. Agent receives the command, downloads the binary, verifies SHA256
+4. Agent installs the binary, writes systemd unit, starts the validator
 5. UI shows state progression: `provisioning` → `starting_up` → `behind` → `healthy`
 
 ### Connectivity: Controller Behind NAT/Firewall
 
-The fundamental problem: Link initiates gRPC connections **outbound** to the controller. If the controller is behind NAT, nodes can't reach it.
+The fundamental problem: Agent initiates gRPC connections **outbound** to the controller. If the controller is behind NAT, nodes can't reach it.
 
 **Solution: Cloudflare Tunnel (default for NAT/firewall)**
 
@@ -125,97 +124,90 @@ The onboarding command embedded in the UI always reflects the correct reachable 
 - **No Solana SDK deps** — raw JSON-RPC via reqwest for health checks
 - **Prometheus metrics** (open standard, not Datadog/StatsD)
 - **figment** for YAML config, **thiserror** for errors
-- **Operator has no HTTP server** — Link is responsible for all external-facing endpoints
-- **Single `NodeStatus` proto type** — flows from operator → binary state file → link → controller → SQLite → web UI + /metrics + alerts. Operator writes node-health fields, Link enriches with system/process metrics before pushing to controller.
-- **State sharing via atomic binary proto file** — operator encodes `NodeStatus` with prost, writes via temp + rename; link polls and decodes
-- **Controller always required** — Link must always connect to a controller (no feature gate, no standalone mode)
-- **extern_path for shared proto types** — link's and controller's build.rs use `extern_path` so gRPC stubs reference `pillar_shared::proto::*` directly, avoiding duplicate message types
-- **All services run as `sol` user** — the same Anza-convention user that runs the validator. Operator manages systemd services via `sudo systemctl` with a sudoers rule (`/etc/sudoers.d/sol-systemctl`). No separate `pillar` user.
+- **Single agent binary** — merges operator + link into one process. Reconciler and gRPC/HTTP run as concurrent async tasks sharing `NodeStatus` via `Arc<RwLock>`. No file-based IPC.
+- **Single `NodeStatus` proto type** — flows from agent reconciler → shared status → enrichment → controller → SQLite → web UI + /metrics + alerts. Reconciler writes node-health fields, metrics updater enriches with system/process metrics.
+- **Controller always required** — agent must always connect to a controller (no feature gate, no standalone mode)
+- **extern_path for shared proto types** — agent's and controller's build.rs use `extern_path` so gRPC stubs reference `pillar_shared::proto::*` directly, avoiding duplicate message types
+- **All services run as `sol` user** — the same Anza-convention user that runs the validator. Agent manages systemd services via `sudo systemctl` with a sudoers rule (`/etc/sudoers.d/sol-systemctl`). No separate `pillar` user.
 - Author: Nikhil Acharya
 
 ## Data Flow
 
 ```
-Operator                          Link                           Controller
-   |                               |                                |
-   |  build NodeStatus             |                                |
-   |  (node health fields)         |                                |
-   |                               |                                |
-   |  encode proto binary -------> read_state() decode              |
-   |  write to state file          |                                |
-   |                               |  enrich with system metrics    |
-   |                               |  (cpu, mem, disk, net, procs)  |
-   |                               |                                |
-   |                               |  RegisterNode on connect ----> |  store in SQLite
-   |                               |  push enriched NodeStatus ---> |  store in status_history
-   |                               |  stream logs (PushLogs) -----> |  store in logs table
-   |                               |  serve /metrics, /status, etc  |
-   |                               |                                |  evaluate alert rules
-   |                               |  <--- ControllerCommand ----   |  (restart, recover, upgrade)
-   |                               |                                |
-   |                               |                                |  serve web UI + /metrics
-   |                               |                                |  (Grafana scrape endpoint)
-   |                               |                                |  serve logs in UI per node
+Agent                                                    Controller
+   |                                                        |
+   |  reconciler: health check, state machine               |
+   |  → build NodeStatus (health fields)                    |
+   |  → write to shared Arc<RwLock<Option<NodeStatus>>>     |
+   |                                                        |
+   |  metrics_updater: refresh sysinfo                      |
+   |  → enrich NodeStatus (cpu, mem, disk, net, procs)      |
+   |  → update Prometheus registry                          |
+   |                                                        |
+   |  grpc: RegisterNode on connect ----------------------> |  store in SQLite
+   |  grpc: push enriched NodeStatus --------------------> |  store in status_history
+   |  grpc: stream logs (PushLogs) ----------------------> |  store in logs table
+   |  http: serve /metrics, /status, /health, /version      |
+   |                                                        |  evaluate alert rules
+   |  grpc: <--- ControllerCommand -----------------------  |  (restart, recover, upgrade)
+   |  → route command to reconciler via mpsc channel        |
+   |                                                        |
+   |                                                        |  serve web UI + /metrics
+   |                                                        |  (Grafana scrape endpoint)
+   |                                                        |  serve logs in UI per node
 ```
 
 ## Crate Structure
 
 ```
 pillar/
-  Cargo.toml              # workspace: operator, shared, link, controller (edition 2021, LTO release)
-  config.yaml             # operator config (role, network, paths)
-  link-config.yaml        # link config (state_path, http_listen, controller)
-  shared/                 # library crate — proto types + state reader/writer shared between operator and link
+  Cargo.toml              # workspace: agent, shared, controller (edition 2021, LTO release)
+  shared/                 # library crate — proto types + state reader/writer
     build.rs              # prost-build proto compilation with serde derives
     proto/
       pillar.proto        # NodeStatus, gRPC service (ReportStatus, CommandStream, RegisterNode, ReportUpgradeStatus, PushLogs)
     src/
-      lib.rs              # exports proto module + read_state/write_state binary helpers
-      types.rs            # NodeState, NodeHealth, SlotInfo (internal operator types)
-  operator/               # binary crate — the runtime agent on each node
+      lib.rs              # exports proto module + read_state/write_state binary helpers (used for debug_state_file)
+      types.rs            # NodeState, NodeHealth, SlotInfo (internal types)
+  agent/                  # binary crate — single agent on each node (merged operator + link)
+    build.rs              # tonic-prost proto compilation with extern_path (client stubs)
     src/
-      main.rs             # bootstrap: config -> services -> run operator loop + signal handling
-      operator.rs         # Operator struct, reconciliation loop + state machine, builds NodeStatus proto
-      config.rs           # OperatorConfig (nested: NetworkConfig, LifecycleConfig, SnapshotConfig, HealthConfig, PathConfig)
+      main.rs             # bootstrap: config → services → spawn reconciler + gRPC + HTTP + metrics + logs
+      config.rs           # AgentConfig (merged: role, client, network, lifecycle, snapshot, health, paths, http_listen, controller, log_collector)
       error.rs            # PillarError enum (thiserror), PillarResult alias
       role.rs             # NodeRole enum { Rpc, Validator, Grpc }
       event.rs            # OperatorEvent struct, EventKind enum (state transitions, restarts, crashes)
-      state.rs            # re-exports NodeStatus + write_state from shared
+      command.rs          # AgentCommand enum — in-memory commands from gRPC to reconciler
+      reconcile.rs        # Reconciler: health check loop + state machine + command handler, writes to SharedStatus
+      provisioner.rs      # download_and_stage, provision (write systemd unit + start), upgrade
+      agent_health.rs     # AtomicU64 counters for controller connectivity metrics
+      grpc.rs             # ControllerLink — gRPC client (RegisterNode, ReportStatus, CommandStream, PushLogs)
+      http.rs             # axum router: GET /health, /status, /version, /metrics
+      metrics.rs          # Prometheus registry: all metrics from enriched NodeStatus
+      metrics_updater.rs  # async loop: refreshes sysinfo, enriches NodeStatus with system/process metrics
+      system_info.rs      # sysinfo wrapper: CPU, memory, disk, network, per-process stats
+      log_collector.rs    # tails journald for validator/agent services, streams log batches to controller
       health/
         mod.rs            # HealthChecker trait + create_health_checker() factory
-        types.rs          # re-exports NodeHealth, NodeState, SlotInfo from shared
         rpc_client.rs     # raw JSON-RPC client (getSlot, getHealth, getVoteAccounts)
         rpc_health.rs     # RpcHealthChecker — slot comparison for RPC/gRPC nodes
         validator_health.rs # ValidatorHealthChecker — slot + voting checks for validators
       client/
         mod.rs            # ValidatorClient trait + ClientKind enum + create_client() factory
         agave.rs          # AgaveClient (production-ready, service: solana-validator)
-        jito.rs           # JitoClient (stub, service: jito-validator) — TODO: MEV extensions
-        firedancer.rs     # FiredancerClient (stub, service: firedancer) — TODO: fdctl management
-        frankendancer.rs  # FrankendancerClient (stub) — TODO: fdctl + agave hybrid
+        jito.rs           # JitoClient (stub, service: jito-validator)
+        firedancer.rs     # FiredancerClient (stub, service: firedancer)
+        frankendancer.rs  # FrankendancerClient (stub)
         dummy.rs          # DummyClient for testing/mocking
       lifecycle/
-        mod.rs            # SystemdManager (start, stop, restart, is_active) — uses `sudo systemctl` for service management
+        mod.rs            # SystemdManager (start, stop, restart, is_active) — uses `sudo systemctl`
       snapshot/
         mod.rs            # SnapshotManager trait + DownloadMethod enum + factory + helpers
         download_tcp.rs   # TcpSnapshotManager (full + incremental, speed monitoring)
         staleness.rs      # is_stale() pure function
         recovery.rs       # SnapshotRecovery: stop -> wipe ledger -> download -> restart
-  link/                   # binary crate — external communication sidecar
-    build.rs              # tonic-prost proto compilation with extern_path (client stubs)
-    src/
-      main.rs             # bootstrap: state reader, metrics updater, gRPC controller link, HTTP server
-      config.rs           # LinkConfig (state_path, poll_interval, http_listen, controller — required)
-      error.rs            # LinkError enum, LinkResult alias
-      grpc.rs             # ControllerLink — pushes enriched NodeStatus, handles CommandStream (restart, recover, upgrade)
-      http.rs             # axum router: GET /health, /status, /version, /metrics
-      metrics.rs          # Prometheus registry: reads all metrics from enriched NodeStatus
-      metrics_updater.rs  # async loop: refreshes sysinfo, enriches NodeStatus with system/process metrics
-      state_reader.rs     # polls operator-state.bin into SharedState (Arc<RwLock<Option<NodeStatus>>>)
-      system_info.rs      # sysinfo wrapper: CPU, memory, disk, network, per-process stats
-      log_collector.rs    # tails journald for validator/operator/link services, streams log batches to controller via PushLogs RPC
   scripts/
-    install-node.sh       # idempotent installer for operator + link on a Linux node
+    install-node.sh       # idempotent installer for pillar-agent on a Linux node
 ```
 
 ## Controller Crate
@@ -255,9 +247,8 @@ controller/
 - Current state badge + state history timeline
 - Live metrics: slots_behind, CPU, memory, disk, network
 - Actions: Restart, Recover, Stop, Cancel Deployment, Upgrade, Remove
-- Config: current operator.yaml + link.yaml (read-only view)
 - **Logs tab** — live-streaming log viewer for all services on this node:
-  - Filter by service: validator, operator, link (toggle each on/off)
+  - Filter by service: validator, agent (toggle each on/off)
   - Filter by level: info, warn, error, debug
   - Search/grep within logs
   - Auto-scroll (live tail mode) with pause button
@@ -314,7 +305,7 @@ GET  /api/alerts                     list alerts (active + resolved)
 POST /api/alerts/:id/resolve         resolve alert
 POST /api/artifacts                  upload binary artifact (pillar binaries or validator binaries)
 GET  /api/artifacts                  list available artifacts
-GET  /api/artifacts/:name/:version   download artifact (used by link during upgrades)
+GET  /api/artifacts/:name/:version   download artifact (used by agent during upgrades)
 GET  /api/versions/:client           list available versions for a client (fetched from GitHub Releases)
 GET  /metrics                        Prometheus scrape (all nodes, labeled)
 ```
@@ -327,16 +318,14 @@ CREATE TABLE nodes (
     lifecycle_state TEXT NOT NULL DEFAULT 'registered',  -- registered|provisioning|starting_up|behind|healthy|recovering|stopped|unhealthy|offline
     role TEXT,
     client TEXT,
-    client_version TEXT,
     cluster TEXT,
     hostname TEXT,
     architecture TEXT,
     os TEXT,
-    operator_version TEXT,
-    link_version TEXT,
+    agent_version TEXT,
+    ip_address TEXT,
     last_seen_at INTEGER,
     registered_at INTEGER,
-    -- provisioning config (set when validator installed via UI)
     provision_config_json TEXT   -- {client, version, cluster, addons: {jito_mev, yellowstone}, paths, identity}
 );
 
@@ -361,7 +350,7 @@ CREATE TABLE alerts (
 CREATE TABLE logs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     node_id TEXT NOT NULL,
-    service TEXT NOT NULL,           -- 'validator', 'operator', 'link'
+    service TEXT NOT NULL,           -- 'validator', 'agent'
     level TEXT NOT NULL,             -- 'info', 'warn', 'error', 'debug'
     message TEXT NOT NULL,
     unit TEXT,                       -- systemd unit name
@@ -372,7 +361,7 @@ CREATE INDEX idx_logs_node_service ON logs(node_id, service, timestamp_ms);
 
 CREATE TABLE artifacts (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL,         -- 'pillar-operator', 'pillar-link', 'agave-validator', etc.
+    name TEXT NOT NULL,         -- 'pillar-agent', 'agave-validator', etc.
     version TEXT NOT NULL,
     sha256 TEXT NOT NULL,
     size_bytes INTEGER,
@@ -417,42 +406,41 @@ Alert deduplication: alerts fire on state transition (healthy→unhealthy), not 
 1. Upload binary to controller (`POST /api/artifacts`)
 2. Trigger upgrade from UI/API (`POST /api/nodes/:id/upgrade`)
 3. Controller sends `UpgradeCommand` via `CommandStream` gRPC
-4. Link downloads binary from controller (`GET /api/artifacts/:name/:version`)
-5. Link verifies SHA256, atomic-swaps binary on disk, restarts service via systemd
-6. Link reports success/failure back via `ReportUpgradeStatus` RPC
+4. Agent downloads binary from controller (`GET /api/artifacts/:name/:version`)
+5. Agent verifies SHA256, atomic-swaps binary on disk, restarts service via systemd
+6. Agent reports success/failure back via `ReportUpgradeStatus` RPC
 
-**Self-upgrade for Link:** swap binary on disk → exit cleanly → systemd `Restart=always` restarts with new binary.
+**Self-upgrade for agent:** swap binary on disk → exit cleanly → systemd `Restart=always` restarts with new binary.
 
 ### Validator Provisioning Flow (from UI)
 
 1. User fills out the "Setup Validator" form on the Node Detail page (client, version, cluster, paths, keypairs, entrypoints, known_validators, addons)
 2. UI sends `POST /api/nodes/:id/provision` with a `ProvisionRequest` JSON body
 3. Controller maps the request to a `ProvisionCommand` proto, wraps in `ControllerCommand::Provision(...)`, sends via `registry.send_command()`
-4. Link receives the command on its `CommandStream` gRPC, downloads the validator binary (from `download_url`), verifies SHA256
-5. Link writes a `PendingCommand` JSON file (`/var/run/pillar/pending-command.json`) with `command_type: "provision"` and the full `ProvisionCommand`
-6. Operator picks up the pending command, installs the binary, writes systemd unit, starts the validator
-7. Node state progresses: `registered` → `provisioning` → `starting_up` → `behind` → `healthy`
-8. UI shows live progress via SSE log stream + polling
+4. Agent receives the command on its `CommandStream` gRPC, downloads the validator binary (from `download_url`), verifies SHA256
+5. Agent installs the binary, writes systemd unit, starts the validator, exits for config reload
+6. Node state progresses: `registered` → `provisioning` → `starting_up` → `behind` → `healthy`
+7. UI shows live progress via SSE log stream + polling
 
 ### Log Streaming
 
-Logs from all services on each node (validator, operator, link) are streamed to the controller and viewable in the UI.
+Logs from all services on each node (validator, agent) are streamed to the controller and viewable in the UI.
 
 **Flow:**
-1. Link's `log_collector` tails journald for configured systemd units (`solana-validator.service`, `pillar-operator.service`, `pillar-link.service`)
+1. Agent's `log_collector` tails journald for configured systemd units (`solana-validator.service`, `pillar-agent.service`)
 2. Log entries are parsed into structured `LogEntry` messages (service, timestamp, level, message, unit)
-3. Link buffers entries and pushes batches to controller via the `PushLogs` client-streaming gRPC RPC
+3. Agent buffers entries and pushes batches to controller via the `PushLogs` client-streaming gRPC RPC
 4. Controller writes log batches to the `logs` SQLite table
 5. Controller prunes old logs based on `retention_days` config (same pruner as status_history)
 6. UI shows logs on the Node Detail page with live tail via SSE
 
-**Link log collector design:**
+**Agent log collector design:**
 - Reads from journald via `journalctl -f -u <unit> --output=json` subprocess per unit (simple, no extra crate deps)
 - Parses JSON output: extracts `MESSAGE`, `PRIORITY`, `__REALTIME_TIMESTAMP`, `_SYSTEMD_UNIT`
 - Maps journald priority (0-7) to level string: 0-3 → error, 4 → warn, 5-6 → info, 7 → debug
 - Buffers up to 100 entries or 1 second (whichever comes first) before flushing a `LogBatch`
 - If controller is unreachable, drops log batches (logs are best-effort, not durably queued — journald is the source of truth on-node)
-- Configurable in link config: `log_collector.units` (list of systemd units to tail), `log_collector.buffer_size`, `log_collector.enabled` (default true)
+- Configurable in agent config: `log_collector.units` (list of systemd units to tail), `log_collector.buffer_size`, `log_collector.enabled` (default true)
 
 **Controller log serving:**
 - `GET /api/nodes/:id/logs` — paginated historical query with filters (service, level, since, until, limit, offset, search text)
@@ -469,58 +457,58 @@ pillar_node_slots_behind{node_id="node-1"} 5
 
 Grafana scrapes the controller's `/metrics` endpoint. One controller = one scrape target for the entire fleet.
 
-### Future: `dashboards/` Folder
+### `dashboards/` Folder
 
 ```
 dashboards/
   grafana/
-    provisioning.json     # Grafana dashboard provisioning
     fleet-overview.json   # fleet summary dashboard
     node-detail.json      # single-node detail dashboard
   prometheus/
     scrape.yml            # Prometheus scrape config for controller
-  alerts/
-    rules.yml             # Prometheus alerting rules (optional, controller has built-in alerts)
 ```
 
 ## Key Types
 
-- **`proto::NodeStatus`** (shared) — single flat proto type flowing operator → state file → link → controller. Contains node health, slot info, restart/crash state, role/client/cluster/version metadata, system metrics (cpu, mem, disk, net), per-process metrics (validator, operator, link), and upgrade/version tracking fields (operator_version, link_version, pending_upgrade, hostname).
-- **`NodeState`** enum — `Off | StartingUp | Behind | Healthy | Recovering` (internal operator enum, serialized as string in proto)
-- **`NodeHealth`** — state + slot_info + slots_behind (internal operator health check result)
+- **`proto::NodeStatus`** (shared) — single flat proto type flowing agent → controller. Contains node health, slot info, restart/crash state, role/client/cluster/version metadata, system metrics (cpu, mem, disk, net), per-process metrics (validator, agent), agent health counters (reconcile_count, health_check_errors, recovery_count, controller_connected, etc.), and version tracking fields (agent_version, pending_upgrade, hostname).
+- **`NodeState`** enum — `Off | StartingUp | Behind | Healthy | Recovering` (internal agent enum, serialized as string in proto)
+- **`NodeHealth`** — state + slot_info + slots_behind (internal agent health check result)
 - **`ClientKind`** enum — `Agave | Jito | Firedancer | Frankendancer | Dummy`
 - **`DownloadMethod`** enum — `Tcp` (only active transport, extensible for WDT/HTTP/S3)
 - **`NodeRole`** enum — `Rpc | Validator | Grpc`
+- **`AgentCommand`** enum — `Provision | Upgrade | Restart | Recover | Stop` (in-memory commands from gRPC to reconciler via mpsc channel)
 
-## Operator Reconciliation Loop
+## Agent Reconciliation Loop
 
-The core loop in `operator.rs` runs on a configurable interval:
+The core loop in `reconcile.rs` runs on a configurable interval:
 1. Health check (treats errors as `Off`; requires `consecutive_off_threshold` consecutive Off checks before transitioning)
 2. State transition handling (logs events, updates timestamps)
-3. Build `NodeStatus` proto and write to binary state file (atomic write)
+3. Publish `NodeStatus` to shared `Arc<RwLock>` (metrics updater enriches, gRPC pushes to controller)
 4. Timeout checks (max startup wait, max catchup wait)
 5. Attempt recovery if `Off` (checks crash threshold, triggers snapshot recovery)
+6. Handle commands from controller (restart, recover, stop, provision, upgrade) via mpsc channel
 
 Recovery sequence: stop validator -> wipe ledger -> download snapshot -> restart validator.
 
-## Link Enrichment
+## Agent Metrics Enrichment
 
-The metrics updater in Link enriches the `NodeStatus` read from disk with:
+The metrics updater enriches the `NodeStatus` written by the reconciler with:
 - System metrics: CPU usage, memory (used/total), disk (used/total), network (rx/tx bytes)
-- Process metrics: validator (CPU, memory), operator (CPU, memory), link (CPU, memory)
+- Process metrics: validator (CPU, memory), agent (CPU, memory)
+- Controller connectivity: connected, latency, reports sent/failed, log batches dropped, commands received
 
 This enriched `NodeStatus` is the single source of truth for HTTP endpoints, Prometheus metrics, and gRPC pushes to controller.
 
-## Link HTTP Endpoints
+## Agent HTTP Endpoints
 
 | Endpoint | Response |
 |----------|----------|
 | `GET /health` | 200 if `healthy == true`, 503 otherwise |
 | `GET /status` | Full enriched NodeStatus as JSON (proto types have serde derives), or 503 if unavailable |
-| `GET /version` | `{"service": "pillar-link", "version": "..."}` |
+| `GET /version` | `{"service": "pillar-agent", "version": "..."}` |
 | `GET /metrics` | Prometheus text format (all metrics from enriched NodeStatus) |
 
-These endpoints remain available even when the controller is unreachable — Link keeps collecting and serving data locally.
+These endpoints remain available even when the controller is unreachable — agent keeps collecting and serving data locally.
 
 ## Prometheus Metrics
 
@@ -528,29 +516,30 @@ Node metrics: `pillar_node_state`, `pillar_node_slots_behind`, `pillar_node_loca
 
 System metrics: `pillar_system_cpu_usage_percent`, `pillar_system_memory_*`, `pillar_system_disk_*`, `pillar_system_network_*`
 
-Process metrics (labeled by process: validator/operator/link): `pillar_process_cpu_percent`, `pillar_process_memory_bytes`
+Process metrics (labeled by process: validator/agent): `pillar_process_cpu_percent`, `pillar_process_memory_bytes`
 
-Link health: `pillar_link_state_file_age_seconds`, `pillar_link_state_read_errors_total`
+Reconciler health: `pillar_reconcile_count`, `pillar_health_check_errors`, `pillar_consecutive_off_count`, `pillar_recovery_count`, `pillar_agent_uptime_secs`, `pillar_version_mismatch`
+
+Controller connectivity: `pillar_controller_connected`, `pillar_controller_latency_ms`, `pillar_status_reports_sent`, `pillar_status_reports_failed`, `pillar_log_batches_dropped`, `pillar_commands_received`
+
+Start time: `pillar_agent_started_at_unix_secs`
 
 ## Configuration
 
-Operator config (`PILLAR_CONFIG` env var or `config.yaml`):
+Agent config (`PILLAR_AGENT_CONFIG` env var or `agent.yaml`):
 - `role`: rpc/validator/grpc
 - `client`: agave (default) / jito / firedancer / frankendancer / dummy
-- `state_path`: default `/var/run/pillar/operator-state.bin`
+- `debug_state_file`: optional path for binary proto state file (for debugging)
 - `network`: cluster, reference_rpc_urls
 - `lifecycle`: service_name, max_startup_wait_secs (600), max_catchup_wait_secs (1800), crash_window_secs (3600), crash_threshold (3)
 - `snapshot`: download_method, server_hostname, staleness_threshold_slots (1000), download_timeout_secs (3600)
 - `health`: check_interval_secs (20), slots_behind_threshold (100), rpc_timeout_secs (10), local_rpc_url, consecutive_off_threshold (3)
 - `paths`: ledger_path (/mnt/ledger), snapshot_path (/mnt/snapshots)
-
-Link config (`PILLAR_LINK_CONFIG` env var or `link-config.yaml`):
-- `state_path`: path to operator state binary proto file
-- `poll_interval_secs`: 5
 - `http_listen`: 0.0.0.0:9090
 - `controller` (required): endpoint, node_id, report_interval_secs (10)
+- `log_collector`: enabled (true), units (list of systemd units), buffer_size (100), flush_interval_ms (1000)
 
-Controller config (planned, `PILLAR_CONTROLLER_CONFIG` env var):
+Controller config (`PILLAR_CONTROLLER_CONFIG` env var):
 - `grpc_listen`: 0.0.0.0:50051
 - `http_listen`: 0.0.0.0:8080
 - `db_path`: /var/lib/pillar/controller.db
@@ -559,12 +548,6 @@ Controller config (planned, `PILLAR_CONTROLLER_CONFIG` env var):
 - `tunnel`: tunnel config if behind NAT (`type`: cloudflare/none, `credentials_path`)
 - `github_repo`: helius-labs/pillar (for fetching release artifacts)
 - `alerts`: list of alert rules (name, condition, action, webhook_url)
-
-Link log collector config (in `link-config.yaml` under `log_collector`):
-- `enabled`: true (default) — set false to disable log streaming
-- `units`: list of systemd units to tail (default: `["solana-validator.service", "pillar-operator.service", "pillar-link.service", "pillar-controller.service"]`)
-- `buffer_size`: 100 (max entries per batch before flush)
-- `flush_interval_ms`: 1000 (max time before flushing a partial batch)
 
 ## Installation
 
@@ -604,48 +587,50 @@ Phases:
 3. **Sol user setup** — create `sol` user with `/home/sol`, own data dirs, sudoers for `sudo systemctl`, sysctl tuning (rmem/wmem 128MB, max_map_count 1M), nofile limits (1M)
 4. **Solana CLI** — install via `release.anza.xyz` as sol user (skip if already installed), add to PATH
 5. **Keypairs** — generate `validator-keypair.json`, `vote-account-keypair.json`, `authorized-withdrawer-keypair.json` in `/home/sol/` (skip existing)
-6. **Install** — binaries to /usr/local/bin
-7. **Config** — /etc/pillar/operator.yaml and /etc/pillar/link.yaml (cluster-aware reference RPC defaults)
-8. **Systemd** — creates service units running as `sol` user, enables on boot, starts services
-9. **Register** — link starts, connects to controller, sends RegisterNode RPC; controller UI shows node as "registered"
+6. **Install** — `pillar-agent` binary to /usr/local/bin
+7. **Config** — `/etc/pillar/agent.yaml` (cluster-aware reference RPC defaults, controller endpoint, log collector)
+8. **Systemd** — creates `pillar-agent.service` running as `sol` user, enables on boot, starts service
+9. **Register** — agent starts, connects to controller, sends RegisterNode RPC; controller UI shows node as "registered"
 
 Post-install: open controller UI → select the new node → "Setup Validator" to install and configure the validator from the UI.
 
 ## Design Patterns
 
-- **Traits for extensibility**: `ServiceManager`, `SnapshotManager`, `ValidatorClient`, `HealthChecker` are all traits with concrete impls. Add new impls without changing consumers.
+- **Traits for extensibility**: `SnapshotManager`, `ValidatorClient`, `HealthChecker` are all traits with concrete impls. Add new impls without changing consumers.
 - **Enum + factory pattern**: `create_client()`, `create_health_checker()`, `create_snapshot_manager()` dispatch by enum variant. Adding a new variant = one enum entry + one file + one match arm.
 - **Config-driven**: everything configurable via YAML with serde defaults. No scattered env vars.
-- **Single proto type everywhere**: `NodeStatus` is the only data type flowing between components. Operator writes it, Link enriches it, controller receives it, Prometheus reads it.
-- **Atomic state sharing**: operator writes binary proto via temp-file + rename, link polls and reads. Safe for concurrent access on small files.
+- **Single proto type everywhere**: `NodeStatus` is the only data type flowing between components. Reconciler writes it, metrics updater enriches it, gRPC pushes it to controller, Prometheus reads it.
+- **In-memory state sharing**: reconciler and metrics updater share `NodeStatus` via `Arc<RwLock<Option<NodeStatus>>>`. No file-based IPC.
+- **In-memory command routing**: controller commands flow from gRPC task to reconciler via `mpsc::channel<AgentCommand>`. No file-based PendingCommand IPC.
 - **Snapshots are client-agnostic**: same `snapshot-<slot>-<hash>.tar.zst` format regardless of validator client.
-- **Separation of concerns**: operator manages the node, link handles all external communication and metric enrichment, controller provides fleet visibility and management.
 
 ## Dev Environment
 - Single Ubuntu dev box: `139.84.215.43`
   - Controller: HTTP `:8080`, gRPC `:50051`
-  - Operator + Link running on the same box
+  - Agent running on the same box
 - Cluster: **testnet only** (box is small)
 - Reference RPC: `https://api.testnet.solana.com`
 
 ## Current Status
 
 **Production-ready**:
-- Operator core loop + state machine (Agave client)
+- Agent core reconciliation loop + state machine (Agave client)
 - Health checking (RPC and Validator modes) with consecutive-off debounce
 - Sliding-window crash loop detection (`crash_window_secs` + `crash_threshold`)
-- Config validation at startup (both operator and link)
+- Config validation at startup
 - Snapshot download via TCP + recovery orchestration
 - Systemd lifecycle management with retry
-- Link HTTP server (health, status, version, metrics)
+- Agent HTTP server (health, status, version, metrics)
 - Prometheus metrics collection (node + system + process via enriched NodeStatus)
-- Binary proto state file reader/writer
-- System/process metrics enrichment in Link
+- System/process metrics enrichment
 - gRPC controller push with enriched NodeStatus (always-on, retries with backoff)
-- Idempotent node installer script (`scripts/install-node.sh`) — creates sol user, sudoers, sysctl tuning, Solana CLI, keypairs, cluster-aware system checks
+- gRPC command stream (restart, recover, stop, provision, upgrade via in-memory channel)
+- Agent provisioner — download binary, verify SHA256, write systemd unit, start validator
+- Agent log collector — tail journald, parse, buffer, stream to controller via PushLogs
+- Idempotent node installer script (`scripts/install-node.sh`) — single binary, single config, single systemd unit
 - Controller gRPC server — all 5 RPCs (ReportStatus, CommandStream, RegisterNode, ReportUpgradeStatus, PushLogs)
 - Controller SQLite — schema, node registry, status_history, logs with retention pruning
-- Controller web UI — vanilla JS SPA embedded via rust-embed + React source (fleet overview, node detail with logs, Setup Validator provisioning panel)
+- Controller web UI — React SPA embedded via rust-embed (fleet overview, node detail with logs, Setup Validator provisioning panel)
 - Controller JSON API — /api/overview, /api/nodes, /api/nodes/:id, history, logs, logs/stream (SSE), restart, recover, provision, stop, cancel, onboard-command, DELETE
 - Controller Prometheus `/metrics` endpoint — per-node labels for Grafana scraping
 - Controller node lifecycle state machine — registered → starting_up → behind → healthy → recovering → offline
@@ -661,8 +646,8 @@ _Controller features (deferred):_
 
 _Install scripts:_
 - [ ] `scripts/install-controller.sh` — single-command installer (download binary from GitHub Releases, detect NAT, setup Cloudflare Tunnel if needed, start controller, print UI URL + onboard command)
-- [x] `scripts/install-node.sh` — sol user, sudoers, sysctl, Solana CLI, keypairs, cluster-aware system assessment, `--solana-version` / `--cluster` flags
-- [ ] Update `scripts/install-node.sh` — download prebuilt binaries from GitHub Releases instead of `--binaries-dir`; add gRPC connectivity check during install
+- [x] `scripts/install-node.sh` — single pillar-agent binary, sol user, sudoers, sysctl, Solana CLI, keypairs, cluster-aware system assessment
+- [ ] Update `scripts/install-node.sh` — download prebuilt binary from GitHub Releases instead of `--binaries-dir`; add gRPC connectivity check during install
 - [ ] `https://get.pillar.sh` — redirect to latest install-node.sh from GitHub Releases
 
 _Connectivity:_
@@ -671,22 +656,13 @@ _Connectivity:_
 
 _Validator provisioning from UI:_
 - [x] Provision HTTP API — `POST /api/nodes/:id/provision` sends `ProvisionCommand` via `CommandStream` gRPC
-- [x] Provision UI — "Setup Validator" panel on Node Detail page (client, cluster, version, paths, keypairs, entrypoints, known validators, download URL, SHA256, Jito MEV, Yellowstone gRPC)
-- [x] Proto `ProvisionCommand` — 17 fields (client, version, cluster, paths, keypairs, entrypoints, known_validators, download_url, sha256, jito_mev, jito_block_engine_url, yellowstone_grpc, rpc_port, dynamic_port_range)
+- [x] Provision UI — "Setup Validator" panel on Node Detail page
+- [x] Proto `ProvisionCommand` — full field set (client, version, cluster, paths, keypairs, entrypoints, known_validators, download_url, sha256, addons, validator_flags, etc.)
 - [x] Controller `build.rs` extern_path for `ProvisionCommand` — avoids duplicate generated struct
 - [ ] Version fetcher — query GitHub Releases API for Agave/Jito/Firedancer versions (dropdown instead of text input)
 
-_Log streaming (link side):_
-- [x] Link `log_collector.rs` — tail journald for validator/operator/link units, parse JSON output, buffer into LogBatch messages
-- [x] Link log_collector config — `log_collector.units`, `log_collector.buffer_size`, `log_collector.enabled`
-- [x] Link PushLogs gRPC client — stream log batches to controller, drop on disconnect (best-effort)
-
-_Node agent improvements:_
-- [x] gRPC controller commands — restart/recover write PendingCommand for operator; upgrade downloads + writes PendingCommand
-- [x] IPC mechanism between Link and Operator for controller commands (PendingCommand tagged enum)
-- [x] Upgrade handler in Link — download binary, verify SHA256, atomic swap, restart via systemd
-- [x] Upgrade HTTP endpoint — `POST /api/nodes/:id/upgrade` on controller
-- [ ] Self-upgrade for Link — swap binary, exit, let systemd restart with new version
+_Agent improvements:_
+- [ ] Self-upgrade — swap binary, exit, let systemd restart with new version
 - [ ] update_config handler — write config and signal reload
 
 _Validator clients:_
@@ -699,6 +675,6 @@ _Validator clients:_
 - `cargo clippy -- -D warnings` must be clean
 - `#![allow(dead_code)]` on modules with types not yet wired into main — remove as code matures
 - No code copied from rpc-operator — reference for protocol compatibility only, implementations are fresh
-- Shared types live in `pillar-shared` crate; operator and link both depend on it
+- Shared types live in `pillar-shared` crate; agent and controller both depend on it
 - Proto types generated via prost with serde derives for JSON serialization
 - Tests included inline in modules (health determination, metrics, HTTP endpoints, state reader, staleness)

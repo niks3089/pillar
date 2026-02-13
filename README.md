@@ -1,20 +1,23 @@
 # Pillar
 
-Solana node operations platform with 3 components:
+Solana node operations platform with 2 components:
 
-- **Operator** (`pillar-operator`) — runs on each node, manages the validator lifecycle (health checks, restarts, snapshot recovery)
-- **Link** (`pillar-link`) — runs alongside operator on each node, owns all external communication (HTTP endpoints, gRPC to controller)
-- **Controller** (`pillar-controller`) — centralized management plane with web UI, receives metrics from all nodes, pushes commands
+- **Agent** (`pillar-agent`) — runs on each node, manages the validator lifecycle (health checks, restarts, snapshot recovery) and handles all external communication (HTTP endpoints, gRPC to controller, Prometheus metrics, log streaming)
+- **Controller** (`pillar-controller`) — centralized management plane with web UI, receives metrics from all agents, pushes commands
 
 ## Architecture
 
 ```
-Operator                    Link                        Controller
-   |                          |                             |
-   |  write state file -----> |  read + enrich              |
-   |                          |  push via gRPC -----------> |  store in SQLite
-   |                          |  <--- commands ------------ |  serve web UI
-   |  <-- pending command --- |                             |
+Agent                                   Controller
+   │                                        │
+   │  reconcile loop (health, state)        │
+   │  enrich with system metrics            │
+   │                                        │
+   │──── RegisterNode ─────────────────────►│  store in SQLite
+   │──── ReportStatus (every 10s) ─────────►│  update NodeRegistry + SQLite
+   │◄─── CommandStream (server-stream) ─────│  push commands (restart, etc.)
+   │──── PushLogs (client-stream) ─────────►│  store in logs table
+   │                                        │  serve web UI + /metrics
 ```
 
 ## Building
@@ -38,7 +41,7 @@ cargo clippy -- -D warnings
 curl -sSL https://github.com/niks3089/pillar/releases/latest/download/install-controller.sh | bash
 ```
 
-### Node (operator + link)
+### Node (agent)
 
 ```bash
 curl -sSL https://get.pillar.sh | bash -s -- --controller <controller-endpoint>
@@ -46,6 +49,5 @@ curl -sSL https://get.pillar.sh | bash -s -- --controller <controller-endpoint>
 
 ## Configuration
 
-- Operator: `PILLAR_CONFIG` env var or `config.yaml`
-- Link: `PILLAR_LINK_CONFIG` env var or `link-config.yaml`
+- Agent: `PILLAR_AGENT_CONFIG` env var or `agent.yaml`
 - Controller: `PILLAR_CONTROLLER_CONFIG` env var or `controller-config.yaml`

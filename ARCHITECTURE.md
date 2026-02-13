@@ -1,35 +1,39 @@
 # Pillar Architecture
 
-Solana node operations platform. Three components, two deployment units, one data type flowing through the entire system.
+Solana node operations platform. Two components, two deployment units, one data type flowing through the entire system.
 
 ## Components
 
-- **Operator** (`pillar-operator`) — runs on each node, manages the validator lifecycle (health checks, restarts, snapshot recovery). No HTTP server, no external communication.
-- **Link** (`pillar-link`) — runs alongside operator on each node, owns all external communication (HTTP endpoints, gRPC to controller). Reads operator state file, enriches with system/process metrics.
-- **Controller** (`pillar-controller`) — centralized management plane. Receives metrics from all Link instances via gRPC, stores in SQLite, serves web UI, provides Grafana-compatible scrape endpoint.
+- **Agent** (`pillar-agent`) — runs on each node. Single binary that manages the validator lifecycle (health checks, restarts, snapshot recovery) and handles all external communication (HTTP endpoints, gRPC to controller, Prometheus metrics, log streaming to controller). Enriches health state with system/process metrics before reporting.
+- **Controller** (`pillar-controller`) — centralized management plane. Receives metrics from all agents via gRPC, stores in SQLite, serves web UI, provides Grafana-compatible scrape endpoint.
 
 ## Architecture Quanta
 
 An *architecture quantum* is the smallest independently deployable unit with high functional cohesion that includes all structural elements required for it to function.
 
-Pillar has **two quanta**:
+Pillar has **two quanta**, each a single binary:
 
-### Quantum 1: Node Agent (operator + link)
+### Quantum 1: Agent
 
-These two binaries are co-deployed on every node and cannot function independently:
+One binary per node. Runs the reconcile loop (health checks, state machine, crash detection, recovery), serves HTTP endpoints for load balancers, pushes status to the controller via gRPC, receives commands via gRPC server-streaming, and streams logs from journald.
 
-- **Operator** produces state but has no way to expose it — no HTTP server, no gRPC, no sockets. It writes to a file and that's it.
-- **Link** consumes that file but produces no node-health data of its own — it's purely a relay and enrichment layer.
+Internally, these responsibilities run as independent tokio tasks in a single runtime:
 
-Neither is useful alone. They form a single deployment quantum. You ship them together, upgrade them together, and a node is only "online" when both are running.
+- **Reconciler** — health checks, state machine, provisioning, crash loop detection
+- **Metrics updater** — refreshes sysinfo, enriches NodeStatus with CPU/mem/disk/net
+- **gRPC client** — registers with controller, pushes status, receives commands
+- **HTTP server** — `/health`, `/status`, `/version`, `/metrics`
+- **Log collector** — tails journald, streams batches to controller
+
+Commands from the controller flow directly into the reconcile loop via an in-process `mpsc` channel — no file IPC, no serialization.
 
 ### Quantum 2: Controller
 
-The controller is independently deployable. It runs on a completely different machine (often a laptop or a management server), has its own persistence (SQLite), its own UI (embedded SPA), and its own config. It can start, stop, and restart without affecting any running node agents — nodes just see a temporary gRPC disconnect and retry with backoff.
+Independently deployable. Runs on a different machine (often a laptop or management server), has its own persistence (SQLite), its own UI (embedded SPA), and its own config. Can start, stop, and restart without affecting any running agents — nodes just see a temporary gRPC disconnect and retry with backoff.
 
 ### The quantum boundary is the gRPC wire
 
-The two quanta are connected only by the gRPC service defined in `pillar.proto`. This is the single contract between deployment units. Within each quantum, coupling is much tighter (shared crate, shared files on disk).
+The two quanta are connected only by the gRPC service defined in `pillar.proto`. This is the single contract between deployment units.
 
 ## Static Coupling (Compile-Time)
 
@@ -41,100 +45,98 @@ Static coupling is what the compiler enforces — shared types, shared crates, s
                     │  (library)   │
                     └──────┬───────┘
                            │
-              ┌────────────┼────────────┐
-              │            │            │
-        ┌─────▼──┐   ┌────▼───┐  ┌────▼──────┐
-        │operator│   │  link  │  │controller │
-        └────────┘   └────────┘  └───────────┘
+                    ┌──────┴──────┐
+                    │             │
+              ┌─────▼──┐   ┌────▼──────┐
+              │ agent  │   │controller │
+              └────────┘   └───────────┘
 ```
 
-All three binaries depend on `pillar-shared`. No binary depends on any other binary. The dependency graph is a clean star topology.
+Both binaries depend on `pillar-shared`. Neither depends on the other.
 
 ### What `pillar-shared` provides
 
 | Export | Used by | Purpose |
 |--------|---------|---------|
-| `proto::NodeStatus` | all three | The single data type flowing through the entire system |
-| `proto::ControllerCommand` | link, controller | Command envelope (restart, recover, provision, upgrade, stop) |
-| `proto::ProvisionCommand` | all three | 23-field provisioning spec |
-| `proto::LogBatch` / `LogEntry` | link, controller | Structured log streaming |
-| `write_state()` / `read_state()` | operator, link | Binary proto file I/O |
-| `PendingCommand` enum | operator, link | JSON-serialized IPC between link and operator |
-| `PENDING_COMMAND_PATH` | operator, link | Hardcoded path constant (`/var/run/pillar/pending-command.json`) |
+| `proto::NodeStatus` | both | The single data type flowing through the entire system |
+| `proto::ControllerCommand` | both | Command envelope (restart, recover, provision, upgrade, stop) |
+| `proto::ProvisionCommand` | both | Provisioning spec (client, version, cluster, paths, flags, addons) |
+| `proto::LogBatch` / `LogEntry` | both | Structured log streaming |
+| `types::NodeState` / `NodeHealth` | agent | Internal health check result types |
 
 ### The `extern_path` trick
 
-Both link and controller compile `pillar.proto` through `tonic-prost-build` for their gRPC stubs, but use `extern_path(".pillar", "pillar_shared::proto")` so the generated code references the shared crate's types instead of generating duplicates. This means `proto::NodeStatus` is a single Rust type everywhere, not three independently generated copies. This is a deliberate static coupling choice that eliminates serialization boundaries within each quantum.
+Both agent and controller compile `pillar.proto` through `tonic-prost-build` for their gRPC stubs, but use `extern_path(".pillar", "pillar_shared::proto")` so the generated code references the shared crate's types instead of generating duplicates. This means `proto::NodeStatus` is a single Rust type everywhere — not two independently generated copies.
 
-### Static coupling strength by pair
+### Static coupling strength
 
 | Pair | Coupling | Mechanism |
 |------|----------|-----------|
-| operator ↔ link | **High** | Shared `NodeStatus` struct (32 fields), shared `PendingCommand` enum, shared file paths, shared `read_state`/`write_state` functions |
-| link ↔ controller | **Medium** | Shared proto types via `extern_path`, but communicate only through gRPC (wire boundary) |
-| operator ↔ controller | **None** | Zero direct dependency. They share types through `pillar-shared` but never reference each other |
+| agent ↔ controller | **Medium** | Shared proto types via `extern_path`, but communicate only through gRPC (wire boundary) |
+| Within agent | **High** | Shared `NodeStatus`, direct in-memory channels, same tokio runtime |
+| Within controller | **High** | In-memory channels (mpsc, broadcast), shared DashMap, shared Db handle |
 
 ## Dynamic Coupling (Runtime)
 
 Dynamic coupling is how components communicate at runtime — the protocols, the synchronicity, the failure domains.
 
-### Channel 1: Operator → Link (file-based, async, one-way)
+### Internal: Agent tasks (in-process, channels)
 
 ```
-Operator                          Link
-   │                               │
-   │  write_state(NodeStatus)      │
-   │  ─── /var/run/pillar/ ───►    │  read_state() every 5s
-   │  operator-state.bin           │
-   │  (atomic: write tmp+rename)   │  enrich with cpu/mem/disk/net
-   │                               │  store in SharedState
+                        ┌─────────────────┐
+                        │   Reconciler    │
+                  ┌────►│  (health check, │◄───── cmd_rx (mpsc)
+                  │     │  state machine) │
+                  │     └────────┬────────┘
+                  │              │ writes NodeStatus
+                  │              ▼
+                  │     ┌─────────────────┐
+                  │     │ SharedStatus    │ Arc<RwLock<NodeStatus>>
+                  │     └───┬─────┬───────┘
+                  │         │     │
+                  │         │     ▼
+                  │         │  ┌──────────────┐
+                  │         │  │Metrics       │ refreshes sysinfo,
+                  │         │  │Updater       │ enriches NodeStatus
+                  │         │  └──────────────┘
+                  │         │
+                  │         ▼
+                  │     ┌──────────────┐
+                  │     │ HTTP Server  │  /health, /status, /metrics
+                  │     └──────────────┘
+                  │
+                  │     ┌──────────────┐
+                  └─────│ gRPC Client  │  ReportStatus, CommandStream
+                        │              │  cmd_tx ──► reconciler
+                        └──────────────┘
 ```
 
-- **Protocol**: Binary protobuf file on local filesystem
-- **Synchronicity**: Fully asynchronous. Operator writes every 20s, link polls every 5s. They never wait for each other.
-- **Failure mode**: If operator dies, link reads stale data (detectable via `updated_at_unix_secs`). If link dies, operator doesn't notice or care.
-- **Coupling strength**: **Data coupling** — they share only a data structure (NodeStatus) through a file. No function calls, no shared memory, no sockets.
+- **Protocol**: In-memory `Arc<RwLock<NodeStatus>>` for state sharing, `tokio::sync::mpsc` for commands
+- **Synchronicity**: All tasks run concurrently. Reconciler writes status, other tasks read it. Commands flow instantly via channel.
+- **Failure mode**: If one task panics, other tasks continue. The reconcile loop is the critical path — if it dies, health checks stop.
 
-### Channel 2: Link → Operator (file-based, async, one-way)
-
-```
-Link                              Operator
-   │                               │
-   │  write PendingCommand JSON    │
-   │  ─── /var/run/pillar/ ───►    │  process_pending_command()
-   │  pending-command.json         │  every reconcile tick (20s)
-   │                               │  read + delete atomically
-```
-
-- **Protocol**: JSON file on local filesystem (tagged enum via serde)
-- **Synchronicity**: Fire-and-forget. Link writes the file and moves on. Operator picks it up on next tick.
-- **Failure mode**: If operator is down, the command file sits there until it restarts. At-most-once delivery (delete before processing).
-- **Coupling strength**: **Data coupling** — the `PendingCommand` enum is the sole contract.
-
-### Channel 3: Link → Controller (gRPC, bidirectional, persistent)
+### External: Agent → Controller (gRPC, bidirectional, persistent)
 
 ```
-Link                                Controller
-   │                                    │
-   │──── RegisterNode ─────────────────►│  upsert_node() in SQLite
-   │                                    │
-   │──── ReportStatus (every 10s) ─────►│  update NodeRegistry + SQLite
-   │                                    │
-   │◄─── CommandStream (server-stream)──│  mpsc channel per node
-   │                                    │
-   │──── PushLogs (client-stream) ─────►│  insert into logs table
-   │                                    │  broadcast to SSE subscribers
-   │──── ReportUpgradeStatus ──────────►│  log success/failure
+Agent                                   Controller
+   │                                        │
+   │──── RegisterNode ─────────────────────►│  upsert_node() in SQLite
+   │                                        │
+   │──── ReportStatus (every 10s) ─────────►│  update NodeRegistry + SQLite
+   │                                        │
+   │◄─── CommandStream (server-stream) ────│  mpsc channel per node
+   │                                        │
+   │──── PushLogs (client-stream) ─────────►│  insert into logs table
+   │                                        │  broadcast to SSE subscribers
+   │──── ReportUpgradeStatus ──────────────►│  log success/failure
 ```
 
 - **Protocol**: gRPC over HTTP/2 (tonic), defined by `PillarController` service in `pillar.proto`
-- **Synchronicity**: Mixed. `ReportStatus` is request-response (synchronous). `CommandStream` is a long-lived server-stream (asynchronous push). `PushLogs` is client-streaming (asynchronous).
-- **Failure mode**: Link retries with exponential backoff (1s → 60s max). Controller tracks nodes as "offline" after 60s of silence. Commands are lost if the stream drops (no persistent queue).
+- **Synchronicity**: Mixed. `ReportStatus` is request-response. `CommandStream` is a long-lived server-stream. `PushLogs` is client-streaming.
+- **Failure mode**: Agent retries with exponential backoff (1s → 60s max). Controller tracks nodes as "offline" after 60s of silence. Commands are lost if the stream drops (no persistent queue).
 - **Coupling strength**: **Contract coupling** — they agree on the proto service definition but know nothing about each other's internals.
 
-### Channel 4: Controller → Nodes (command push through gRPC)
-
-The full command path from UI to node:
+### Command path: Controller → Node
 
 ```
 User clicks "Restart"
@@ -149,72 +151,82 @@ NodeRegistry.send_command()
 CommandStream gRPC (server-streaming)
     │
     ▼
-Link handle_command()
-    │  match on Command variant
+Agent gRPC handler
+    │  cmd_tx.send(AgentCommand::Restart)
     ▼
-write PendingCommand JSON file
-    │
-    ▼
-Operator process_pending_command()
-    │  read + delete + execute
+Reconciler cmd_rx.recv()
+    │  execute immediately
     ▼
 systemctl restart solana-validator
 ```
 
-Six hops from click to action. Each hop is a different coupling mechanism:
+Four hops from click to action:
 
 1. HTTP JSON (browser → controller)
-2. In-memory mpsc channel (API handler → registry)
-3. gRPC stream (registry → link)
-4. File I/O (link → operator)
-5. Subprocess exec (operator → systemd)
-6. Systemd signal (systemd → validator process)
+2. In-memory mpsc channel → gRPC stream (controller → agent)
+3. In-memory mpsc channel (gRPC task → reconciler)
+4. Subprocess exec (reconciler → systemd → validator)
 
 ## Full Coupling Map
 
 ```
-    ┌─────────────────── QUANTUM 1: Node Agent ───────────────────┐
+    ┌──────────────────── QUANTUM 1: Agent ───────────────────────┐
     │                                                              │
-    │  ┌──────────┐   binary proto file   ┌──────────┐           │
-    │  │ Operator  │ ───────────────────► │   Link   │           │
-    │  │          │ ◄─────────────────── │          │           │
-    │  │          │   JSON command file   │          │           │
-    │  └──────────┘                       └─────┬────┘           │
-    │       │                                    │                │
-    │       │ systemctl                          │                │
-    │       ▼                                    │                │
-    │  ┌──────────┐                              │                │
-    │  │ systemd  │                              │                │
-    │  │(validator)│                              │                │
-    │  └──────────┘                              │                │
-    └────────────────────────────────────────────┼────────────────┘
-                                                 │
-                                          gRPC (5 RPCs)
-                                       proto contract only
-                                                 │
-    ┌─────────────── QUANTUM 2: Controller ──────┼────────────────┐
-    │                                            │                │
-    │  ┌──────────┐   in-memory channels  ┌─────▼────┐           │
-    │  │  HTTP/   │ ◄───────────────────► │  gRPC    │           │
-    │  │  Web UI  │   (mpsc, broadcast)   │  Server  │           │
-    │  └──────────┘                       └──────────┘           │
-    │       │                                    │                │
-    │       │ SQL queries                        │                │
-    │       ▼                                    ▼                │
-    │  ┌─────────────────────────────────────────────┐           │
-    │  │              SQLite                          │           │
-    │  │  nodes │ status_history │ logs │ alerts      │           │
-    │  └─────────────────────────────────────────────┘           │
+    │  ┌──────────────────────────────────────────────┐           │
+    │  │              pillar-agent                     │           │
+    │  │                                              │           │
+    │  │  ┌────────────┐  Arc<RwLock>  ┌───────────┐ │           │
+    │  │  │ Reconciler │ ────────────► │  HTTP     │ │           │
+    │  │  │            │               │  /health  │ │           │
+    │  │  │            │  Arc<RwLock>  ┌┤  /metrics │ │           │
+    │  │  │            │ ────────────►│└───────────┘ │           │
+    │  │  │            │              │┌───────────┐ │           │
+    │  │  │            │◄── mpsc ─────││  gRPC     │ │           │
+    │  │  └──────┬─────┘              ││  Client   ├─┼───────┐   │
+    │  │         │ systemctl          │└───────────┘ │       │   │
+    │  │         ▼                    │┌───────────┐ │       │   │
+    │  │    ┌──────────┐              ││  Log      ├─┼───┐   │   │
+    │  │    │ systemd  │              ││ Collector │ │   │   │   │
+    │  │    │(validator)│              │└───────────┘ │   │   │   │
+    │  │    └──────────┘              └──────────────┘   │   │   │
+    │  └──────────────────────────────────────────────┘   │   │   │
+    └─────────────────────────────────────────────────┼───┼───┘   │
+                                                      │   │       │
+                                          gRPC (5 RPCs)   │       │
+                                                      │   │       │
+    ┌─────────────── QUANTUM 2: Controller ───────────┼───┼───────┘
+    │                                                 │   │
+    │  ┌──────────┐   in-memory channels  ┌───────────▼───▼──┐
+    │  │  HTTP/   │ ◄───────────────────► │  gRPC Server     │
+    │  │  Web UI  │   (mpsc, broadcast)   └──────────────────┘
+    │  └──────────┘                              │
+    │       │                                    │
+    │       │ SQL queries                        │
+    │       ▼                                    ▼
+    │  ┌─────────────────────────────────────────────┐
+    │  │              SQLite                          │
+    │  │  nodes │ status_history │ logs │ alerts      │
+    │  └─────────────────────────────────────────────┘
     └─────────────────────────────────────────────────────────────┘
 ```
 
-### Coupling summary at each boundary
+### Coupling summary
 
 | Boundary | Static | Dynamic | Coupling Type |
 |----------|--------|---------|---------------|
-| Operator ↔ Link | High (shared crate, shared types, shared file paths) | Low (async file I/O, no coordination) | **Data coupling** via filesystem |
-| Link ↔ Controller | Medium (shared proto types via extern_path) | Medium (persistent gRPC, bidirectional streams) | **Contract coupling** via proto service |
-| Operator ↔ Controller | None (no direct reference) | None (no direct communication) | **Zero coupling** — link is the bridge |
-| Within Controller | N/A | High (in-memory channels, shared DashMap, shared Db) | **Content coupling** (monolith internals) |
+| Agent ↔ Controller | Medium (shared proto types via extern_path) | Medium (persistent gRPC, bidirectional streams) | **Contract coupling** via proto service |
+| Within Agent | High (same crate, shared Arc/channels) | High (in-memory channels, shared state) | **Content coupling** (single process) |
+| Within Controller | High (shared DashMap, shared Db) | High (in-memory channels) | **Content coupling** (single process) |
 
-The key architectural property: **static coupling is highest within each quantum** (operator and link share `pillar-shared` intimately), while **dynamic coupling is loosest across the quantum boundary** (gRPC with retry/backoff, no shared state). Tight cohesion within a deployment unit, loose coupling between them.
+Each quantum is a monolith internally (tight cohesion), connected to the other only by the gRPC wire (loose coupling). One data type (`NodeStatus`) flows from the reconcile loop → shared state → gRPC → SQLite → web UI.
+
+## Why One Binary Per Node
+
+The agent was originally two processes (operator + link) communicating via files on disk. They were merged because:
+
+- **They were one deployment quantum** — always shipped together, upgraded together, couldn't function without each other
+- **File IPC added complexity for no gain** — binary proto state file + JSON command file + inotify watcher, all to bridge two processes on the same box
+- **Duplicate boilerplate** — two configs, two systemd units, two tokio runtimes, two signal handlers, two loggers
+- **Latency** — commands had to round-trip through files (up to 20s polling) instead of flowing directly via in-memory channel
+
+The merge eliminated the IPC layer entirely. Commands now go from gRPC handler → mpsc channel → reconcile loop in microseconds. State is just an `Arc<RwLock<NodeStatus>>`, not a file.
