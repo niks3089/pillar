@@ -1,5 +1,5 @@
 use std::collections::VecDeque;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use tokio::sync::mpsc;
@@ -11,10 +11,11 @@ use crate::event::{EventKind, OperatorEvent};
 use crate::health::{HealthChecker, NodeHealth, NodeState};
 use crate::lifecycle::SystemdManager;
 use crate::metrics_updater::SharedStatus;
+use crate::script_executor::ScriptExecutor;
 use crate::snapshot::recovery::SnapshotRecovery;
 use crate::snapshot::TcpSnapshotManager;
 
-use pillar_shared::proto::NodeStatus;
+use pillar_shared::proto::{NodeStatus, ScriptResult};
 
 pub struct Reconciler {
     config: AgentConfig,
@@ -26,6 +27,10 @@ pub struct Reconciler {
     shared_status: SharedStatus,
     cmd_rx: mpsc::Receiver<AgentCommand>,
 
+    // Script execution
+    script_executor: ScriptExecutor,
+    result_tx: mpsc::Sender<ScriptResult>,
+
     // Internal state
     current_state: NodeState,
     state_entered_at: Instant,
@@ -34,7 +39,7 @@ pub struct Reconciler {
     last_health: NodeHealth,
     last_check_duration_secs: f64,
     consecutive_off_count: usize,
-    upgrading: bool,
+    executing_script: bool,
 
     // Self-health counters
     started_at_unix_secs: i64,
@@ -57,17 +62,10 @@ impl Reconciler {
         snapshot_manager: TcpSnapshotManager,
         ledger_dir: PathBuf,
         validator_process: String,
-        binary_path: PathBuf,
         shared_status: SharedStatus,
         cmd_rx: mpsc::Receiver<AgentCommand>,
+        result_tx: mpsc::Sender<ScriptResult>,
     ) -> Self {
-        let local_validator_version = detect_validator_version(&binary_path);
-        if let Some(ref v) = local_validator_version {
-            tracing::info!(version = %v, binary = %binary_path.display(), "detected local validator version");
-        } else {
-            tracing::warn!(binary = %binary_path.display(), "could not detect local validator version");
-        }
-
         Self {
             config,
             health_checker,
@@ -77,6 +75,8 @@ impl Reconciler {
             validator_process,
             shared_status,
             cmd_rx,
+            script_executor: ScriptExecutor::new(),
+            result_tx,
             current_state: NodeState::Off,
             state_entered_at: Instant::now(),
             started_at: Instant::now(),
@@ -84,12 +84,12 @@ impl Reconciler {
             last_health: NodeHealth::default(),
             last_check_duration_secs: 0.0,
             consecutive_off_count: 0,
-            upgrading: false,
+            executing_script: false,
             started_at_unix_secs: chrono::Utc::now().timestamp(),
             reconcile_count: 0,
             health_check_error_count: 0,
             recovery_count: 0,
-            local_validator_version,
+            local_validator_version: None,
             cluster_version: None,
             version_mismatch: false,
         }
@@ -143,76 +143,31 @@ impl Reconciler {
 
     /// Handle a command received from the gRPC layer via the channel.
     async fn handle_command(&mut self, cmd: AgentCommand) {
-        let command_type = cmd.command_type();
         match cmd {
-            AgentCommand::Provision {
-                staged_binary_path,
-                ref config,
-            } => {
-                self.upgrading = true;
-                let result = crate::provisioner::provision(config, &staged_binary_path).await;
-                self.upgrading = false;
-                match result {
-                    Ok(()) => {
-                        tracing::info!(command_type, "provision completed — exiting for config reload");
-                        self.on_state_transition(self.current_state, NodeState::StartingUp);
-                        self.publish_status().await;
-                        std::process::exit(0);
-                    }
-                    Err(e) => {
-                        tracing::error!(command_type, error = %e, "provision failed");
-                    }
+            AgentCommand::ExecuteScript(script) => {
+                self.executing_script = true;
+                let script_id = script.script_id.clone();
+                let desc = script.description.clone();
+
+                let result = self
+                    .script_executor
+                    .execute(script, &self.config.controller.node_id)
+                    .await;
+                self.executing_script = false;
+
+                if result.exit_code == 0 {
+                    tracing::info!(script_id, desc, "script succeeded");
+                } else {
+                    tracing::error!(
+                        script_id,
+                        desc,
+                        exit_code = result.exit_code,
+                        timed_out = result.timed_out,
+                        "script failed"
+                    );
                 }
-            }
-            AgentCommand::Upgrade {
-                staged_binary_path,
-                ref upgrade,
-            } => {
-                self.upgrading = true;
-                let result = crate::provisioner::upgrade(upgrade, &staged_binary_path).await;
-                self.upgrading = false;
-                match result {
-                    Ok(()) => {
-                        tracing::info!(command_type, "upgrade completed successfully");
-                        self.on_state_transition(self.current_state, NodeState::StartingUp);
-                    }
-                    Err(e) => {
-                        tracing::error!(command_type, error = %e, "upgrade failed");
-                    }
-                }
-            }
-            AgentCommand::Restart { reason } => {
-                tracing::info!(reason = %reason, "restart command from controller");
-                match self.service_manager.restart().await {
-                    Ok(()) => {
-                        self.record_restart();
-                        self.emit_event(EventKind::ServiceRestarted {
-                            reason: format!("controller: {reason}"),
-                        });
-                        self.on_state_transition(self.current_state, NodeState::StartingUp);
-                    }
-                    Err(e) => {
-                        tracing::error!(error = %e, "restart command failed");
-                    }
-                }
-            }
-            AgentCommand::Recover { reason } => {
-                tracing::info!(reason = %reason, "recover command from controller");
-                self.force_recovery().await;
-            }
-            AgentCommand::Stop { reason } => {
-                tracing::info!(reason = %reason, "stop command from controller");
-                match self.service_manager.stop().await {
-                    Ok(()) => {
-                        self.emit_event(EventKind::ServiceStopped {
-                            reason: format!("controller: {reason}"),
-                        });
-                        self.on_state_transition(self.current_state, NodeState::Off);
-                    }
-                    Err(e) => {
-                        tracing::error!(error = %e, "stop command failed");
-                    }
-                }
+
+                let _ = self.result_tx.send(result).await;
             }
         }
     }
@@ -346,8 +301,8 @@ impl Reconciler {
     }
 
     async fn attempt_recovery(&mut self) {
-        if self.upgrading {
-            tracing::info!("upgrade/provision in progress, skipping recovery");
+        if self.executing_script {
+            tracing::info!("script execution in progress, skipping recovery");
             return;
         }
 
@@ -412,42 +367,6 @@ impl Reconciler {
         }
     }
 
-    async fn force_recovery(&mut self) {
-        if self.upgrading {
-            tracing::info!("upgrade/provision in progress, skipping forced recovery");
-            return;
-        }
-
-        let recovery = SnapshotRecovery::new(
-            &self.service_manager,
-            &self.snapshot_manager,
-            &self.ledger_dir,
-            self.config.snapshot.staleness_threshold_slots,
-        );
-
-        match recovery.force_recovery().await {
-            Ok(()) => {
-                self.record_restart();
-                self.emit_event(EventKind::ServiceRestarted {
-                    reason: "forced_recovery".to_string(),
-                });
-                self.on_state_transition(self.current_state, NodeState::StartingUp);
-            }
-            Err(e) => {
-                tracing::error!(error = %e, "forced recovery failed, attempting simple restart");
-                if let Err(restart_err) = self.service_manager.restart().await {
-                    tracing::error!(error = %restart_err, "restart also failed");
-                } else {
-                    self.record_restart();
-                    self.emit_event(EventKind::ServiceRestarted {
-                        reason: "forced_recovery_restart_fallback".to_string(),
-                    });
-                    self.on_state_transition(self.current_state, NodeState::StartingUp);
-                }
-            }
-        }
-    }
-
     /// Write health fields to shared status Arc.
     /// Preserves sysinfo fields written by metrics_updater.
     async fn publish_status(&mut self) {
@@ -470,8 +389,8 @@ impl Reconciler {
         status.updated_at_unix_secs = chrono::Utc::now().timestamp();
         status.state_duration_secs = self.state_entered_at.elapsed().as_secs();
         status.validator_process = self.validator_process.clone();
-        status.pending_upgrade = if self.upgrading {
-            "in-progress".to_string()
+        status.pending_upgrade = if self.executing_script {
+            "script-executing".to_string()
         } else if self.version_mismatch {
             format!(
                 "version_mismatch: local={}, cluster={}",
@@ -513,32 +432,6 @@ impl Reconciler {
     }
 }
 
-/// Run `<binary_path> --version` and extract the version string.
-fn detect_validator_version(binary_path: &Path) -> Option<String> {
-    let output = std::process::Command::new(binary_path)
-        .arg("--version")
-        .output()
-        .ok()?;
-
-    if !output.status.success() {
-        return None;
-    }
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    parse_version_output(&stdout)
-}
-
-fn parse_version_output(output: &str) -> Option<String> {
-    output.split_whitespace().find_map(|token| {
-        let parts: Vec<&str> = token.split('.').collect();
-        if parts.len() >= 2 && parts.iter().all(|p| p.chars().all(|c| c.is_ascii_digit())) {
-            Some(token.to_string())
-        } else {
-            None
-        }
-    })
-}
-
 fn parse_major_version(version: &str) -> Option<u32> {
     version.split('.').next()?.parse().ok()
 }
@@ -559,29 +452,5 @@ mod tests {
         assert_eq!(parse_major_version(""), None);
         assert_eq!(parse_major_version("abc"), None);
         assert_eq!(parse_major_version("0.1.0"), Some(0));
-    }
-
-    #[test]
-    fn parse_version_output_agave() {
-        let output = "agave-validator 2.1.21 (src:8a085eeb; feat:1234)";
-        assert_eq!(parse_version_output(output), Some("2.1.21".to_string()));
-    }
-
-    #[test]
-    fn parse_version_output_solana_core() {
-        let output = "solana-validator 1.18.26 (src:abc123; feat:5678)";
-        assert_eq!(parse_version_output(output), Some("1.18.26".to_string()));
-    }
-
-    #[test]
-    fn parse_version_output_two_part() {
-        let output = "firedancer 0.1";
-        assert_eq!(parse_version_output(output), Some("0.1".to_string()));
-    }
-
-    #[test]
-    fn parse_version_output_no_version() {
-        assert_eq!(parse_version_output("no version here"), None);
-        assert_eq!(parse_version_output(""), None);
     }
 }

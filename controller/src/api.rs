@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use axum::{
     body::Body,
     extract::{Path, Query, State},
@@ -13,13 +15,13 @@ use serde::{Deserialize, Serialize};
 use tokio_stream::StreamExt;
 
 use pillar_shared::proto::{
-    controller_command, ControllerCommand, LogEntry, NodeStatus, ProvisionCommand, RecoverCommand,
-    RestartCommand, StopCommand, UpgradeCommand,
+    controller_command, ControllerCommand, ExecuteScript, LogEntry, NodeStatus,
 };
 
 use crate::config::ControllerConfig;
 use crate::db::{self, Db, NodeRow};
 use crate::node_registry::NodeRegistry;
+use crate::templates;
 
 #[derive(Clone)]
 pub struct ApiState {
@@ -110,6 +112,29 @@ struct NodeWithStatus {
 // Helpers
 // ---------------------------------------------------------------------------
 
+/// Generate a unique script ID.
+fn generate_script_id() -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let ts = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis();
+    format!("script-{ts}-{:04x}", rand_u16())
+}
+
+fn rand_u16() -> u16 {
+    let mut buf = [0u8; 2];
+    getrandom::getrandom(&mut buf).unwrap_or_default();
+    u16::from_le_bytes(buf)
+}
+
+/// Wrap an ExecuteScript in a ControllerCommand.
+fn wrap_script(script: ExecuteScript) -> ControllerCommand {
+    ControllerCommand {
+        command: Some(controller_command::Command::Execute(script)),
+    }
+}
+
 /// Emit a controller-originated log entry into the node's broadcast channel and persist to DB.
 async fn emit_controller_log(
     registry: &NodeRegistry,
@@ -129,10 +154,30 @@ async fn emit_controller_log(
         unit: String::new(),
         timestamp_unix_ms: now_ms,
     };
-    registry.publish_logs(node_id, std::slice::from_ref(&entry)).await;
+    registry
+        .publish_logs(node_id, std::slice::from_ref(&entry))
+        .await;
     if let Err(e) = db::insert_logs(db, node_id, std::slice::from_ref(&entry)).await {
         tracing::warn!(error = %e, "failed to persist controller log");
     }
+}
+
+/// Look up the service name for a node from its provision_config_json in DB.
+async fn get_service_name_for_node(db: &Db, node_id: &str) -> Option<String> {
+    let config_json = db::get_provision_config(db, node_id).await.ok()??;
+    let parsed: serde_json::Value = serde_json::from_str(&config_json).ok()?;
+    let client = parsed.get("client")?.as_str()?;
+    Some(templates::service_name_for_client(client).to_string())
+}
+
+/// Look up the ledger path for a node from its provision_config_json in DB.
+async fn get_ledger_path_for_node(db: &Db, node_id: &str) -> Option<String> {
+    let config_json = db::get_provision_config(db, node_id).await.ok()??;
+    let parsed: serde_json::Value = serde_json::from_str(&config_json).ok()?;
+    parsed
+        .get("ledger_path")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string())
 }
 
 // ---------------------------------------------------------------------------
@@ -287,11 +332,20 @@ async fn restart_node(
     State(state): State<ApiState>,
     Path(id): Path<String>,
 ) -> impl IntoResponse {
-    let cmd = ControllerCommand {
-        command: Some(controller_command::Command::Restart(RestartCommand {
-            reason: "restart requested via API".to_string(),
-        })),
-    };
+    let service_name = get_service_name_for_node(&state.db, &id)
+        .await
+        .unwrap_or_else(|| "solana-validator".to_string());
+
+    let mut vars = HashMap::new();
+    vars.insert("service_name".to_string(), service_name);
+
+    let script = templates::render(templates::scripts::RESTART, &vars);
+    let cmd = wrap_script(ExecuteScript {
+        script_id: generate_script_id(),
+        script,
+        description: "Restart validator".to_string(),
+        timeout_secs: 60,
+    });
 
     match state.registry.send_command(&id, cmd).await {
         Ok(()) => {
@@ -318,16 +372,35 @@ async fn recover_node(
     State(state): State<ApiState>,
     Path(id): Path<String>,
 ) -> impl IntoResponse {
-    let cmd = ControllerCommand {
-        command: Some(controller_command::Command::Recover(RecoverCommand {
-            reason: "recovery requested via API".to_string(),
-        })),
-    };
+    let service_name = get_service_name_for_node(&state.db, &id)
+        .await
+        .unwrap_or_else(|| "solana-validator".to_string());
+    let ledger_path = get_ledger_path_for_node(&state.db, &id)
+        .await
+        .unwrap_or_else(|| "/mnt/ledger".to_string());
+
+    let mut vars = HashMap::new();
+    vars.insert("service_name".to_string(), service_name);
+    vars.insert("ledger_path".to_string(), ledger_path);
+
+    let script = templates::render(templates::scripts::RECOVER, &vars);
+    let cmd = wrap_script(ExecuteScript {
+        script_id: generate_script_id(),
+        script,
+        description: "Recovery: stop, wipe ledger, restart".to_string(),
+        timeout_secs: 300,
+    });
 
     match state.registry.send_command(&id, cmd).await {
         Ok(()) => {
-            emit_controller_log(&state.registry, &state.db, &id, "info", "Recovery command sent")
-                .await;
+            emit_controller_log(
+                &state.registry,
+                &state.db,
+                &id,
+                "info",
+                "Recovery command sent",
+            )
+            .await;
             Json(CommandResponse {
                 ok: true,
                 message: "recover command sent".to_string(),
@@ -349,11 +422,20 @@ async fn stop_node(
     State(state): State<ApiState>,
     Path(id): Path<String>,
 ) -> impl IntoResponse {
-    let cmd = ControllerCommand {
-        command: Some(controller_command::Command::Stop(StopCommand {
-            reason: "stop requested via API".to_string(),
-        })),
-    };
+    let service_name = get_service_name_for_node(&state.db, &id)
+        .await
+        .unwrap_or_else(|| "solana-validator".to_string());
+
+    let mut vars = HashMap::new();
+    vars.insert("service_name".to_string(), service_name);
+
+    let script = templates::render(templates::scripts::STOP, &vars);
+    let cmd = wrap_script(ExecuteScript {
+        script_id: generate_script_id(),
+        script,
+        description: "Stop validator".to_string(),
+        timeout_secs: 60,
+    });
 
     match state.registry.send_command(&id, cmd).await {
         Ok(()) => {
@@ -391,7 +473,9 @@ async fn cancel_deployment(
                 StatusCode::CONFLICT,
                 Json(CommandResponse {
                     ok: false,
-                    message: format!("cannot cancel: node is in '{s}' state, not provisioning/starting_up"),
+                    message: format!(
+                        "cannot cancel: node is in '{s}' state, not provisioning/starting_up"
+                    ),
                 }),
             )
                 .into_response();
@@ -418,11 +502,20 @@ async fn cancel_deployment(
         }
     }
 
-    let cmd = ControllerCommand {
-        command: Some(controller_command::Command::Stop(StopCommand {
-            reason: "deployment cancelled via API".to_string(),
-        })),
-    };
+    let service_name = get_service_name_for_node(&state.db, &id)
+        .await
+        .unwrap_or_else(|| "solana-validator".to_string());
+
+    let mut vars = HashMap::new();
+    vars.insert("service_name".to_string(), service_name);
+
+    let script = templates::render(templates::scripts::STOP, &vars);
+    let cmd = wrap_script(ExecuteScript {
+        script_id: generate_script_id(),
+        script,
+        description: "Cancel deployment: stop validator".to_string(),
+        timeout_secs: 60,
+    });
 
     match state.registry.send_command(&id, cmd).await {
         Ok(()) => {
@@ -493,11 +586,11 @@ struct ProvisionRequest {
     gossip_port: u32,
     /// Client-specific CLI flags: "flag-name" -> "value" (empty for bare flags).
     #[serde(default)]
-    validator_flags: std::collections::HashMap<String, String>,
+    validator_flags: HashMap<String, String>,
     #[serde(default)]
     geyser_plugin_configs: Vec<String>,
     #[serde(default)]
-    environment_vars: std::collections::HashMap<String, String>,
+    environment_vars: HashMap<String, String>,
     #[serde(default)]
     extra_args: Vec<String>,
     #[serde(default)]
@@ -506,6 +599,157 @@ struct ProvisionRequest {
     log_rate_limit_disable: bool,
     #[serde(default)]
     start_limit_disable: bool,
+}
+
+/// Build template variables from a ProvisionRequest.
+fn build_provision_vars(req: &ProvisionRequest) -> HashMap<String, String> {
+    let service_name = templates::service_name_for_client(&req.client).to_string();
+    let binary_path = templates::binary_path_for_client(&req.client).to_string();
+    let rpc_port = if req.rpc_port == 0 { 8899 } else { req.rpc_port };
+    let gossip_port = if req.gossip_port == 0 {
+        8001
+    } else {
+        req.gossip_port
+    };
+    let dynamic_port_range = if req.dynamic_port_range.is_empty() {
+        "8000-8020".to_string()
+    } else {
+        req.dynamic_port_range.clone()
+    };
+    let restart_sec = if req.restart_sec == 0 {
+        1
+    } else {
+        req.restart_sec
+    };
+
+    // Build ExecStart for Agave/Jito or fdctl command for Firedancer
+    let exec_start = if req.client == "firedancer" || req.client == "frankendancer" {
+        format!("{binary_path} run --config /etc/pillar/validator.toml")
+    } else {
+        templates::build_exec_start(
+            &binary_path,
+            &req.identity_keypair_path,
+            &req.vote_account_keypair_path,
+            &req.ledger_path,
+            &req.snapshot_path,
+            &req.accounts_path,
+            rpc_port,
+            gossip_port,
+            &dynamic_port_range,
+            &req.entrypoints,
+            &req.known_validators,
+            req.jito_mev,
+            &req.jito_block_engine_url,
+            req.yellowstone_grpc,
+            &req.geyser_plugin_configs,
+            &req.validator_flags,
+            &req.extra_args,
+        )
+    };
+
+    // Build Yellowstone section
+    let yellowstone_section = if req.yellowstone_grpc {
+        r#"# Write Yellowstone gRPC config
+sudo mkdir -p /etc/pillar
+sudo tee /etc/pillar/yellowstone-grpc.json > /dev/null <<'YSJSON'
+{"libpath":"/usr/local/lib/libyellowstone_grpc_geyser.so","log":{"level":"info"},"grpc":{"address":"0.0.0.0:10000","max_decoding_message_size":"4_194_304"}}
+YSJSON
+echo "Wrote /etc/pillar/yellowstone-grpc.json""#
+            .to_string()
+    } else {
+        String::new()
+    };
+
+    // Build Firedancer TOML for firedancer/frankendancer
+    let firedancer_toml = if req.client == "firedancer" || req.client == "frankendancer" {
+        let entrypoints_toml = req
+            .entrypoints
+            .iter()
+            .map(|e| format!("\"{e}\""))
+            .collect::<Vec<_>>()
+            .join(", ");
+        format!(
+            "[layout]\naffinity = \"auto\"\n\n\
+             [consensus]\nidentity_path = \"{identity}\"\n\
+             vote_account_path = \"{vote}\"\n\
+             expected_genesis_hash = \"auto\"\n\n\
+             [ledger]\npath = \"{ledger}\"\n\
+             accounts_path = \"{accounts}\"\n\
+             limit_size = true\n\n\
+             [gossip]\nentrypoints = [{ep}]\n",
+            identity = req.identity_keypair_path,
+            vote = req.vote_account_keypair_path,
+            ledger = req.ledger_path,
+            accounts = req.accounts_path,
+            ep = entrypoints_toml,
+        )
+    } else {
+        String::new()
+    };
+
+    // Build start_limit and log_rate_limit lines
+    let start_limit_line = if req.start_limit_disable {
+        "StartLimitIntervalSec=0".to_string()
+    } else {
+        String::new()
+    };
+
+    let log_rate_limit_line = if req.log_rate_limit_disable {
+        "LogRateLimitIntervalSec=0".to_string()
+    } else {
+        String::new()
+    };
+
+    // Build Environment= lines
+    let mut env_keys: Vec<&String> = req.environment_vars.keys().collect();
+    env_keys.sort();
+    let environment_lines = env_keys
+        .iter()
+        .map(|k| format!("Environment={}={}", k, req.environment_vars[*k]))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    // Build sed commands for agent config update
+    let reference_rpc = templates::reference_rpc_for_cluster(&req.cluster);
+    let agent_config_sed_commands = format!(
+        r#"if [ -f "$CONFIG" ]; then
+  sudo sed -i 's/^client:.*/client: {client}/' "$CONFIG"
+  sudo sed -i 's/^\\(  \\)cluster:.*/\\1cluster: {cluster}/' "$CONFIG"
+  sudo sed -i 's|^\\(  \\)service_name:.*|\\1service_name: {service_name}|' "$CONFIG"
+  sudo sed -i '/reference_rpc_urls:/,/^[^ ]/ {{ /- http/d }}' "$CONFIG"
+  sudo sed -i '/reference_rpc_urls:/a\\    - {reference_rpc}' "$CONFIG"
+  echo "Updated agent config: client={client}, cluster={cluster}, service={service_name}"
+fi"#,
+        client = req.client,
+        cluster = req.cluster,
+        service_name = service_name,
+        reference_rpc = reference_rpc,
+    );
+
+    // Look up the old service name (might differ if switching clients).
+    // We use the new service name as fallback since we don't have DB access here.
+    let old_service_name = service_name.clone();
+
+    let mut vars = HashMap::new();
+    vars.insert("version".to_string(), req.version.clone());
+    vars.insert("cluster".to_string(), req.cluster.clone());
+    vars.insert("download_url".to_string(), req.download_url.clone());
+    vars.insert("sha256".to_string(), req.sha256.clone());
+    vars.insert("binary_path".to_string(), binary_path);
+    vars.insert("service_name".to_string(), service_name);
+    vars.insert("old_service_name".to_string(), old_service_name);
+    vars.insert("exec_start".to_string(), exec_start);
+    vars.insert("restart_sec".to_string(), restart_sec.to_string());
+    vars.insert("yellowstone_section".to_string(), yellowstone_section);
+    vars.insert("firedancer_toml".to_string(), firedancer_toml);
+    vars.insert("start_limit_line".to_string(), start_limit_line);
+    vars.insert("log_rate_limit_line".to_string(), log_rate_limit_line);
+    vars.insert("environment_lines".to_string(), environment_lines);
+    vars.insert(
+        "agent_config_sed_commands".to_string(),
+        agent_config_sed_commands,
+    );
+    vars
 }
 
 async fn provision_node(
@@ -548,44 +792,41 @@ async fn provision_node(
         _ => {} // registered, healthy, offline, etc. — allow provisioning
     }
 
+    // Select template by client
+    let template = match templates::provision_template(&req.client) {
+        Ok(t) => t,
+        Err(e) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(CommandResponse {
+                    ok: false,
+                    message: e,
+                }),
+            )
+                .into_response();
+        }
+    };
+
     let log_msg = format!(
         "Provision command sent: {} {} ({})",
         req.client, req.version, req.cluster
     );
+    let description = format!("Provision {} v{} on {}", req.client, req.version, req.cluster);
 
     // Save provision config JSON for the node record
     let provision_json = serde_json::to_string(&req).unwrap_or_default();
 
-    let cmd = ControllerCommand {
-        command: Some(controller_command::Command::Provision(ProvisionCommand {
-            client: req.client,
-            version: req.version,
-            cluster: req.cluster,
-            identity_keypair_path: req.identity_keypair_path,
-            vote_account_keypair_path: req.vote_account_keypair_path,
-            ledger_path: req.ledger_path,
-            snapshot_path: req.snapshot_path,
-            accounts_path: req.accounts_path,
-            entrypoints: req.entrypoints,
-            known_validators: req.known_validators,
-            download_url: req.download_url,
-            sha256: req.sha256,
-            jito_mev: req.jito_mev,
-            jito_block_engine_url: req.jito_block_engine_url,
-            yellowstone_grpc: req.yellowstone_grpc,
-            rpc_port: req.rpc_port,
-            dynamic_port_range: req.dynamic_port_range,
-            node_type: req.node_type,
-            gossip_port: req.gossip_port,
-            validator_flags: req.validator_flags,
-            geyser_plugin_configs: req.geyser_plugin_configs,
-            environment_vars: req.environment_vars,
-            extra_args: req.extra_args,
-            restart_sec: req.restart_sec,
-            log_rate_limit_disable: req.log_rate_limit_disable,
-            start_limit_disable: req.start_limit_disable,
-        })),
-    };
+    // Build template variables and render script
+    let vars = build_provision_vars(&req);
+    let script = templates::render(template, &vars);
+    let script_id = generate_script_id();
+
+    let cmd = wrap_script(ExecuteScript {
+        script_id: script_id.clone(),
+        script,
+        description,
+        timeout_secs: 3600,
+    });
 
     match state.registry.send_command(&id, cmd).await {
         Ok(()) => {
@@ -596,6 +837,12 @@ async fn provision_node(
             // Store provision config
             if let Err(e) = db::set_provision_config(&state.db, &id, &provision_json).await {
                 tracing::warn!(error = %e, "failed to store provision config");
+            }
+            // Record script execution
+            if let Err(e) =
+                db::insert_script_execution(&state.db, &script_id, &id, "provision").await
+            {
+                tracing::warn!(error = %e, "failed to record script execution");
             }
             emit_controller_log(&state.registry, &state.db, &id, "info", &log_msg).await;
             Json(CommandResponse {
@@ -645,15 +892,26 @@ async fn upgrade_node(
         req.binary_name, req.version, req.reason
     );
 
-    let cmd = ControllerCommand {
-        command: Some(controller_command::Command::Upgrade(UpgradeCommand {
-            binary_name: req.binary_name,
-            version: req.version,
-            download_url: req.download_url,
-            sha256: req.sha256,
-            reason: req.reason,
-        })),
-    };
+    let service_name = templates::service_name_for_binary(&req.binary_name).to_string();
+    let binary_dest = format!("/usr/local/bin/{}", req.binary_name);
+
+    let mut vars = HashMap::new();
+    vars.insert("binary_name".to_string(), req.binary_name.clone());
+    vars.insert("version".to_string(), req.version.clone());
+    vars.insert("download_url".to_string(), req.download_url);
+    vars.insert("sha256".to_string(), req.sha256);
+    vars.insert("service_name".to_string(), service_name);
+    vars.insert("binary_dest".to_string(), binary_dest);
+
+    let script = templates::render(templates::scripts::UPGRADE_VALIDATOR, &vars);
+    let description = format!("Upgrade {} to v{}", req.binary_name, req.version);
+
+    let cmd = wrap_script(ExecuteScript {
+        script_id: generate_script_id(),
+        script,
+        description,
+        timeout_secs: 3600,
+    });
 
     match state.registry.send_command(&id, cmd).await {
         Ok(()) => {
@@ -772,7 +1030,12 @@ async fn onboard_command(State(state): State<ApiState>) -> impl IntoResponse {
         let http_base = if state.config.external_url.is_empty() {
             format!(
                 "http://localhost:{}",
-                state.config.http_listen.rsplit_once(':').map(|(_, p)| p).unwrap_or("8080")
+                state
+                    .config
+                    .http_listen
+                    .rsplit_once(':')
+                    .map(|(_, p)| p)
+                    .unwrap_or("8080")
             )
         } else {
             let host = state
@@ -904,11 +1167,7 @@ async fn grafana_proxy(
     let grafana_url = match db::get_setting(&state.db, "grafana_url").await {
         Ok(Some(url)) if !url.is_empty() => url,
         _ => {
-            return (
-                StatusCode::BAD_GATEWAY,
-                "Grafana URL not configured",
-            )
-                .into_response();
+            return (StatusCode::BAD_GATEWAY, "Grafana URL not configured").into_response();
         }
     };
 

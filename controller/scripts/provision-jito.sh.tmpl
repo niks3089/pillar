@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+set -euo pipefail
+echo "=== Pillar: Provisioning Jito {{version}} on {{cluster}} ==="
+
+# Download and verify binary
+STAGING="/tmp/pillar-staging"
+rm -rf "$STAGING" && mkdir -p "$STAGING"
+echo "Downloading binary..."
+curl -sSL -o "$STAGING/binary" "{{download_url}}"
+echo "{{sha256}}  $STAGING/binary" | sha256sum -c
+sudo install -m 755 "$STAGING/binary" {{binary_path}}
+echo "Binary installed to {{binary_path}}"
+
+# Stop existing service if running
+sudo systemctl stop {{old_service_name}} 2>/dev/null || true
+
+{{yellowstone_section}}
+
+# Write systemd unit
+sudo tee /etc/systemd/system/{{service_name}}.service > /dev/null <<'UNIT'
+[Unit]
+Description=Solana Validator (jito)
+After=network.target
+{{start_limit_line}}
+
+[Service]
+Type=simple
+User=sol
+ExecStart={{exec_start}}
+Restart=on-failure
+RestartSec={{restart_sec}}
+LimitNOFILE=1000000
+{{log_rate_limit_line}}
+{{environment_lines}}
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+
+sudo systemctl daemon-reload
+sudo systemctl enable --now {{service_name}}
+echo "Service {{service_name}} started"
+
+# Update agent config
+CONFIG="${PILLAR_AGENT_CONFIG:-/etc/pillar/agent.yaml}"
+{{agent_config_sed_commands}}
+
+# Restart agent for config reload
+sudo systemctl restart pillar-agent
+rm -rf "$STAGING"
+echo "=== Provision complete ==="

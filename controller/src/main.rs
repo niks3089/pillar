@@ -5,6 +5,7 @@ mod db;
 mod grpc_server;
 mod metrics_endpoint;
 mod node_registry;
+mod templates;
 mod web;
 
 use std::time::Duration;

@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+set -euo pipefail
+echo "=== Pillar: Recovery for {{service_name}} ==="
+
+# Stop the validator
+sudo systemctl stop {{service_name}} 2>/dev/null || true
+
+# Wipe ledger directory
+echo "Wiping ledger directory: {{ledger_path}}"
+sudo rm -rf "{{ledger_path}}"
+sudo mkdir -p "{{ledger_path}}"
+sudo chown sol:sol "{{ledger_path}}"
+
+# Restart the validator (it will re-sync from snapshot)
+sudo systemctl start {{service_name}}
+echo "=== Recovery complete, validator restarting ==="

@@ -77,6 +77,23 @@ fn init_schema(conn: &Connection) -> Result<()> {
     // Migration: merge operator_version + link_version → agent_version
     let _ = conn.execute_batch("ALTER TABLE nodes ADD COLUMN agent_version TEXT;");
 
+    // Script execution tracking
+    conn.execute_batch(
+        "
+        CREATE TABLE IF NOT EXISTS script_executions (
+            script_id TEXT PRIMARY KEY,
+            node_id TEXT NOT NULL,
+            description TEXT,
+            initiated_at INTEGER NOT NULL,
+            completed_at INTEGER,
+            exit_code INTEGER,
+            timed_out BOOLEAN DEFAULT FALSE,
+            error TEXT
+        );
+        ",
+    )
+    .context("creating script_executions table")?;
+
     Ok(())
 }
 
@@ -310,6 +327,73 @@ pub async fn set_provision_config(db: &Db, node_id: &str, config_json: &str) -> 
             params![config_json, node_id],
         )
         .context("set_provision_config")?;
+        Ok(())
+    })
+    .await?
+}
+
+pub async fn get_provision_config(db: &Db, node_id: &str) -> Result<Option<String>> {
+    let db = db.clone();
+    let node_id = node_id.to_owned();
+    tokio::task::spawn_blocking(move || {
+        let conn = db.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
+        let config: Option<String> = conn
+            .query_row(
+                "SELECT provision_config_json FROM nodes WHERE node_id = ?1",
+                params![node_id],
+                |row| row.get(0),
+            )
+            .optional()
+            .context("get_provision_config")?;
+        Ok(config)
+    })
+    .await?
+}
+
+pub async fn insert_script_execution(
+    db: &Db,
+    script_id: &str,
+    node_id: &str,
+    description: &str,
+) -> Result<()> {
+    let db = db.clone();
+    let script_id = script_id.to_owned();
+    let node_id = node_id.to_owned();
+    let description = description.to_owned();
+    tokio::task::spawn_blocking(move || {
+        let conn = db.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
+        let now = now_epoch_secs();
+        conn.execute(
+            "INSERT INTO script_executions (script_id, node_id, description, initiated_at)
+             VALUES (?1, ?2, ?3, ?4)",
+            params![script_id, node_id, description, now],
+        )
+        .context("insert_script_execution")?;
+        Ok(())
+    })
+    .await?
+}
+
+pub async fn complete_script_execution(
+    db: &Db,
+    script_id: &str,
+    exit_code: i32,
+    timed_out: bool,
+    error: &str,
+) -> Result<()> {
+    let db = db.clone();
+    let script_id = script_id.to_owned();
+    let error = error.to_owned();
+    tokio::task::spawn_blocking(move || {
+        let conn = db.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
+        let now = now_epoch_secs();
+        conn.execute(
+            "UPDATE script_executions
+             SET completed_at = ?1, exit_code = ?2, timed_out = ?3, error = ?4
+             WHERE script_id = ?5",
+            params![now, exit_code, timed_out, optional_str(&error), script_id],
+        )
+        .context("complete_script_execution")?;
         Ok(())
     })
     .await?

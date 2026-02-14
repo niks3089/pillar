@@ -15,7 +15,7 @@ Pillar treats the validator client as a swappable component behind a uniform int
 3. **Speaks the same protocol**: Solana gossip, turbine, repair, JSON-RPC
 4. **Produces the same observable outputs**: a local RPC endpoint that responds to `getSlot`, `getHealth`, `getVoteAccounts`
 
-Pillar exploits this uniformity. The agent does not need to understand the internals of Agave or Firedancer -- it only needs to know how to install, start, stop, health-check, and upgrade a systemd service that exposes a Solana JSON-RPC port.
+Pillar exploits this uniformity. The agent does not need to understand the internals of Agave or Firedancer -- it only needs to know how to execute scripts the controller sends and health-check the resulting systemd service via JSON-RPC.
 
 ### What Stays the Same Across All Clients
 
@@ -35,61 +35,92 @@ The reconciliation loop, health checking, metrics enrichment, log collection, an
 
 | Concern | Agave / Jito | Firedancer / Frankendancer | How Pillar Abstracts It |
 |---------|-------------|---------------------------|------------------------|
-| Config format | CLI flags in ExecStart | TOML file | `ClientInstaller.exec_start()` branches by `ClientKind` |
-| Binary name | `agave-validator` / `jito-validator` | `fdctl` | `ClientInstaller.for_client()` maps kind to path |
-| Service name | `solana-validator` / `jito-validator` | `firedancer` / `frankendancer` | `ClientInstaller.service_name` |
-| MEV config | `--block-engine-url` + tip flags | `[tiles.bundle]` TOML section | Provisioner adds Jito flags or writes TOML section |
-| Geyser plugins | `--geyser-plugin-config` flag | Not yet supported in TOML | Provisioner adds flag for Agave/Jito only |
+| Config format | CLI flags in ExecStart | TOML file | Controller renders client-specific script template |
+| Binary name | `agave-validator` / `jito-validator` | `fdctl` | Controller maps client to binary path in template vars |
+| Service name | `solana-validator` / `jito-validator` | `firedancer` / `frankendancer` | Controller maps client to service name in template vars |
+| MEV config | `--block-engine-url` + tip flags | `[tiles.bundle]` TOML section | Controller builds ExecStart with Jito flags or writes TOML section |
+| Geyser plugins | `--geyser-plugin-config` flag | Not yet supported in TOML | Controller adds flag for Agave/Jito only |
 | System init | sysctl + ulimits | sysctl + hugetlbfs + ethtool + XDP | Not yet automated by Pillar (manual or install script) |
 
-## How It Works in Code
+## Architecture: Script-Based Execution
 
-### The Abstraction Layers
+### The Key Insight
 
-Pillar's client abstraction is intentionally thin. It consists of two enums and one struct:
+All client-specific knowledge lives on the **controller**, not the agent. The controller renders bash script templates with node-specific parameters and sends them to the agent as `ExecuteScript` commands. The agent is a thin executor -- it runs whatever bash the controller sends and reports the result.
 
-**`ClientKind`** -- the enum that travels through the entire system, from the controller UI dropdown to the agent provisioner:
+This means:
+- **Adding support for new validator client flags or config changes requires only updating the controller's script templates** -- no agent rebuild, no redeployment to every node.
+- **The agent binary is generic and stable** -- it handles health checks, metrics, log collection, and script execution. It never needs to know about Agave CLI flags, Firedancer TOML, or Jito tip addresses.
+- **Scripts are auditable** -- operators can inspect exactly what the controller will run before triggering a provision/upgrade.
 
-```
-Agave | Jito | Firedancer | Frankendancer
-```
-
-**`ClientInstaller`** -- maps a `ClientKind` to the two things Pillar needs to manage the service:
-
-| Client | service_name | binary_path |
-|--------|-------------|-------------|
-| Agave | `solana-validator` | `/usr/local/bin/agave-validator` |
-| Jito | `jito-validator` | `/usr/local/bin/jito-validator` |
-| Firedancer | `firedancer` | `/usr/local/bin/fdctl` |
-| Frankendancer | `frankendancer` | `/usr/local/bin/fdctl` |
-
-**`ProvisionConfig`** -- a unified config struct parsed from the gRPC `ProvisionCommand`. It holds every field for every client. Fields that don't apply to a particular client are simply ignored during ExecStart generation.
-
-### The Provisioning Flow
-
-Regardless of client, provisioning follows the same sequence:
+### How It Works
 
 ```
-1. Parse ProvisionCommand -> ProvisionConfig
-2. Stop existing service (if running)
-3. Download binary from URL, verify SHA256
-4. Install binary to client-specific path
-5. Write client configs:
-   - Agave/Jito: nothing (config is in CLI flags)
-   - Firedancer/Frankendancer: write /etc/pillar/validator.toml
-   - If yellowstone_grpc: write /etc/pillar/yellowstone-grpc.json
-6. Generate systemd unit (ExecStart varies by client)
-7. systemctl daemon-reload
-8. systemctl enable --now <service_name>
-9. Update agent config (client, cluster, service_name)
+Controller                                Agent
+    |                                       |
+    | User clicks "Setup Validator"         |
+    | (client=agave, version=2.1.6, ...)    |
+    |                                       |
+    | 1. Select template: provision-agave   |
+    | 2. Build vars: exec_start, sha256,    |
+    |    service_name, paths, etc.          |
+    | 3. Render template -> bash script     |
+    |                                       |
+    | --ExecuteScript via gRPC----------->  |
+    |   { script_id, script, description,   |
+    |     timeout_secs }                    |
+    |                                       |
+    |                        4. Write script to /tmp/
+    |                        5. sudo bash /tmp/script.sh
+    |                        6. Stream stdout/stderr to journald
+    |                        7. Wait for exit (with timeout)
+    |                                       |
+    | <--ScriptResult via gRPC-----------   |
+    |   { exit_code, stdout, stderr,        |
+    |     timed_out }                       |
+    |                                       |
+    | 8. Update lifecycle state in DB       |
+    | 9. Log result to node's log stream    |
 ```
 
-The branching happens in exactly two places:
+### The Agent's Role
 
-1. **`exec_start()`** -- Agave/Jito get a long CLI command with all flags; Firedancer/Frankendancer get `fdctl run --config /etc/pillar/validator.toml`
-2. **`write_client_configs()`** -- Firedancer/Frankendancer get a TOML file written; Agave/Jito don't need one
+The agent's `ScriptExecutor` is deliberately simple (~130 lines):
 
-Everything else is identical.
+1. Writes the script to `/tmp/pillar-scripts/<script_id>.sh`
+2. Spawns `sudo bash /tmp/pillar-scripts/<script_id>.sh` with piped stdout/stderr
+3. Logs each line of output via `tracing::info!` (appears in journald, streams to controller via log collector)
+4. Waits with a configurable timeout (default 3600s)
+5. On timeout: kills the process group, sets `timed_out=true`
+6. Returns `ScriptResult` with exit_code, stdout, stderr
+7. Cleans up the temp script file
+
+The reconciler receives `ExecuteScript` commands via the same mpsc channel used for all controller commands, and sends `ScriptResult` back via a dedicated channel to the gRPC task.
+
+### The Controller's Role
+
+The controller owns all client-specific knowledge in two places:
+
+1. **`templates.rs`** -- helper functions like `build_exec_start()`, `service_name_for_client()`, `binary_path_for_client()` that map client names to concrete values
+2. **`scripts/`** -- bash script templates with `{{placeholder}}` variables
+
+Each API handler (restart, recover, provision, upgrade, stop) renders the appropriate template with node-specific variables and wraps it in an `ExecuteScript` proto message.
+
+### Script Templates
+
+Templates use a simple `{{placeholder}}` syntax. All conditional logic (Jito MEV flags, Firedancer TOML, Yellowstone config) is pre-computed by the API handler and injected as fully-rendered variables -- templates contain no if/else.
+
+| Template | Purpose | Key Variables |
+|----------|---------|---------------|
+| `provision-agave.sh.tmpl` | Download binary, verify SHA256, write systemd unit, start service, update agent config | `version`, `download_url`, `sha256`, `exec_start`, `service_name` |
+| `provision-jito.sh.tmpl` | Same as agave, exec_start includes Jito MEV flags | Same + Jito-specific flags in `exec_start` |
+| `provision-firedancer.sh.tmpl` | Download binary, write validator.toml, write systemd unit | Same + `firedancer_toml` |
+| `provision-frankendancer.sh.tmpl` | Same structure as firedancer | Same as firedancer |
+| `upgrade-validator.sh.tmpl` | Download, verify, stop, install, restart | `binary_name`, `version`, `download_url`, `sha256`, `service_name` |
+| `upgrade-agent.sh.tmpl` | Download, verify, install, restart agent | `version`, `download_url`, `sha256` |
+| `recover.sh.tmpl` | Stop, wipe ledger, start | `service_name`, `ledger_path` |
+| `restart.sh.tmpl` | `systemctl restart` | `service_name` |
+| `stop.sh.tmpl` | `systemctl stop` | `service_name` |
 
 ### Health Checking is Universal
 
@@ -129,26 +160,20 @@ Controller                              Agent
     |    download_url: "https://...",     |
     |    sha256: "abc123" }               |
     |                                     |
-    |  --UpgradeCommand via gRPC-------->  |
+    |  Render upgrade-validator.sh.tmpl   |
+    |  --ExecuteScript via gRPC-------->  |
     |                                     |
+    |                          Script runs:
     |                          1. Download binary to /tmp/pillar-staging/
     |                          2. Verify SHA256
     |                          3. systemctl stop solana-validator
     |                          4. sudo install binary -> /usr/local/bin/agave-validator
     |                          5. systemctl restart solana-validator
     |                                     |
-    |  <--ReportUpgradeStatus (success)--  |
+    |  <--ScriptResult (exit_code=0)----  |
 ```
 
 This is a binary-only swap. The systemd unit, config files, and all flags remain unchanged. The process takes seconds of downtime -- stop, replace binary, restart.
-
-The upgrade command maps binary names to service names:
-
-| binary_name | service_name |
-|-------------|-------------|
-| `agave-validator` | `solana-validator` |
-| `jito-validator` | `jito-validator` |
-| `fdctl` | `firedancer` |
 
 ### Cross-Client Migration (e.g., Agave to Frankendancer)
 
@@ -166,20 +191,21 @@ Controller                              Agent
     |    identity_keypair_path: "...",    |
     |    ... }                            |
     |                                     |
-    |  --ProvisionCommand via gRPC------>  |
+    |  Render provision-frankendancer.sh  |
+    |  --ExecuteScript via gRPC-------->  |
     |                                     |
-    |                          1. Parse ProvisionCommand
+    |                          Script runs:
+    |                          1. Download fdctl binary, verify SHA256
     |                          2. systemctl stop solana-validator (old service)
-    |                          3. Download fdctl binary, verify SHA256
-    |                          4. Install to /usr/local/bin/fdctl
-    |                          5. Write /etc/pillar/validator.toml
-    |                          6. Write frankendancer.service systemd unit
-    |                          7. systemctl daemon-reload
-    |                          8. systemctl enable --now frankendancer
-    |                          9. Update agent.yaml: client=frankendancer, service=frankendancer
+    |                          3. Install to /usr/local/bin/fdctl
+    |                          4. Write /etc/pillar/validator.toml
+    |                          5. Write frankendancer.service systemd unit
+    |                          6. systemctl daemon-reload
+    |                          7. systemctl enable --now frankendancer
+    |                          8. Update agent.yaml via sed
+    |                          9. systemctl restart pillar-agent
     |                                     |
-    |  Agent exits for config reload       |
-    |  systemd restarts agent             |
+    |  Agent restarts with new config     |
     |  Agent reconnects with new client   |
     |                                     |
     |  <--NodeStatus (state: starting_up) |
@@ -187,10 +213,10 @@ Controller                              Agent
 
 Key points about cross-client migration:
 
-1. **The old service is stopped first.** Pillar stops whatever service is currently running before installing the new one.
+1. **The old service is stopped first.** The script stops whatever service is currently running before installing the new one.
 2. **The ledger is preserved.** The Agave and Frankendancer blockstores are compatible. The ledger directory (`/mnt/ledger`) is reused without modification.
-3. **Config format changes transparently.** Agave used CLI flags in the systemd unit; Frankendancer uses a TOML file. Pillar generates the correct format for the new client.
-4. **The agent updates itself.** After provisioning, the agent writes its own config to reflect the new client and service name, then exits so systemd restarts it with the updated config.
+3. **Config format changes transparently.** Agave used CLI flags in the systemd unit; Frankendancer uses a TOML file. The controller selects the appropriate template and renders the correct format.
+4. **The agent updates itself.** The script updates the agent config via sed and restarts the agent, which reconnects with the updated client/cluster settings.
 5. **System initialization may be needed.** Switching to Firedancer/Frankendancer requires hugetlbfs, sysctl, and ethtool configuration that Agave doesn't need. This is currently a manual step.
 
 ### Migration Compatibility Matrix
@@ -213,20 +239,20 @@ For upgrading an entire fleet, the controller supports bulk operations:
 1. Upload the new binary as an artifact (`POST /api/artifacts`)
 2. Select target nodes in the UI
 3. Trigger upgrade (one-by-one or parallel)
-4. Each node: download artifact from controller -> stop -> swap -> restart
-5. Controller tracks progress via `ReportUpgradeStatus` gRPC
+4. Each node: controller renders upgrade script -> agent executes -> reports result
+5. Controller tracks progress via `ScriptResult` + `script_executions` table
 
-The upgrade is client-aware at the binary level but client-agnostic at the orchestration level -- the same flow works whether the fleet runs Agave, Jito, Frankendancer, or a mix.
+The upgrade is client-aware at the template level but client-agnostic at the orchestration level -- the same flow works whether the fleet runs Agave, Jito, Frankendancer, or a mix.
 
 ### Agent Self-Upgrade
 
 The Pillar agent can upgrade itself:
 
-1. Controller sends `UpgradeCommand` with `binary_name: "pillar-agent"`
-2. Agent downloads the new `pillar-agent` binary, verifies SHA256
-3. Agent replaces its own binary at `/usr/local/bin/pillar-agent`
-4. Agent exits cleanly
-5. systemd `Restart=on-failure` restarts the agent with the new binary
+1. Controller renders `upgrade-agent.sh.tmpl` with download URL and SHA256
+2. Controller sends `ExecuteScript` to agent
+3. Script downloads the new binary, verifies SHA256, installs to `/usr/local/bin/pillar-agent`
+4. Script restarts the agent via `systemctl restart pillar-agent`
+5. systemd restarts the agent with the new binary
 
 This works because the agent is a stateless process -- all state is in the shared `NodeStatus` proto, the config file, and the controller's database.
 
@@ -248,17 +274,19 @@ Operators can provision a few nodes with a new client (e.g., Frankendancer) whil
 
 If a new client causes issues, re-provisioning back to the previous client is the same one-click operation. The ledger is compatible across clients, so no data is lost.
 
+### 5. Update Without Agent Redeployment
+
+When a validator client adds new flags or changes config format, only the controller's script templates need to be updated. No agent rebuild, no fleet-wide binary deployment.
+
 ## Current Limitations
 
-1. **Firedancer/Frankendancer TOML generation is minimal.** Pillar generates only layout, consensus, ledger, and gossip sections. Advanced settings (tile counts, XDP mode, RPC config, snapshot paths, bundle config) require manual editing of `/etc/pillar/validator.toml`.
+1. **Firedancer/Frankendancer TOML generation is minimal.** The controller generates only layout, consensus, ledger, and gossip sections. Advanced settings (tile counts, XDP mode, RPC config, snapshot paths, bundle config) require manual editing of `/etc/pillar/validator.toml` or adding them to the script template.
 
 2. **System initialization is not automated.** Firedancer/Frankendancer need `fdctl configure init all` (hugetlbfs, sysctl, ethtool) before they can run. Pillar does not run this during provisioning. The install script or the operator must handle it.
 
-3. **Upgrade maps `fdctl` to `firedancer` only.** The upgrade command's binary-to-service mapping hardcodes `fdctl -> firedancer`. Nodes running the `frankendancer` service may need special handling.
+3. **No version fetching from GitHub.** The UI requires manually entering the version and download URL. A future version fetcher could query GitHub Releases for each client to populate a dropdown.
 
-4. **No version fetching from GitHub.** The UI requires manually entering the version and download URL. A future version fetcher could query GitHub Releases for each client to populate a dropdown.
-
-5. **Geyser plugins (Yellowstone gRPC) are not wired for Firedancer/Frankendancer.** The `--geyser-plugin-config` flag is only added for Agave/Jito ExecStart lines. Firedancer has a different plugin model that is not yet supported.
+4. **Geyser plugins (Yellowstone gRPC) are not wired for Firedancer/Frankendancer.** The `--geyser-plugin-config` flag is only added for Agave/Jito ExecStart lines. Firedancer has a different plugin model that is not yet supported.
 
 ## References
 
@@ -266,7 +294,9 @@ If a new client causes issues, re-provisioning back to the previous client is th
 - [Jito Client Documentation](./Jito.md)
 - [Firedancer Client Documentation](./Firedancer.md)
 - [Frankendancer Client Documentation](./Frankendancer.md)
-- Agent provisioner: `agent/src/provisioner.rs`
+- Controller templates: `controller/src/templates.rs`
+- Controller script templates: `controller/scripts/`
+- Agent script executor: `agent/src/script_executor.rs`
 - Agent client abstraction: `agent/src/client/mod.rs`
 - Agent health checker: `agent/src/health/mod.rs`
 - Agent reconciler: `agent/src/reconcile.rs`

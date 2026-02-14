@@ -10,13 +10,15 @@ use crate::command::AgentCommand;
 use crate::config::ControllerConfig;
 use crate::metrics_updater::SharedStatus;
 
+use pillar_shared::proto::{
+    CommandStreamRequest, ControllerCommand, ReportStatusRequest, ScriptResult,
+};
+
 pub mod proto {
     tonic::include_proto!("pillar");
 }
 
 use proto::pillar_controller_client::PillarControllerClient;
-
-use pillar_shared::proto::{CommandStreamRequest, ControllerCommand, ReportStatusRequest};
 
 /// Type alias for the client with an optional auth interceptor.
 type AuthClient = PillarControllerClient<tonic::service::interceptor::InterceptedService<Channel, AuthInterceptor>>;
@@ -57,14 +59,16 @@ fn make_interceptor(token: &str) -> AuthInterceptor {
 
 /// Connection to the centralized controller.
 ///
-/// Runs two concurrent loops:
+/// Runs three concurrent loops:
 ///   1. report_status — pushes NodeStatus to controller every N seconds
 ///   2. command_stream — listens for commands from controller
+///   3. result_reporter — sends ScriptResult back to controller
 pub struct ControllerLink {
     config: ControllerConfig,
     shared_status: SharedStatus,
     agent_health: Arc<AgentHealth>,
     cmd_tx: mpsc::Sender<AgentCommand>,
+    result_rx: mpsc::Receiver<ScriptResult>,
 }
 
 impl ControllerLink {
@@ -73,6 +77,7 @@ impl ControllerLink {
         shared_status: SharedStatus,
         agent_health: Arc<AgentHealth>,
         cmd_tx: mpsc::Sender<AgentCommand>,
+        result_rx: mpsc::Receiver<ScriptResult>,
     ) -> Self {
         tracing::info!(
             endpoint = %config.endpoint,
@@ -85,11 +90,12 @@ impl ControllerLink {
             shared_status,
             agent_health,
             cmd_tx,
+            result_rx,
         }
     }
 
     /// Run the controller connection. Retries on failure with backoff.
-    pub async fn run(&self, cancel: CancellationToken) {
+    pub async fn run(mut self, cancel: CancellationToken) {
         let mut backoff = Duration::from_secs(1);
         let max_backoff = Duration::from_secs(60);
 
@@ -130,7 +136,7 @@ impl ControllerLink {
     }
 
     async fn run_connected(
-        &self,
+        &mut self,
         client: AuthClient,
         cancel: CancellationToken,
     ) {
@@ -172,7 +178,7 @@ impl ControllerLink {
         });
 
         let cmd_cancel = cancel.clone();
-        let mut cmd_client = client;
+        let mut cmd_client = client.clone();
         let cmd_node_id = self.config.node_id.clone();
         let cmd_health = self.agent_health.clone();
         let cmd_tx = self.cmd_tx.clone();
@@ -181,12 +187,31 @@ impl ControllerLink {
             run_command_stream(&mut cmd_client, &cmd_node_id, cmd_health, cmd_tx, cmd_cancel).await
         });
 
+        // Spawn result reporter — drains result_rx and sends to controller
+        let result_cancel = cancel.clone();
+        let mut result_client = client;
+        // Take the receiver temporarily using a swap with an empty channel
+        let (dummy_tx, dummy_rx) = mpsc::channel(1);
+        let mut rx = std::mem::replace(&mut self.result_rx, dummy_rx);
+        drop(dummy_tx);
+        let result_handle = tokio::spawn(async move {
+            run_result_reporter(&mut result_client, &mut rx, result_cancel).await;
+            rx
+        });
+
         tokio::select! {
             _ = report_handle => {
                 tracing::warn!("report_status loop exited, will reconnect");
             }
             _ = cmd_handle => {
                 tracing::warn!("command_stream exited, will reconnect");
+            }
+            returned_rx = result_handle => {
+                tracing::warn!("result_reporter exited, will reconnect");
+                // Restore the receiver for the next connection
+                if let Ok(rx) = returned_rx {
+                    self.result_rx = rx;
+                }
             }
             _ = cancel.cancelled() => {}
         }
@@ -279,84 +304,51 @@ async fn run_command_stream(
     }
 }
 
-/// Handle a controller command — send directly to reconcile loop via channel,
-/// or spawn a download task for provision/upgrade.
+/// Handle a controller command — send to reconcile loop via channel.
 async fn handle_command(cmd: ControllerCommand, cmd_tx: &mpsc::Sender<AgentCommand>) {
     use pillar_shared::proto::controller_command::Command;
     match cmd.command {
-        Some(Command::Restart(r)) => {
-            tracing::info!(reason = %r.reason, "received restart command");
-            let _ = cmd_tx.send(AgentCommand::Restart { reason: r.reason }).await;
-        }
-        Some(Command::Recover(r)) => {
-            tracing::info!(reason = %r.reason, "received recover command");
-            let _ = cmd_tx.send(AgentCommand::Recover { reason: r.reason }).await;
-        }
-        Some(Command::UpdateConfig(c)) => {
-            tracing::info!(config_size = c.config_yaml.len(), "received config update command");
-            // TODO: write config and signal reload
-        }
-        Some(Command::Upgrade(u)) => {
+        Some(Command::Execute(script)) => {
             tracing::info!(
-                binary = %u.binary_name,
-                version = %u.version,
-                reason = %u.reason,
-                "received upgrade command"
+                script_id = %script.script_id,
+                desc = %script.description,
+                "received script command"
             );
-            let download_url = u.download_url.clone();
-            let sha256 = u.sha256.clone();
-            let tx = cmd_tx.clone();
-            tokio::spawn(async move {
-                match crate::provisioner::download_and_stage(&download_url, &sha256).await {
-                    Ok(staged) => {
-                        let _ = tx.send(AgentCommand::Upgrade {
-                            staged_binary_path: staged,
-                            upgrade: u,
-                        }).await;
-                    }
-                    Err(e) => {
-                        tracing::error!(error = %e, "upgrade download failed");
-                    }
-                }
-            });
-        }
-        Some(Command::Provision(p)) => {
-            tracing::info!(
-                client = %p.client,
-                version = %p.version,
-                cluster = %p.cluster,
-                "received provision command"
-            );
-            let download_url = p.download_url.clone();
-            let sha256 = p.sha256.clone();
-            let tx = cmd_tx.clone();
-            tokio::spawn(async move {
-                match crate::provisioner::download_and_stage(&download_url, &sha256).await {
-                    Ok(staged) => {
-                        let _ = tx.send(AgentCommand::Provision {
-                            staged_binary_path: staged,
-                            config: Box::new(p),
-                        }).await;
-                    }
-                    Err(e) => {
-                        tracing::error!(error = %e, "provision download failed");
-                    }
-                }
-            });
-        }
-        Some(Command::Stop(s)) => {
-            tracing::info!(reason = %s.reason, "received stop command");
-            // Clean up staging dir if a download is in progress
-            let staging_dir = std::path::Path::new("/tmp/pillar-staging");
-            if staging_dir.exists() {
-                if let Err(e) = tokio::fs::remove_dir_all(staging_dir).await {
-                    tracing::warn!(error = %e, "failed to clean up staging dir");
-                }
-            }
-            let _ = cmd_tx.send(AgentCommand::Stop { reason: s.reason }).await;
+            let _ = cmd_tx.send(AgentCommand::ExecuteScript(script)).await;
         }
         None => {
             tracing::warn!("received empty controller command");
+        }
+    }
+}
+
+/// Send ScriptResult messages back to the controller.
+async fn run_result_reporter(
+    client: &mut AuthClient,
+    result_rx: &mut mpsc::Receiver<ScriptResult>,
+    cancel: CancellationToken,
+) {
+    loop {
+        tokio::select! {
+            _ = cancel.cancelled() => return,
+            Some(result) = result_rx.recv() => {
+                tracing::info!(
+                    script_id = %result.script_id,
+                    exit_code = result.exit_code,
+                    timed_out = result.timed_out,
+                    "reporting script result to controller"
+                );
+                let request = tonic::Request::new(result);
+                match client.report_script_result(request).await {
+                    Ok(_) => {
+                        tracing::debug!("script result reported successfully");
+                    }
+                    Err(e) => {
+                        tracing::warn!(error = %e, "failed to report script result");
+                        return;
+                    }
+                }
+            }
         }
     }
 }

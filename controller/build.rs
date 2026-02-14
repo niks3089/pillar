@@ -20,24 +20,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "::pillar_shared::proto::ControllerCommand",
         )
         .extern_path(
-            ".pillar.RestartCommand",
-            "::pillar_shared::proto::RestartCommand",
+            ".pillar.ExecuteScript",
+            "::pillar_shared::proto::ExecuteScript",
         )
         .extern_path(
-            ".pillar.RecoverCommand",
-            "::pillar_shared::proto::RecoverCommand",
+            ".pillar.ScriptResult",
+            "::pillar_shared::proto::ScriptResult",
         )
         .extern_path(
-            ".pillar.UpdateConfigCommand",
-            "::pillar_shared::proto::UpdateConfigCommand",
-        )
-        .extern_path(
-            ".pillar.UpgradeCommand",
-            "::pillar_shared::proto::UpgradeCommand",
-        )
-        .extern_path(
-            ".pillar.ProvisionCommand",
-            "::pillar_shared::proto::ProvisionCommand",
+            ".pillar.ScriptResultAck",
+            "::pillar_shared::proto::ScriptResultAck",
         )
         .extern_path(
             ".pillar.RegisterNodeRequest",
@@ -46,14 +38,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .extern_path(
             ".pillar.RegisterNodeResponse",
             "::pillar_shared::proto::RegisterNodeResponse",
-        )
-        .extern_path(
-            ".pillar.UpgradeStatusRequest",
-            "::pillar_shared::proto::UpgradeStatusRequest",
-        )
-        .extern_path(
-            ".pillar.UpgradeStatusResponse",
-            "::pillar_shared::proto::UpgradeStatusResponse",
         )
         .extern_path(
             ".pillar.LogBatch",
@@ -66,10 +50,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .extern_path(
             ".pillar.LogAck",
             "::pillar_shared::proto::LogAck",
-        )
-        .extern_path(
-            ".pillar.StopCommand",
-            "::pillar_shared::proto::StopCommand",
         )
         .compile_protos(&["../shared/proto/pillar.proto"], &["../shared/proto/"])?;
     Ok(())

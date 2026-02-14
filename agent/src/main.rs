@@ -11,9 +11,9 @@ mod lifecycle;
 mod log_collector;
 mod metrics;
 mod metrics_updater;
-mod provisioner;
 mod reconcile;
 mod role;
+mod script_executor;
 mod snapshot;
 mod system_info;
 
@@ -91,6 +91,9 @@ async fn main() -> anyhow::Result<()> {
     // Command channel: gRPC → reconciler
     let (cmd_tx, cmd_rx) = tokio::sync::mpsc::channel(32);
 
+    // Script result channel: reconciler → gRPC
+    let (result_tx, result_rx) = tokio::sync::mpsc::channel(32);
+
     let prom_metrics = Arc::new(metrics::Metrics::new());
     let agent_health = Arc::new(agent_health::AgentHealth::new());
 
@@ -118,7 +121,6 @@ async fn main() -> anyhow::Result<()> {
     // 1. Spawn reconcile loop
     let reconcile_config = config.clone();
     let ledger_dir = PathBuf::from(&config.paths.ledger_path);
-    let binary_path = validator_client.binary_path().clone();
     let reconcile_shared = shared_status.clone();
     let reconcile_cancel = cancel.clone();
     tokio::spawn(async move {
@@ -129,9 +131,9 @@ async fn main() -> anyhow::Result<()> {
             snapshot_manager,
             ledger_dir,
             validator_process,
-            binary_path,
             reconcile_shared,
             cmd_rx,
+            result_tx,
         );
         reconciler.run(reconcile_cancel).await;
     });
@@ -163,6 +165,7 @@ async fn main() -> anyhow::Result<()> {
         shared_status.clone(),
         agent_health.clone(),
         cmd_tx,
+        result_rx,
     );
     let grpc_cancel = cancel.clone();
     tokio::spawn(async move { link.run(grpc_cancel).await });
