@@ -7,7 +7,7 @@ service PillarController {
     rpc ReportStatus(ReportStatusRequest) returns (ReportStatusResponse);
     rpc CommandStream(CommandStreamRequest) returns (stream ControllerCommand);
     rpc RegisterNode(RegisterNodeRequest) returns (RegisterNodeResponse);
-    rpc ReportUpgradeStatus(UpgradeStatusRequest) returns (UpgradeStatusResponse);
+    rpc ReportScriptResult(ScriptResult) returns (ScriptResultAck);
     // Agent streams log batches from validator/agent services.
     rpc PushLogs(stream LogBatch) returns (LogAck);
 }
@@ -85,38 +85,28 @@ message NodeStatus {
 // Commands pushed from controller to agent.
 message ControllerCommand {
     oneof command {
-        RestartCommand restart = 1;
-        RecoverCommand recover = 2;
-        UpdateConfigCommand update_config = 3;
-        UpgradeCommand upgrade = 4;
-        ProvisionCommand provision = 5;
-        StopCommand stop = 6;
+        ExecuteScript execute = 1;
     }
 }
 
-message StopCommand {
-    string reason = 1;
+message ExecuteScript {
+    string script_id = 1;      // unique tracking ID
+    string script = 2;         // rendered bash script content
+    string description = 3;    // human-readable ("Provision Agave v2.1.6")
+    uint32 timeout_secs = 4;   // max execution time, 0 = 3600 default
 }
 
-message RestartCommand {
-    string reason = 1;
+message ScriptResult {
+    string node_id = 1;
+    string script_id = 2;
+    int32 exit_code = 3;
+    bool timed_out = 4;
+    string error = 5;          // agent-side error (failed to spawn, etc.)
+    string stdout = 6;         // captured stdout
+    string stderr = 7;         // captured stderr
 }
 
-message RecoverCommand {
-    string reason = 1;
-}
-
-message UpdateConfigCommand {
-    bytes config_yaml = 1;
-}
-
-message UpgradeCommand {
-    string binary_name = 1;
-    string version = 2;
-    string download_url = 3;
-    string sha256 = 4;
-    string reason = 5;
-}
+message ScriptResultAck {}
 
 message RegisterNodeRequest {
     string node_id = 1;
@@ -134,16 +124,6 @@ message RegisterNodeResponse {
     string message = 2;
 }
 
-message UpgradeStatusRequest {
-    string node_id = 1;
-    string binary_name = 2;
-    string version = 3;
-    bool success = 4;
-    string error_message = 5;
-}
-
-message UpgradeStatusResponse {}
-
 // Log streaming from agent to controller.
 message LogBatch {
     string node_id = 1;
@@ -156,51 +136,6 @@ message LogEntry {
     string level = 3;            // "info", "warn", "error", "debug"
     string message = 4;
     string unit = 5;             // systemd unit name (e.g. "solana-validator.service")
-}
-
-// Provision a validator on the node (triggered from controller UI).
-message ProvisionCommand {
-    // Core identity
-    string client = 1;             // "agave", "jito", "firedancer", "frankendancer"
-    string version = 2;            // e.g. "2.1.6"
-    string cluster = 3;            // "mainnet-beta", "testnet", "devnet"
-    string identity_keypair_path = 4;
-    string vote_account_keypair_path = 5;
-    string ledger_path = 6;
-    string snapshot_path = 7;
-    string accounts_path = 8;
-    repeated string entrypoints = 9;
-    repeated string known_validators = 10;
-    string download_url = 11;      // URL to fetch the validator binary
-    string sha256 = 12;            // expected SHA256 of the binary
-    bool jito_mev = 13;            // enable Jito MEV tip-distribution
-    string jito_block_engine_url = 14;
-    bool yellowstone_grpc = 15;    // enable Yellowstone gRPC plugin
-    uint32 rpc_port = 16;         // RPC HTTP port (default 8899 if 0)
-    string dynamic_port_range = 17; // e.g. "8000-8020"
-    string node_type = 18;        // "validator", "rpc", "archival" (drives UI presets)
-    uint32 gossip_port = 19;      // default 8001
-
-    // Client-specific validator CLI flags.
-    // Key = flag name without "--" prefix (e.g. "private-rpc", "limit-ledger-size").
-    // Value = flag argument, or empty string for bare flags (e.g. "--no-voting").
-    // Agave/Jito: rendered as --{key} {value}. Firedancer: translated to TOML config.
-    // The UI populates this via node_type presets; users can add/override any flag.
-    map<string, string> validator_flags = 20;
-
-    // Geyser plugin config file paths (in addition to yellowstone_grpc auto-path)
-    repeated string geyser_plugin_configs = 21;
-
-    // Systemd Environment=KEY=VALUE entries
-    map<string, string> environment_vars = 22;
-
-    // Raw CLI arguments appended after all other flags (escape hatch)
-    repeated string extra_args = 23;
-
-    // Systemd unit tuning
-    uint32 restart_sec = 24;           // default 1
-    bool log_rate_limit_disable = 25;  // LogRateLimitIntervalSec=0
-    bool start_limit_disable = 26;     // StartLimitIntervalSec=0
 }
 
 message LogAck {

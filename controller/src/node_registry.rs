@@ -136,11 +136,14 @@ mod tests {
         }
     }
 
-    fn restart_command() -> ControllerCommand {
+    fn test_command() -> ControllerCommand {
         ControllerCommand {
-            command: Some(controller_command::Command::Restart(
-                pillar_shared::proto::RestartCommand {
-                    reason: "test".to_string(),
+            command: Some(controller_command::Command::Execute(
+                pillar_shared::proto::ExecuteScript {
+                    script_id: "test-1".to_string(),
+                    script: "echo hello".to_string(),
+                    description: "test script".to_string(),
+                    timeout_secs: 60,
                 },
             )),
         }
@@ -199,20 +202,20 @@ mod tests {
         let reg = NodeRegistry::new();
         let mut rx = reg.create_command_channel("node-1").await;
 
-        let cmd = restart_command();
+        let cmd = test_command();
         reg.send_command("node-1", cmd).await.unwrap();
 
         let received = rx.recv().await.unwrap();
         assert!(matches!(
             received.command,
-            Some(controller_command::Command::Restart(_))
+            Some(controller_command::Command::Execute(_))
         ));
     }
 
     #[tokio::test]
     async fn send_command_missing_node() {
         let reg = NodeRegistry::new();
-        let result = reg.send_command("nonexistent", restart_command()).await;
+        let result = reg.send_command("nonexistent", test_command()).await;
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("not found"));
     }
@@ -221,7 +224,7 @@ mod tests {
     async fn send_command_no_channel() {
         let reg = NodeRegistry::new();
         reg.register_node("node-1").await;
-        let result = reg.send_command("node-1", restart_command()).await;
+        let result = reg.send_command("node-1", test_command()).await;
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("not connected"));
     }

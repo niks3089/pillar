@@ -3,8 +3,8 @@ use tonic::{Request, Response, Status, Streaming};
 
 use pillar_shared::proto::{
     CommandStreamRequest, ControllerCommand, LogAck, LogBatch, RegisterNodeRequest,
-    RegisterNodeResponse, ReportStatusRequest, ReportStatusResponse, UpgradeStatusRequest,
-    UpgradeStatusResponse,
+    RegisterNodeResponse, ReportStatusRequest, ReportStatusResponse, ScriptResult,
+    ScriptResultAck,
 };
 
 use crate::db::{self, Db};
@@ -137,28 +137,80 @@ impl PillarController for GrpcServer {
         Ok(Response::new(ReceiverStream::new(rx_out)))
     }
 
-    async fn report_upgrade_status(
+    async fn report_script_result(
         &self,
-        request: Request<UpgradeStatusRequest>,
-    ) -> Result<Response<UpgradeStatusResponse>, Status> {
-        let req = request.into_inner();
-        if req.success {
+        request: Request<ScriptResult>,
+    ) -> Result<Response<ScriptResultAck>, Status> {
+        let result = request.into_inner();
+
+        if result.exit_code == 0 {
             tracing::info!(
-                node_id = %req.node_id,
-                binary = %req.binary_name,
-                version = %req.version,
-                "upgrade succeeded"
+                node_id = %result.node_id,
+                script_id = %result.script_id,
+                "script succeeded"
             );
         } else {
             tracing::warn!(
-                node_id = %req.node_id,
-                binary = %req.binary_name,
-                version = %req.version,
-                error = %req.error_message,
-                "upgrade failed"
+                node_id = %result.node_id,
+                script_id = %result.script_id,
+                exit_code = result.exit_code,
+                timed_out = result.timed_out,
+                error = %result.error,
+                "script failed"
             );
         }
-        Ok(Response::new(UpgradeStatusResponse {}))
+
+        // Update script execution record in DB
+        if let Err(e) = db::complete_script_execution(
+            &self.db,
+            &result.script_id,
+            result.exit_code,
+            result.timed_out,
+            &result.error,
+        )
+        .await
+        {
+            tracing::warn!(error = %e, "failed to update script execution record");
+        }
+
+        // Emit a controller log for the node
+        let now_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as i64;
+        let level = if result.exit_code == 0 {
+            "info"
+        } else {
+            "error"
+        };
+        let message = if result.exit_code == 0 {
+            format!("Script {} completed successfully", result.script_id)
+        } else if result.timed_out {
+            format!("Script {} timed out", result.script_id)
+        } else {
+            format!(
+                "Script {} failed (exit code {}): {}",
+                result.script_id, result.exit_code, result.error
+            )
+        };
+
+        let entry = pillar_shared::proto::LogEntry {
+            service: "controller".to_string(),
+            level: level.to_string(),
+            message,
+            unit: String::new(),
+            timestamp_unix_ms: now_ms,
+        };
+        self.registry
+            .publish_logs(&result.node_id, std::slice::from_ref(&entry))
+            .await;
+        if let Err(e) =
+            db::insert_logs(&self.db, &result.node_id, std::slice::from_ref(&entry)).await
+        {
+            tracing::warn!(error = %e, "failed to persist script result log");
+        }
+
+        Ok(Response::new(ScriptResultAck {}))
     }
 
     async fn push_logs(
