@@ -13,6 +13,7 @@ mod metrics;
 mod metrics_updater;
 mod reconcile;
 mod role;
+mod rpc_client;
 mod script_executor;
 mod snapshot;
 mod system_info;
