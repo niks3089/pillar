@@ -534,9 +534,16 @@ fi
 
 if [[ "$DASHBOARDS_COPIED" != "true" ]]; then
     section "Fetching dashboards from controller API"
-    sleep 2
 
     CONTROLLER_URL="http://localhost:${HTTP_PORT}"
+    # Wait for controller to be ready (up to 15 seconds)
+    for i in 1 2 3 4 5; do
+        if curl -sf "$CONTROLLER_URL/api/overview" >/dev/null 2>&1; then
+            break
+        fi
+        sleep 3
+    done
+
     if curl -sf "$CONTROLLER_URL/api/dashboards/fleet-overview" -o "$GRAFANA_DASHBOARDS_DIR/fleet-overview.json" 2>/dev/null; then
         ok "fetched fleet-overview dashboard"
     else
