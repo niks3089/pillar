@@ -4,9 +4,9 @@
 # creates the sol user, applies sysctl tuning, and generates validator keypairs.
 #
 # Usage:
-#   sudo ./install-node.sh --binaries-dir /path/to/binaries --controller-endpoint http://10.0.0.1:50051
-#   sudo ./install-node.sh --binaries-dir /path/to/binaries --controller-endpoint http://10.0.0.1:50051 --node-id my-node
-#   sudo ./install-node.sh --binaries-dir /path/to/binaries --controller-endpoint http://10.0.0.1:50051 --cluster testnet
+#   curl -sSL https://janus-meter.s3.eu-north-1.amazonaws.com/pillar/latest/install-node.sh | sudo bash -s -- --controller http://10.0.0.1:50051
+#   sudo ./install-node.sh --controller http://10.0.0.1:50051 --version 0.1.0
+#   sudo ./install-node.sh --controller http://10.0.0.1:50051 --cluster testnet
 #
 # Idempotent — safe to run multiple times.
 
@@ -30,8 +30,10 @@ CONTROLLER_ENDPOINT=""
 HTTP_URL=""
 AUTH_TOKEN=""
 NODE_ID=""
-BINARIES_DIR=""
+VERSION="latest"
 SOLANA_VERSION="stable"
+
+S3_BASE="https://janus-meter.s3.eu-north-1.amazonaws.com/pillar"
 
 # Colors
 RED='\033[0;31m'
@@ -56,12 +58,12 @@ section() { echo -e "\n${BLUE}--- $* ---${NC}"; }
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --binaries-dir)          BINARIES_DIR="$2";          shift 2 ;;
+        --version)               VERSION="$2";               shift 2 ;;
         --role)                  ROLE="$2";                  shift 2 ;;
         --client)                CLIENT="$2";                shift 2 ;;
         --cluster)               CLUSTER="$2";               shift 2 ;;
         --reference-rpc)         REFERENCE_RPC="$2";         shift 2 ;;
-        --controller-endpoint)   CONTROLLER_ENDPOINT="$2";   shift 2 ;;
+        --controller-endpoint|--controller) CONTROLLER_ENDPOINT="$2"; shift 2 ;;
         --http-url)              HTTP_URL="$2";              shift 2 ;;
         --token)                 AUTH_TOKEN="$2";            shift 2 ;;
         --node-id)               NODE_ID="$2";               shift 2 ;;
@@ -85,22 +87,32 @@ if [[ -z "$REFERENCE_RPC" ]]; then
     esac
 fi
 
-if [[ -z "$BINARIES_DIR" ]]; then
-    die "--binaries-dir is required (path to directory containing pillar-agent binary)"
-fi
-
-if [[ ! -f "$BINARIES_DIR/pillar-agent" ]]; then
-    die "pillar-agent binary not found in $BINARIES_DIR"
-fi
-
 if [[ -z "$CONTROLLER_ENDPOINT" ]]; then
-    die "--controller-endpoint is required (e.g. http://10.0.0.1:50051)"
+    die "--controller is required (e.g. http://10.0.0.1:50051)"
 fi
 
 # Default node_id to short hostname if not set
 if [[ -z "$NODE_ID" ]]; then
     NODE_ID="$(hostname -s 2>/dev/null || echo "unknown")"
 fi
+
+# ==============================================================================
+# Phase 0: Download agent binary from S3
+# ==============================================================================
+
+section "Downloading agent binary"
+
+S3_PATH="${S3_BASE}/${VERSION}/pillar-agent-linux-amd64"
+if [[ "$VERSION" != "latest" ]]; then
+    S3_PATH="${S3_BASE}/v${VERSION}/pillar-agent-linux-amd64"
+fi
+DOWNLOAD_DIR=$(mktemp -d)
+info "downloading from $S3_PATH ..."
+if ! curl -sSfL "$S3_PATH" -o "$DOWNLOAD_DIR/pillar-agent"; then
+    die "failed to download pillar-agent binary from $S3_PATH"
+fi
+chmod +x "$DOWNLOAD_DIR/pillar-agent"
+ok "downloaded pillar-agent binary"
 
 # ------------------------------------------------------------------------------
 # Phase 1: Preflight checks
@@ -408,7 +420,8 @@ fi
 
 section "Installing binaries"
 
-install -m 755 "$BINARIES_DIR/pillar-agent" "$INSTALL_DIR/pillar-agent"
+install -m 755 "$DOWNLOAD_DIR/pillar-agent" "$INSTALL_DIR/pillar-agent"
+rm -rf "$DOWNLOAD_DIR"
 ok "installed pillar-agent -> $INSTALL_DIR/pillar-agent"
 
 # ------------------------------------------------------------------------------
@@ -424,12 +437,18 @@ if [[ -n "$HTTP_URL" ]]; then
     BUNDLE_URL="${HTTP_URL}/api/certs/client-bundle"
     BUNDLE_JSON=$(curl -sf --max-time 10 "$BUNDLE_URL" 2>/dev/null || true)
 
-    if [[ -n "$BUNDLE_JSON" ]] && echo "$BUNDLE_JSON" | python3 -c "import sys,json; json.load(sys.stdin)" 2>/dev/null; then
-        mkdir -p "$CERTS_DIR"
-        echo "$BUNDLE_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin)['ca_cert'], end='')" > "$CERTS_DIR/ca.pem"
-        chown -R "$SOL_USER:$SOL_USER" "$CERTS_DIR"
-        TLS_ENABLED=true
-        ok "downloaded CA certificate to $CERTS_DIR/ca.pem"
+    if [[ -n "$BUNDLE_JSON" ]]; then
+        # Extract ca_cert field from JSON without python3
+        CA_CERT=$(echo "$BUNDLE_JSON" | sed -n 's/.*"ca_cert"\s*:\s*"\(.*\)".*/\1/p' | sed 's/\\n/\n/g')
+        if [[ -n "$CA_CERT" ]]; then
+            mkdir -p "$CERTS_DIR"
+            echo -e "$CA_CERT" > "$CERTS_DIR/ca.pem"
+            chown -R "$SOL_USER:$SOL_USER" "$CERTS_DIR"
+            TLS_ENABLED=true
+            ok "downloaded CA certificate to $CERTS_DIR/ca.pem"
+        else
+            warn "could not parse CA certificate from $BUNDLE_URL"
+        fi
     else
         warn "could not fetch CA certificate from $BUNDLE_URL (controller may not have TLS enabled)"
     fi

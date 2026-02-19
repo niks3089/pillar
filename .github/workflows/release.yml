@@ -1,0 +1,101 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version (e.g. 0.1.0)"
+        required: true
+        type: string
+
+env:
+  S3_BUCKET: janus-meter
+  S3_REGION: eu-north-1
+  S3_PREFIX: pillar
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install protoc
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y protobuf-compiler
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Build frontend
+        working-directory: controller/web
+        run: |
+          npm ci
+          npm run build
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Build release binaries
+        run: cargo build --release -p pillar-agent -p pillar-controller
+
+      - name: Prepare artifacts
+        run: |
+          mkdir -p artifacts
+          cp target/release/agent artifacts/pillar-agent-linux-amd64
+          cp target/release/controller artifacts/pillar-controller-linux-amd64
+          cp scripts/install-controller.sh artifacts/install-controller.sh
+          cp scripts/install-node.sh artifacts/install-node.sh
+          chmod +x artifacts/*
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-binaries
+          path: artifacts/
+
+  upload:
+    name: Upload to S3
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: release-binaries
+          path: artifacts/
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.S3_REGION }}
+
+      - name: Upload to S3 (versioned)
+        run: |
+          aws s3 cp artifacts/ "s3://${S3_BUCKET}/${S3_PREFIX}/v${{ inputs.version }}/" --recursive
+
+      - name: Upload to S3 (latest)
+        run: |
+          aws s3 cp artifacts/ "s3://${S3_BUCKET}/${S3_PREFIX}/latest/" --recursive
+
+      - name: Verify uploads
+        run: |
+          echo "Versioned:"
+          aws s3 ls "s3://${S3_BUCKET}/${S3_PREFIX}/v${{ inputs.version }}/"
+          echo ""
+          echo "Latest:"
+          aws s3 ls "s3://${S3_BUCKET}/${S3_PREFIX}/latest/"

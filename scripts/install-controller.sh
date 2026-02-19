@@ -4,9 +4,9 @@
 # Provisions dashboards and data sources so metrics work out of the box.
 #
 # Usage:
-#   sudo ./install-controller.sh --binaries-dir /path/to/binaries
-#   sudo ./install-controller.sh --binaries-dir /path/to/binaries --external-url http://1.2.3.4:50051
-#   sudo ./install-controller.sh --binaries-dir /path/to/binaries --grafana-port 3000
+#   curl -sSL https://janus-meter.s3.eu-north-1.amazonaws.com/pillar/latest/install-controller.sh | sudo bash
+#   sudo ./install-controller.sh --version 0.1.0
+#   sudo ./install-controller.sh --external-url http://1.2.3.4:50051
 #
 # Idempotent — safe to run multiple times.
 
@@ -29,9 +29,11 @@ HTTP_LISTEN="0.0.0.0:8080"
 HTTP_PORT=8080
 RETENTION_DAYS=30
 EXTERNAL_URL=""
-BINARIES_DIR=""
+VERSION="latest"
 GRAFANA_PORT=3000
 PROMETHEUS_PORT=9091
+
+S3_BASE="https://janus-meter.s3.eu-north-1.amazonaws.com/pillar"
 
 # Colors
 RED='\033[0;31m'
@@ -56,7 +58,7 @@ section() { echo -e "\n${BLUE}--- $* ---${NC}"; }
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --binaries-dir)    BINARIES_DIR="$2";   shift 2 ;;
+        --version)         VERSION="$2";         shift 2 ;;
         --db-path)         DB_PATH="$2";         shift 2 ;;
         --grpc-listen)     GRPC_LISTEN="$2";     shift 2 ;;
         --http-listen)     HTTP_LISTEN="$2";     shift 2 ;;
@@ -77,13 +79,23 @@ done
 # Parse HTTP port from HTTP_LISTEN
 HTTP_PORT="${HTTP_LISTEN##*:}"
 
-if [[ -z "$BINARIES_DIR" ]]; then
-    die "--binaries-dir is required (path to directory containing controller binary)"
-fi
+# ==============================================================================
+# Phase 0: Download controller binary from S3
+# ==============================================================================
 
-if [[ ! -f "$BINARIES_DIR/controller" ]]; then
-    die "controller binary not found in $BINARIES_DIR"
+section "Downloading controller binary"
+
+S3_PATH="${S3_BASE}/${VERSION}/pillar-controller-linux-amd64"
+if [[ "$VERSION" != "latest" ]]; then
+    S3_PATH="${S3_BASE}/v${VERSION}/pillar-controller-linux-amd64"
 fi
+DOWNLOAD_DIR=$(mktemp -d)
+info "downloading from $S3_PATH ..."
+if ! curl -sSfL "$S3_PATH" -o "$DOWNLOAD_DIR/controller"; then
+    die "failed to download controller binary from $S3_PATH"
+fi
+chmod +x "$DOWNLOAD_DIR/controller"
+ok "downloaded controller binary"
 
 # Auto-detect external URL from public IP if not set
 if [[ -z "$EXTERNAL_URL" ]]; then
@@ -163,7 +175,8 @@ ok "directories ready"
 section "Installing controller binary"
 
 DST="$INSTALL_DIR/controller"
-install -m 755 "$BINARIES_DIR/controller" "$DST"
+install -m 755 "$DOWNLOAD_DIR/controller" "$DST"
+rm -rf "$DOWNLOAD_DIR"
 ok "installed controller -> $DST"
 
 # ==============================================================================
@@ -349,46 +362,19 @@ GRAFANA_PROV="/etc/grafana/provisioning"
 GRAFANA_DASHBOARDS_DIR="/var/lib/grafana/dashboards/pillar"
 
 # 6a: Patch grafana.ini — enable embedding, anonymous access, set port
-# Uses Python for section-scoped ini edits (sed is too fragile for this)
-python3 << PYEOF
-import re, sys
-
-settings = {
-    'security': {'allow_embedding': 'true'},
-    'auth.anonymous': {'enabled': 'true', 'org_role': 'Viewer'},
-    'server': {
-        'http_port': '${GRAFANA_PORT}',
-        'root_url': '%(protocol)s://%(domain)s:%(http_port)s/grafana/',
-        'serve_from_sub_path': 'true',
-    },
-}
-
-with open('${GRAFANA_CONF}', 'r') as f:
-    lines = f.readlines()
-
-current_section = ''
-result = []
-for line in lines:
-    stripped = line.strip()
-    m = re.match(r'^\[(.+)\]', stripped)
-    if m:
-        current_section = m.group(1)
-
-    modified = False
-    if current_section in settings:
-        for key, value in settings[current_section].items():
-            if re.match(rf'^;?\s*{re.escape(key)}\s*=', stripped):
-                result.append(f'{key} = {value}\n')
-                modified = True
-                break
-
-    if not modified:
-        result.append(line)
-
-with open('${GRAFANA_CONF}', 'w') as f:
-    f.writelines(result)
-PYEOF
-ok "grafana.ini: allow_embedding=true, anonymous auth=Viewer, port=$GRAFANA_PORT"
+# Uses sed with section-aware approach
+if [[ -f "$GRAFANA_CONF" ]]; then
+    # Server settings
+    sed -i '/^\[server\]/,/^\[/ s/^;*\s*http_port\s*=.*/http_port = '"${GRAFANA_PORT}"'/' "$GRAFANA_CONF"
+    sed -i '/^\[server\]/,/^\[/ s|^;*\s*root_url\s*=.*|root_url = %(protocol)s://%(domain)s:%(http_port)s/grafana/|' "$GRAFANA_CONF"
+    sed -i '/^\[server\]/,/^\[/ s/^;*\s*serve_from_sub_path\s*=.*/serve_from_sub_path = true/' "$GRAFANA_CONF"
+    # Security
+    sed -i '/^\[security\]/,/^\[/ s/^;*\s*allow_embedding\s*=.*/allow_embedding = true/' "$GRAFANA_CONF"
+    # Anonymous auth
+    sed -i '/^\[auth.anonymous\]/,/^\[/ s/^;*\s*enabled\s*=.*/enabled = true/' "$GRAFANA_CONF"
+    sed -i '/^\[auth.anonymous\]/,/^\[/ s/^;*\s*org_role\s*=.*/org_role = Viewer/' "$GRAFANA_CONF"
+    ok "grafana.ini: allow_embedding=true, anonymous auth=Viewer, port=$GRAFANA_PORT"
+fi
 
 # 6b: Provision Prometheus data source (remove conflicting defaults first)
 mkdir -p "$GRAFANA_PROV/datasources"
@@ -432,16 +418,13 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DASHBOARD_SRC=""
 if [[ -d "$SCRIPT_DIR/../controller/dashboards/grafana" ]]; then
     DASHBOARD_SRC="$SCRIPT_DIR/../controller/dashboards/grafana"
-elif [[ -d "$BINARIES_DIR/dashboards" ]]; then
-    DASHBOARD_SRC="$BINARIES_DIR/dashboards"
 fi
 
 DASHBOARDS_COPIED=false
-if [[ -n "$DASHBOARD_SRC" && -f "$DASHBOARD_SRC/fleet-overview.json" ]]; then
-    cp "$DASHBOARD_SRC/fleet-overview.json" "$GRAFANA_DASHBOARDS_DIR/fleet-overview.json"
-    cp "$DASHBOARD_SRC/node-detail.json"    "$GRAFANA_DASHBOARDS_DIR/node-detail.json"
+if [[ -n "$DASHBOARD_SRC" ]] && ls "$DASHBOARD_SRC"/*.json &>/dev/null; then
+    cp "$DASHBOARD_SRC"/*.json "$GRAFANA_DASHBOARDS_DIR/"
     DASHBOARDS_COPIED=true
-    ok "copied dashboard JSONs to $GRAFANA_DASHBOARDS_DIR"
+    ok "copied dashboard JSONs to $GRAFANA_DASHBOARDS_DIR ($(ls "$DASHBOARD_SRC"/*.json | wc -l) files)"
 else
     info "dashboard JSONs not found locally — will fetch from controller API after startup"
 fi
@@ -593,9 +576,9 @@ echo "    Dashboards provisioned automatically"
 echo ""
 echo "  Add nodes:"
 if [[ -n "$EXTERNAL_URL" ]]; then
-echo "    sudo ./install-node.sh --binaries-dir /path/to/binaries --controller-endpoint $EXTERNAL_URL"
+echo "    curl -sSL ${S3_BASE}/latest/install-node.sh | sudo bash -s -- --controller $EXTERNAL_URL"
 else
-echo "    sudo ./install-node.sh --binaries-dir /path/to/binaries --controller-endpoint http://<this-ip>:50051"
+echo "    curl -sSL ${S3_BASE}/latest/install-node.sh | sudo bash -s -- --controller http://<this-ip>:50051"
 fi
 echo ""
 echo "  Logs:"
