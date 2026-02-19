@@ -1,0 +1,14 @@
+{
+  "packages": {
+    ".": {
+      "release-type": "rust",
+      "component": "pillar",
+      "bump-minor-pre-major": true,
+      "extra-files": [
+        "agent/Cargo.toml",
+        "controller/Cargo.toml",
+        "shared/Cargo.toml"
+      ]
+    }
+  }
+}
