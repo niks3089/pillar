@@ -161,7 +161,8 @@ else
 fi
 
 DB_DIR_ACTUAL="$(dirname "$DB_PATH")"
-for dir in "$CONFIG_DIR" "$LOG_DIR" "$DB_DIR_ACTUAL"; do
+CERTS_DIR="$CONFIG_DIR/certs"
+for dir in "$CONFIG_DIR" "$LOG_DIR" "$DB_DIR_ACTUAL" "$CERTS_DIR"; do
     mkdir -p "$dir"
     chown "$PILLAR_USER:$PILLAR_GROUP" "$dir"
     chmod 755 "$dir"
@@ -215,7 +216,7 @@ if command -v prometheus &>/dev/null; then
 else
     case "$PKG_MANAGER" in
         apt)
-            apt-get update -qq
+            apt-get update -qq 2>/dev/null || true
             if apt-get install -y -qq prometheus >/dev/null 2>&1 && command -v prometheus &>/dev/null; then
                 ok "Prometheus installed via apt"
             else
@@ -318,7 +319,7 @@ if command -v grafana-server &>/dev/null || [[ -f /usr/sbin/grafana-server ]]; t
 else
     case "$PKG_MANAGER" in
         apt)
-            apt-get install -y -qq apt-transport-https software-properties-common >/dev/null 2>&1
+            apt-get install -y -qq apt-transport-https software-properties-common >/dev/null 2>&1 || true
             if [[ ! -f /etc/apt/keyrings/grafana.gpg ]]; then
                 mkdir -p /etc/apt/keyrings
                 curl -sSL https://apt.grafana.com/gpg.key | gpg --dearmor -o /etc/apt/keyrings/grafana.gpg
@@ -327,9 +328,12 @@ else
                 echo "deb [signed-by=/etc/apt/keyrings/grafana.gpg] https://apt.grafana.com stable main" \
                     > /etc/apt/sources.list.d/grafana.list
             fi
-            apt-get update -qq
-            apt-get install -y -qq grafana >/dev/null 2>&1
-            ok "Grafana installed via apt"
+            apt-get update -qq 2>/dev/null || true
+            if apt-get install -y -qq grafana 2>&1; then
+                ok "Grafana installed via apt"
+            else
+                fail "Grafana install failed"
+            fi
             ;;
         dnf|yum)
             if [[ ! -f /etc/yum.repos.d/grafana.repo ]]; then
@@ -414,9 +418,9 @@ ok "provisioned dashboard provider"
 # 6d: Copy dashboard JSON files
 mkdir -p "$GRAFANA_DASHBOARDS_DIR"
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd 2>/dev/null || true)"
 DASHBOARD_SRC=""
-if [[ -d "$SCRIPT_DIR/../controller/dashboards/grafana" ]]; then
+if [[ -n "$SCRIPT_DIR" && -d "$SCRIPT_DIR/../controller/dashboards/grafana" ]]; then
     DASHBOARD_SRC="$SCRIPT_DIR/../controller/dashboards/grafana"
 fi
 
