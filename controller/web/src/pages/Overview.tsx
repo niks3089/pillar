@@ -92,8 +92,8 @@ function Overview() {
       <table className="node-table">
         <thead>
           <tr>
-            <th>Node ID</th>
             <th>Host</th>
+            <th>IP</th>
             <th>State</th>
             <th>Link</th>
             <th>Client</th>
@@ -105,8 +105,8 @@ function Overview() {
         <tbody>
           {nodes.map((node) => (
             <tr key={node.node_id} onClick={() => navigate(`/nodes/${node.node_id}`)}>
-              <td>{node.node_id}</td>
-              <td>{node.hostname ?? node.live_status?.hostname ?? '-'}{node.ip_address ? ` (${node.ip_address})` : ''}</td>
+              <td>{node.hostname ?? node.live_status?.hostname ?? node.node_id}</td>
+              <td>{node.ip_address && !node.ip_address.includes(':') ? node.ip_address : '-'}</td>
               <td>
                 <span className={`badge ${STATE_COLORS[node.lifecycle_state] ? node.lifecycle_state : ''}`}>
                   {node.lifecycle_state}

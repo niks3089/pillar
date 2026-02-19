@@ -97,9 +97,9 @@ fi
 chmod +x "$DOWNLOAD_DIR/controller"
 ok "downloaded controller binary"
 
-# Auto-detect external URL from public IP if not set
+# Auto-detect external URL from public IPv4 if not set
 if [[ -z "$EXTERNAL_URL" ]]; then
-    PUBLIC_IP=$(curl -sf --max-time 5 ifconfig.me 2>/dev/null || curl -sf --max-time 5 ipinfo.io/ip 2>/dev/null || true)
+    PUBLIC_IP=$(curl -4 -sf --max-time 5 ifconfig.me 2>/dev/null || curl -4 -sf --max-time 5 ipinfo.io/ip 2>/dev/null || true)
     if [[ -n "$PUBLIC_IP" ]]; then
         EXTERNAL_URL="http://${PUBLIC_IP}:50051"
         info "auto-detected external URL: $EXTERNAL_URL"

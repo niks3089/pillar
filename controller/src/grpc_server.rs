@@ -49,13 +49,17 @@ pub struct GrpcServer {
 
 impl GrpcServer {
     pub fn new(db: Db, registry: NodeRegistry, external_url: &str) -> Self {
-        let self_ip = external_url
+        let host = external_url
             .trim_start_matches("http://")
-            .trim_start_matches("https://")
-            .split(':')
-            .next()
-            .unwrap_or("")
-            .to_string();
+            .trim_start_matches("https://");
+        // Handle IPv6 in brackets [::1]:port, plain IPv4 1.2.3.4:port, or hostname:port
+        let self_ip = if host.starts_with('[') {
+            // IPv6: extract between brackets
+            host.split(']').next().unwrap_or("").trim_start_matches('[').to_string()
+        } else {
+            // IPv4 or hostname: split on last colon (port)
+            host.rsplit_once(':').map(|(h, _)| h).unwrap_or(host).to_string()
+        };
         Self {
             db,
             registry,

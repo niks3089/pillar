@@ -1,21 +1,35 @@
 name: Release
 
 on:
-  workflow_dispatch:
-    inputs:
-      version:
-        description: "Version (e.g. 0.1.0)"
-        required: true
-        type: string
+  push:
+    branches: [main]
 
 env:
   S3_BUCKET: janus-meter
   S3_REGION: eu-north-1
   S3_PREFIX: pillar
 
+permissions:
+  contents: write
+  pull-requests: write
+
 jobs:
+  release-please:
+    name: Release Please
+    runs-on: ubuntu-latest
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
+      version: ${{ steps.release.outputs.major }}.${{ steps.release.outputs.minor }}.${{ steps.release.outputs.patch }}
+    steps:
+      - uses: googleapis/release-please-action@v4
+        id: release
+        with:
+          release-type: rust
+
   build:
     name: Build
+    needs: release-please
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -68,7 +82,7 @@ jobs:
 
   upload:
     name: Upload to S3
-    needs: build
+    needs: [release-please, build]
     runs-on: ubuntu-latest
     steps:
       - name: Download build artifacts
@@ -84,18 +98,18 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.S3_REGION }}
 
-      - name: Upload to S3 (versioned)
-        run: |
-          aws s3 cp artifacts/ "s3://${S3_BUCKET}/${S3_PREFIX}/v${{ inputs.version }}/" --recursive
-
       - name: Upload to S3 (latest)
         run: |
           aws s3 cp artifacts/ "s3://${S3_BUCKET}/${S3_PREFIX}/latest/" --recursive
 
+      - name: Upload to S3 (versioned)
+        if: needs.release-please.outputs.release_created == 'true'
+        run: |
+          VERSION="${{ needs.release-please.outputs.version }}"
+          aws s3 cp artifacts/ "s3://${S3_BUCKET}/${S3_PREFIX}/v${VERSION}/" --recursive
+          echo "Uploaded versioned release v${VERSION}"
+
       - name: Verify uploads
         run: |
-          echo "Versioned:"
-          aws s3 ls "s3://${S3_BUCKET}/${S3_PREFIX}/v${{ inputs.version }}/"
-          echo ""
           echo "Latest:"
           aws s3 ls "s3://${S3_BUCKET}/${S3_PREFIX}/latest/"
