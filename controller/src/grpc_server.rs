@@ -192,9 +192,21 @@ impl PillarController for GrpcServer {
         } else if result.timed_out {
             format!("Script {} timed out", result.script_id)
         } else {
+            let detail = if !result.error.is_empty() {
+                result.error.clone()
+            } else {
+                let source = if !result.stderr.is_empty() {
+                    &result.stderr
+                } else {
+                    &result.stdout
+                };
+                let lines: Vec<&str> = source.trim().lines().collect();
+                let start = lines.len().saturating_sub(10);
+                lines[start..].join("\n")
+            };
             format!(
-                "Script {} failed (exit code {}): {}",
-                result.script_id, result.exit_code, result.error
+                "Script {} failed (exit code {}):\n{}",
+                result.script_id, result.exit_code, detail
             )
         };
 

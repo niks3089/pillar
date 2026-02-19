@@ -11,7 +11,13 @@ function formatBytes(bytes: number): string {
 }
 
 function formatTimestamp(ms: number): string {
-  return new Date(ms).toLocaleTimeString('en-US', { hour12: false })
+  if (!ms || isNaN(ms)) return '--:--:--'
+  const d = new Date(ms)
+  const month = d.toLocaleString('en-US', { month: 'short' })
+  const day = String(d.getDate()).padStart(2, '0')
+  const time = d.toLocaleTimeString('en-US', { hour12: false })
+  const millis = String(d.getMilliseconds()).padStart(3, '0')
+  return `${month} ${day} ${time}.${millis}`
 }
 
 function formatLastSeen(ts?: number): string {

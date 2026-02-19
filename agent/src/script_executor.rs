@@ -57,8 +57,8 @@ impl ScriptExecutor {
 
         // Spawn process with process group for clean kill
         let child = unsafe {
-            tokio::process::Command::new("sudo")
-                .args(["bash", &script_path])
+            tokio::process::Command::new("bash")
+                .args([&script_path])
                 .stdout(std::process::Stdio::piped())
                 .stderr(std::process::Stdio::piped())
                 .kill_on_drop(true)

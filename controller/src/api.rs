@@ -12,6 +12,7 @@ use axum::{
     Json, Router,
 };
 use serde::{Deserialize, Serialize};
+use std::sync::atomic::{AtomicI64, Ordering};
 use tokio_stream::StreamExt;
 
 use pillar_shared::proto::{
@@ -106,6 +107,39 @@ struct NodeWithStatus {
     node: NodeRow,
     #[serde(skip_serializing_if = "Option::is_none")]
     live_status: Option<NodeStatus>,
+}
+
+// ---------------------------------------------------------------------------
+// SSE log entry wrapper (maps proto LogEntry → frontend-expected JSON shape)
+// ---------------------------------------------------------------------------
+
+static SSE_ID_COUNTER: AtomicI64 = AtomicI64::new(0);
+
+#[derive(Serialize)]
+struct SseLogEntry {
+    id: i64,
+    service: String,
+    level: String,
+    message: String,
+    unit: Option<String>,
+    timestamp_ms: i64,
+}
+
+impl From<LogEntry> for SseLogEntry {
+    fn from(entry: LogEntry) -> Self {
+        SseLogEntry {
+            id: SSE_ID_COUNTER.fetch_add(1, Ordering::Relaxed),
+            service: entry.service,
+            level: entry.level,
+            message: entry.message,
+            unit: if entry.unit.is_empty() {
+                None
+            } else {
+                Some(entry.unit)
+            },
+            timestamp_ms: entry.timestamp_unix_ms,
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -311,7 +345,8 @@ async fn node_logs_stream(
             let stream = tokio_stream::wrappers::BroadcastStream::new(rx).filter_map(|result| {
                 match result {
                     Ok(entry) => {
-                        let json = serde_json::to_string(&entry).unwrap_or_default();
+                        let sse_entry = SseLogEntry::from(entry);
+                        let json = serde_json::to_string(&sse_entry).unwrap_or_default();
                         Some(Ok::<_, std::convert::Infallible>(Event::default().data(json)))
                     }
                     // Skip lagged messages.

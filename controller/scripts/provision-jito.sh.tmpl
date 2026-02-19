@@ -2,13 +2,42 @@
 set -euo pipefail
 echo "=== Pillar: Provisioning Jito {{version}} on {{cluster}} ==="
 
-# Download and verify binary
+# Install validator binary
+DOWNLOAD_URL="{{download_url}}"
 STAGING="/tmp/pillar-staging"
-rm -rf "$STAGING" && mkdir -p "$STAGING"
-echo "Downloading binary..."
-curl -sSL -o "$STAGING/binary" "{{download_url}}"
-echo "{{sha256}}  $STAGING/binary" | sha256sum -c
-sudo install -m 755 "$STAGING/binary" {{binary_path}}
+rm -rf "$STAGING"
+
+if [ -n "$DOWNLOAD_URL" ]; then
+  # Direct download: tarball or standalone binary
+  mkdir -p "$STAGING"
+  echo "Downloading..."
+  curl -sSL -o "$STAGING/download" "$DOWNLOAD_URL"
+
+  # SHA256 verification (skip if empty)
+  SHA="{{sha256}}"
+  if [ -n "$SHA" ]; then
+    echo "$SHA  $STAGING/download" | sha256sum -c
+    echo "SHA256 verified"
+  fi
+
+  # Handle tarball vs standalone binary
+  if file "$STAGING/download" | grep -q "bzip2\|gzip\|tar"; then
+    echo "Extracting tarball..."
+    mkdir -p "$STAGING/extract"
+    tar -xf "$STAGING/download" -C "$STAGING/extract"
+    BINARY=$(find "$STAGING/extract" \( -name "jito-validator" -o -name "agave-validator" -o -name "solana-validator" \) -type f | head -1)
+    if [ -z "$BINARY" ]; then
+      echo "ERROR: validator binary not found in tarball" >&2
+      exit 1
+    fi
+    sudo install -m 755 "$BINARY" {{binary_path}}
+  else
+    sudo install -m 755 "$STAGING/download" {{binary_path}}
+  fi
+else
+  echo "ERROR: download_url is required for Jito client" >&2
+  exit 1
+fi
 echo "Binary installed to {{binary_path}}"
 
 # Stop existing service if running
