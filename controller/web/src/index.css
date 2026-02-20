@@ -425,8 +425,11 @@ body {
 
 .log-entry .service {
   color: var(--blue);
-  width: 6ch;
+  min-width: 10ch;
   flex-shrink: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .log-entry .level {

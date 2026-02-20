@@ -194,7 +194,12 @@ pub async fn upsert_node(db: &Db, req: &RegisterNodeRequest, ip_address: &str) -
     .await?
 }
 
-pub async fn update_node_status(db: &Db, node_id: &str, status: &NodeStatus) -> Result<()> {
+/// Update node status. Returns the previous state if a state transition occurred.
+pub async fn update_node_status(
+    db: &Db,
+    node_id: &str,
+    status: &NodeStatus,
+) -> Result<Option<String>> {
     let db = db.clone();
     let node_id = node_id.to_owned();
     let status = status.clone();
@@ -225,16 +230,19 @@ pub async fn update_node_status(db: &Db, node_id: &str, status: &NodeStatus) -> 
             )
             .optional()?;
 
-        if last_state.as_deref() != Some(&status.state) {
+        let transitioned_from = if last_state.as_deref() != Some(&status.state) {
             let status_blob = status.encode_to_vec();
             conn.execute(
                 "INSERT INTO status_history (node_id, status_blob, received_at) VALUES (?1, ?2, ?3)",
                 params![node_id, status_blob, now],
             )
             .context("insert status_history")?;
-        }
+            last_state
+        } else {
+            None
+        };
 
-        Ok(())
+        Ok(transitioned_from)
     })
     .await?
 }

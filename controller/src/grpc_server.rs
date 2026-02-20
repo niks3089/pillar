@@ -70,6 +70,26 @@ impl GrpcServer {
             self_ip,
         }
     }
+
+    async fn emit_log(&self, node_id: &str, level: &str, message: &str) {
+        let now_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as i64;
+        let entry = pillar_shared::proto::LogEntry {
+            service: "controller".to_string(),
+            level: level.to_string(),
+            message: message.to_string(),
+            unit: String::new(),
+            timestamp_unix_ms: now_ms,
+        };
+        self.registry
+            .publish_logs(node_id, std::slice::from_ref(&entry))
+            .await;
+        if let Err(e) = db::insert_logs(&self.db, node_id, std::slice::from_ref(&entry)).await {
+            tracing::warn!(error = %e, "failed to persist controller log");
+        }
+    }
 }
 
 #[tonic::async_trait]
@@ -93,6 +113,10 @@ impl PillarController for GrpcServer {
 
         self.registry.register_node(&req.node_id).await;
 
+        // Emit controller log for the node
+        let msg = format!("Node registered (agent {})", if req.agent_version.is_empty() { "unknown" } else { &req.agent_version });
+        self.emit_log(&req.node_id, "info", &msg).await;
+
         Ok(Response::new(RegisterNodeResponse {
             accepted: true,
             message: "registered".to_string(),
@@ -112,9 +136,19 @@ impl PillarController for GrpcServer {
             .update_status(&req.node_id, status.clone())
             .await;
 
-        db::update_node_status(&self.db, &req.node_id, &status)
+        let prev_state = db::update_node_status(&self.db, &req.node_id, &status)
             .await
             .map_err(|e| Status::internal(format!("db error: {e}")))?;
+
+        // Emit controller log on state transitions
+        if let Some(from) = prev_state {
+            let level = match status.state.as_str() {
+                "off" | "recovering" => "warn",
+                _ => "info",
+            };
+            let msg = format!("State: {} → {}", from, status.state);
+            self.emit_log(&req.node_id, level, &msg).await;
+        }
 
         Ok(Response::new(ReportStatusResponse {}))
     }
