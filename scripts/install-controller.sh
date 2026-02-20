@@ -376,8 +376,8 @@ if [[ -f "$GRAFANA_CONF" ]]; then
     sed -i '/^\[security\]/,/^\[/ s/^;*\s*allow_embedding\s*=.*/allow_embedding = true/' "$GRAFANA_CONF"
     # Anonymous auth
     sed -i '/^\[auth.anonymous\]/,/^\[/ s/^;*\s*enabled\s*=.*/enabled = true/' "$GRAFANA_CONF"
-    sed -i '/^\[auth.anonymous\]/,/^\[/ s/^;*\s*org_role\s*=.*/org_role = Viewer/' "$GRAFANA_CONF"
-    ok "grafana.ini: allow_embedding=true, anonymous auth=Viewer, port=$GRAFANA_PORT"
+    sed -i '/^\[auth.anonymous\]/,/^\[/ s/^;*\s*org_role\s*=.*/org_role = Admin/' "$GRAFANA_CONF"
+    ok "grafana.ini: allow_embedding=true, anonymous auth=Admin, port=$GRAFANA_PORT"
 fi
 
 # 6b: Provision Prometheus data source (remove conflicting defaults first)
