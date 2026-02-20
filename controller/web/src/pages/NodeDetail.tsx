@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import { fetchNode, fetchNodeLogs, restartNode, recoverNode, deleteNode, stopNode, cancelDeployment, provisionNode } from '../api'
-import type { Node, LogEntry, ProvisionRequest } from '../api'
+import { fetchNode, fetchNodeLogs, restartNode, recoverNode, deleteNode, stopNode, cancelDeployment, provisionNode, fetchVersionInfo, upgradeAgent } from '../api'
+import type { Node, LogEntry, ProvisionRequest, VersionInfo } from '../api'
 
 function formatBytes(bytes: number): string {
   if (bytes === 0) return '0 B'
@@ -139,6 +139,7 @@ function NodeDetail() {
   const [provLogRateLimitDisable, setProvLogRateLimitDisable] = useState(true)
   const [provStartLimitDisable, setProvStartLimitDisable] = useState(true)
   const [showAdvanced, setShowAdvanced] = useState(false)
+  const [versionInfo, setVersionInfo] = useState<VersionInfo | null>(null)
 
   // Derived: check if no-voting is present in the flags textarea
   const noVotingActive = provValidatorFlags.split('\n').some(l => l.trim() === 'no-voting')
@@ -201,6 +202,27 @@ function NodeDetail() {
     const interval = setInterval(refresh, 10000)
     return () => clearInterval(interval)
   }, [refresh])
+
+  // Fetch version info for agent upgrade check
+  useEffect(() => {
+    fetchVersionInfo().then(setVersionInfo).catch(() => {})
+  }, [])
+
+  const handleUpgradeAgent = async () => {
+    if (!id || !versionInfo?.agent_update) return
+    const v = versionInfo.agent_update.version
+    if (!confirm(`Upgrade agent to v${v}?`)) return
+    try {
+      const result = await upgradeAgent(id)
+      if (result.ok) {
+        refresh()
+      } else {
+        alert(`Failed: ${result.message}`)
+      }
+    } catch (err) {
+      alert(`Error: ${err}`)
+    }
+  }
 
   const handleRestart = async () => {
     if (!id || !confirm('Restart this node?')) return
@@ -387,6 +409,11 @@ function NodeDetail() {
         <button className="btn primary" onClick={handleRestart}>Restart</button>
         <button className="btn" onClick={handleRecover}>Recover</button>
         <button className="btn" onClick={handleStop}>Stop</button>
+        {versionInfo?.agent_update && node.agent_version && node.agent_version !== versionInfo.agent_update.version && (
+          <button className="btn primary" onClick={handleUpgradeAgent}>
+            Upgrade Agent to v{versionInfo.agent_update.version}
+          </button>
+        )}
         {(node.lifecycle_state === 'provisioning' || node.lifecycle_state === 'starting_up') && (
           <button className="btn danger" onClick={handleCancel}>Cancel Deployment</button>
         )}

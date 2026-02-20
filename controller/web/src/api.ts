@@ -300,3 +300,33 @@ export async function deleteNotificationChannel(id: string): Promise<void> {
 export async function testNotificationChannel(id: string): Promise<{ ok: boolean; message?: string; error?: string }> {
   return api(`/api/alerts/channels/${encodeURIComponent(id)}/test`, { method: 'POST' })
 }
+
+// ---------------------------------------------------------------------------
+// Version / upgrade types and functions
+// ---------------------------------------------------------------------------
+
+export interface AvailableUpdate {
+  version: string
+  download_url: string
+  sha256: string
+  release_notes: string
+}
+
+export interface VersionInfo {
+  current_version: string
+  controller_update?: AvailableUpdate
+  agent_update?: AvailableUpdate
+  checked_at?: number
+}
+
+export async function fetchVersionInfo(): Promise<VersionInfo> {
+  return api('/api/version')
+}
+
+export async function upgradeController(): Promise<{ ok: boolean; message: string }> {
+  return api('/api/upgrade-controller', { method: 'POST' })
+}
+
+export async function upgradeAgent(id: string): Promise<{ ok: boolean; message: string }> {
+  return api(`/api/nodes/${encodeURIComponent(id)}/upgrade-agent`, { method: 'POST' })
+}

@@ -184,24 +184,9 @@ async fn main() -> anyhow::Result<()> {
         }
     });
 
-    // Spawn update checker (if configured)
+    // Check for updates on startup (lazy-refresh: re-checks when stale via /api/version)
     let update_info: update_checker::SharedUpdateInfo = Default::default();
-    if !config.update_check_url.is_empty() {
-        let checker_url = config.update_check_url.clone();
-        let checker_version = VERSION.to_string();
-        let checker_info = update_info.clone();
-        let checker_cancel = cancel.clone();
-        tokio::spawn(async move {
-            update_checker::run_update_checker(
-                checker_url,
-                checker_version,
-                checker_info,
-                checker_cancel,
-            )
-            .await;
-        });
-        tracing::info!(url = %config.update_check_url, "update checker started");
-    }
+    update_checker::spawn_initial_check(VERSION.to_string(), update_info.clone());
 
     // Build HTTP router
     let api_state = api::ApiState {

@@ -67,6 +67,27 @@ body {
   color: var(--text);
 }
 
+/* Update Banner */
+.update-banner {
+  background: rgba(33, 150, 243, 0.1);
+  border-bottom: 1px solid rgba(33, 150, 243, 0.2);
+  padding: 0.625rem 1.5rem;
+}
+
+.update-banner-content {
+  max-width: 1400px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.update-banner-text {
+  font-size: 0.8125rem;
+  color: var(--blue);
+}
+
 /* Content */
 .content {
   max-width: 1400px;

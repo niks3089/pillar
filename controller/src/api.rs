@@ -1118,11 +1118,12 @@ struct VersionInfoResponse {
 }
 
 async fn version_info(State(state): State<ApiState>) -> impl IntoResponse {
-    let info = state.update_info.read().await;
+    let info =
+        crate::update_checker::get_or_refresh(VERSION, &state.update_info).await;
     Json(VersionInfoResponse {
         current_version: VERSION.to_string(),
-        controller_update: info.controller_update.clone(),
-        agent_update: info.agent_update.clone(),
+        controller_update: info.controller_update,
+        agent_update: info.agent_update,
         checked_at: info.checked_at,
     })
 }

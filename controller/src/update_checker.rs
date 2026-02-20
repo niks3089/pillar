@@ -2,7 +2,9 @@ use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
-use tokio_util::sync::CancellationToken;
+
+const MANIFEST_URL: &str = "https://pillar-releases.s3.amazonaws.com/manifest.json";
+const STALE_AFTER_MS: i64 = 3_600_000; // 1 hour
 
 /// S3 release manifest shape.
 #[derive(Debug, Deserialize)]
@@ -38,46 +40,60 @@ pub struct UpdateInfo {
 
 pub type SharedUpdateInfo = Arc<RwLock<UpdateInfo>>;
 
-const CHECK_INTERVAL_SECS: u64 = 300; // 5 minutes
+fn now_ms() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as i64
+}
 
-/// Background task that polls the manifest URL and updates shared state.
-pub async fn run_update_checker(
-    url: String,
-    current_version: String,
-    update_info: SharedUpdateInfo,
-    cancel: CancellationToken,
-) {
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(30))
-        .build()
-        .unwrap_or_default();
+/// Fire-and-forget: fetch manifest once on startup.
+pub fn spawn_initial_check(current_version: String, update_info: SharedUpdateInfo) {
+    tokio::spawn(async move {
+        do_check(&current_version, &update_info).await;
+    });
+}
 
-    let mut interval = tokio::time::interval(std::time::Duration::from_secs(CHECK_INTERVAL_SECS));
+/// Called by the `/api/version` handler. Returns cached data immediately,
+/// spawns a background refresh if the cache is stale (>1 hour).
+pub async fn get_or_refresh(
+    current_version: &str,
+    update_info: &SharedUpdateInfo,
+) -> UpdateInfo {
+    let info = update_info.read().await.clone();
+    let stale = match info.checked_at {
+        Some(ts) => now_ms() - ts > STALE_AFTER_MS,
+        None => true,
+    };
+    if stale {
+        let ver = current_version.to_string();
+        let ui = update_info.clone();
+        tokio::spawn(async move {
+            do_check(&ver, &ui).await;
+        });
+    }
+    info
+}
 
-    loop {
-        tokio::select! {
-            _ = interval.tick() => {
-                match fetch_and_compare(&client, &url, &current_version).await {
-                    Ok(info) => {
-                        *update_info.write().await = info;
-                    }
-                    Err(e) => {
-                        tracing::warn!(error = %e, "update check failed");
-                    }
-                }
-            }
-            _ = cancel.cancelled() => break,
+async fn do_check(current_version: &str, update_info: &SharedUpdateInfo) {
+    match fetch_manifest(current_version).await {
+        Ok(info) => {
+            *update_info.write().await = info;
+        }
+        Err(e) => {
+            tracing::warn!(error = %e, "update check failed");
         }
     }
 }
 
-async fn fetch_and_compare(
-    client: &reqwest::Client,
-    url: &str,
-    current_version: &str,
-) -> Result<UpdateInfo, String> {
+async fn fetch_manifest(current_version: &str) -> Result<UpdateInfo, String> {
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+        .map_err(|e| format!("client error: {e}"))?;
+
     let resp = client
-        .get(url)
+        .get(MANIFEST_URL)
         .send()
         .await
         .map_err(|e| format!("fetch error: {e}"))?;
@@ -90,11 +106,6 @@ async fn fetch_and_compare(
         .json()
         .await
         .map_err(|e| format!("parse error: {e}"))?;
-
-    let now_ms = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis() as i64;
 
     let controller_update = manifest
         .controller
@@ -119,7 +130,7 @@ async fn fetch_and_compare(
     Ok(UpdateInfo {
         controller_update,
         agent_update,
-        checked_at: Some(now_ms),
+        checked_at: Some(now_ms()),
     })
 }
 

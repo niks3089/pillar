@@ -2,6 +2,7 @@ import { Routes, Route, NavLink } from 'react-router-dom'
 import Overview from './pages/Overview'
 import NodeDetail from './pages/NodeDetail'
 import Alerts from './pages/Alerts'
+import UpdateBanner from './components/UpdateBanner'
 
 function App() {
   return (
@@ -14,6 +15,7 @@ function App() {
           <a href="/grafana/d/pillar-fleet-overview" target="_blank" rel="noopener noreferrer">Grafana</a>
         </div>
       </nav>
+      <UpdateBanner />
       <main className="content">
         <Routes>
           <Route path="/" element={<Overview />} />
