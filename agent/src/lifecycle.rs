@@ -32,7 +32,6 @@ impl SystemdManager {
         self.run_systemctl("restart").await
     }
 
-    #[allow(dead_code)]
     pub async fn is_active(&self) -> PillarResult<bool> {
         let output = Command::new("sudo")
             .args(["systemctl", "is-active", &self.service_name])

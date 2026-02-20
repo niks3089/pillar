@@ -316,6 +316,28 @@ impl Reconciler {
             return;
         }
 
+        // If the systemd service is actively running, the validator is likely
+        // bootstrapping (downloading snapshots, searching for peers, loading
+        // ledger). The RPC won't respond during bootstrap, so the health
+        // checker reports Off — but the process is alive and making progress.
+        // Skip destructive recovery and let the startup/catchup timeout handle
+        // it if the validator is truly stuck.
+        match self.service_manager.is_active().await {
+            Ok(true) => {
+                tracing::info!(
+                    state_duration_secs = self.state_entered_at.elapsed().as_secs(),
+                    "validator service is running — skipping recovery (bootstrap in progress)"
+                );
+                return;
+            }
+            Ok(false) => {
+                tracing::info!("validator service is not active, proceeding with recovery");
+            }
+            Err(e) => {
+                tracing::warn!(error = %e, "failed to check service status, proceeding with recovery");
+            }
+        }
+
         self.evict_old_restarts();
 
         if self.restarts_in_window() >= self.config.lifecycle.crash_threshold {

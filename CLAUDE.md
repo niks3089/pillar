@@ -97,8 +97,10 @@ GET  /metrics                        Prometheus scrape (all nodes, labeled)
 ## Dev Environment
 
 - Dev box: `202.8.11.101` (SSH user: `ubuntu`, 32 cores, 123GB RAM)
-  - Controller: HTTP `:8080`, gRPC `:50051`
-  - Agent on same box, connected to controller
+  - Controller UI: `http://202.8.11.101:8080`
+  - Controller gRPC: `:50051`
+  - Agent HTTP: `http://202.8.11.101:9090` (health, status, metrics)
+  - Node ID: `mainnet-validator-1`
   - Cluster: **testnet**, currently running Agave v3.1.8
 - Reference RPC: `https://api.testnet.solana.com`
 
@@ -142,7 +144,9 @@ rm -rf target/release/.fingerprint/pillar-controller-* target/release/deps/pilla
 - Controller: gRPC server (5 RPCs), SQLite persistence, web UI (fleet overview + node detail + logs + provisioning), JSON API, Prometheus /metrics, SSE log streaming
 - Provisioning: Agave v3.1.8 deployed on testnet via UI, script-based flow with tarball/binary/pre-installed detection
 - Logs: journald → agent → controller → SQLite + SSE → UI (requires sol in systemd-journal group)
+- Snapshot download observability: agent parses download progress from validator journald → proto fields + Prometheus metrics + Grafana panels; bootstrap/download INFO lines bypass `validator_min_level: warn` filter
 - Install script: `scripts/install-node.sh` with sol user, sudoers, sysctl, Solana CLI, keypairs
+- Operational runbook: `SKILL.md` — bootstrap loop diagnosis/fix
 
 **TODO**:
 - [ ] Controller alert engine — condition eval, webhook/log actions, dedup on transition

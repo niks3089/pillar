@@ -27,15 +27,30 @@ struct SnapshotProgress {
     speed_bps: f64,
 }
 
+/// Strip the `[timestamp LEVEL  module] ` prefix from agave-validator log lines.
+/// Input:  `[2026-02-20T08:48:18.402Z INFO  agave_validator::bootstrap] Searching...`
+/// Output: `Searching...`
+/// If no prefix is found, returns the original message.
+fn strip_tracing_prefix(message: &str) -> &str {
+    if message.starts_with('[') {
+        if let Some(idx) = message.find("] ") {
+            return &message[idx + 2..];
+        }
+    }
+    message
+}
+
 /// Parse snapshot download progress from a validator log message.
 ///
-/// Matches lines like:
-///   "Downloading 52428800000 bytes from ..."  → sets total, resets downloaded to 0
-///   "downloaded 548684968 bytes 10.4% 13474726.0 bytes/s" → incremental progress
-///   "Downloaded 52428800000 bytes in 3845s"  → download complete
+/// Handles both raw and tracing-prefixed messages:
+///   "[ts INFO  mod] Downloading 52428800000 bytes from ..."  → sets total
+///   "[ts INFO  mod] downloaded 548684968 bytes 10.4% 13474726.0 bytes/s" → progress
+///   "[ts INFO  mod] Downloaded 52428800000 bytes in 3845s"  → complete
 fn detect_snapshot_progress(message: &str) -> Option<SnapshotProgress> {
+    let body = strip_tracing_prefix(message);
+
     // "Downloading <total> bytes from ..." — start of a new download
-    if let Some(rest) = message.strip_prefix("Downloading ") {
+    if let Some(rest) = body.strip_prefix("Downloading ") {
         let total: u64 = rest.split_whitespace().next()?.parse().ok()?;
         return Some(SnapshotProgress {
             downloaded_bytes: 0,
@@ -45,8 +60,8 @@ fn detect_snapshot_progress(message: &str) -> Option<SnapshotProgress> {
     }
 
     // "downloaded <bytes> bytes <percent>% <speed> bytes/s" — incremental progress
-    if message.starts_with("downloaded ") {
-        let parts: Vec<&str> = message.split_whitespace().collect();
+    if body.starts_with("downloaded ") {
+        let parts: Vec<&str> = body.split_whitespace().collect();
         // downloaded <bytes> bytes <pct>% <speed> bytes/s
         if parts.len() >= 6 && parts[2] == "bytes" && parts[5] == "bytes/s" {
             let downloaded: u64 = parts[1].parse().ok()?;
@@ -67,8 +82,8 @@ fn detect_snapshot_progress(message: &str) -> Option<SnapshotProgress> {
     }
 
     // "Downloaded <total> bytes in <duration>" — download finished
-    if message.starts_with("Downloaded ") && message.contains(" bytes in ") {
-        let parts: Vec<&str> = message.split_whitespace().collect();
+    if body.starts_with("Downloaded ") && body.contains(" bytes in ") {
+        let parts: Vec<&str> = body.split_whitespace().collect();
         if parts.len() >= 2 {
             let total: u64 = parts[1].parse().ok()?;
             return Some(SnapshotProgress {
@@ -85,16 +100,18 @@ fn detect_snapshot_progress(message: &str) -> Option<SnapshotProgress> {
 /// Returns true if the message is a bootstrap/download related line that should
 /// bypass the min_level filter for validator logs.
 fn is_bootstrap_message(message: &str) -> bool {
+    let body = strip_tracing_prefix(message);
+
     // Check for snapshot download progress
-    if message.starts_with("Downloading ")
-        || message.starts_with("downloaded ")
-        || (message.starts_with("Downloaded ") && message.contains(" bytes"))
+    if body.starts_with("Downloading ")
+        || body.starts_with("downloaded ")
+        || (body.starts_with("Downloaded ") && body.contains(" bytes"))
     {
         return true;
     }
-    // Bootstrap peer discovery, RPC search
+    // Bootstrap peer discovery, RPC search, snapshot search
     let lower = message.to_lowercase();
-    if lower.contains("bootstrap") {
+    if lower.contains("bootstrap") || lower.contains("searching for an rpc service") {
         return true;
     }
     false
@@ -551,12 +568,28 @@ mod tests {
     }
 
     #[test]
+    fn detect_download_start_with_tracing_prefix() {
+        let msg = "[2026-02-20T08:48:18.402014495Z INFO  solana_download_utils] Downloading 52428800000 bytes from 10.0.0.5:8899";
+        let progress = detect_snapshot_progress(msg).unwrap();
+        assert_eq!(progress.total_bytes, 52428800000);
+        assert_eq!(progress.downloaded_bytes, 0);
+    }
+
+    #[test]
     fn detect_download_progress() {
         let msg = "downloaded 548684968 bytes 10.4% 13474726.0 bytes/s";
         let progress = detect_snapshot_progress(msg).unwrap();
         assert_eq!(progress.downloaded_bytes, 548684968);
         assert!(progress.speed_bps > 13_000_000.0);
         assert!(progress.total_bytes > 5_000_000_000);
+    }
+
+    #[test]
+    fn detect_download_progress_with_tracing_prefix() {
+        let msg = "[2026-02-20T08:48:20.100Z INFO  solana_download_utils] downloaded 548684968 bytes 10.4% 13474726.0 bytes/s";
+        let progress = detect_snapshot_progress(msg).unwrap();
+        assert_eq!(progress.downloaded_bytes, 548684968);
+        assert!(progress.speed_bps > 13_000_000.0);
     }
 
     #[test]
@@ -575,11 +608,29 @@ mod tests {
     }
 
     #[test]
+    fn strip_tracing_prefix_works() {
+        assert_eq!(
+            strip_tracing_prefix("[2026-02-20T08:48:18.402Z INFO  agave_validator::bootstrap] Searching for an RPC service"),
+            "Searching for an RPC service"
+        );
+        assert_eq!(strip_tracing_prefix("plain message"), "plain message");
+        assert_eq!(strip_tracing_prefix("[incomplete"), "[incomplete");
+    }
+
+    #[test]
     fn bootstrap_message_detection() {
+        // With tracing prefix (real agave format)
+        assert!(is_bootstrap_message("[2026-02-20T08:48:18.402Z INFO  agave_validator::bootstrap] Searching for an RPC service with shred version 27350"));
+        assert!(is_bootstrap_message("[2026-02-20T08:48:18.402Z INFO  solana_download_utils] Downloading 52428800000 bytes from 10.0.0.5:8899"));
+        assert!(is_bootstrap_message("[2026-02-20T08:48:18.402Z INFO  solana_download_utils] downloaded 548684968 bytes 10.4% 13474726.0 bytes/s"));
+        assert!(is_bootstrap_message("[2026-02-20T08:48:18.402Z INFO  solana_download_utils] Downloaded 52428800000 bytes in 3845s"));
+        // Searching for RPC service (no bootstrap in module name)
+        assert!(is_bootstrap_message("[2026-02-20T08:48:18.402Z INFO  other_module] Searching for an RPC service..."));
+        // Without prefix
         assert!(is_bootstrap_message("Downloading 52428800000 bytes from 10.0.0.5:8899"));
         assert!(is_bootstrap_message("downloaded 548684968 bytes 10.4% 13474726.0 bytes/s"));
-        assert!(is_bootstrap_message("Downloaded 52428800000 bytes in 3845s"));
-        assert!(is_bootstrap_message("Searching for an RPC service with bootstrap config"));
+        // Negative
+        assert!(!is_bootstrap_message("[2026-02-20T08:48:18.402Z INFO  solana_metrics::metrics] datapoint: cluster_info"));
         assert!(!is_bootstrap_message("validator started successfully"));
     }
 

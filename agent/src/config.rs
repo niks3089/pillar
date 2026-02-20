@@ -5,8 +5,8 @@ use serde::{Deserialize, Serialize};
 
 // Default constants
 const DEFAULT_SERVICE_NAME: &str = "solana-validator";
-const DEFAULT_MAX_STARTUP_WAIT_SECS: u64 = 600;
-const DEFAULT_MAX_CATCHUP_WAIT_SECS: u64 = 1800;
+const DEFAULT_MAX_STARTUP_WAIT_SECS: u64 = 3600;
+const DEFAULT_MAX_CATCHUP_WAIT_SECS: u64 = 7200;
 const DEFAULT_CRASH_WINDOW_SECS: u64 = 3600;
 const DEFAULT_CRASH_THRESHOLD: usize = 3;
 const DEFAULT_STALENESS_THRESHOLD_SLOTS: u64 = 1000;
