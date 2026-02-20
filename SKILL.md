@@ -1,5 +1,45 @@
 # Pillar Operational Runbooks
 
+## Post-Commit Workflow: Build & Deploy
+
+After every commit, run this workflow to build, deploy, and verify on the dev box:
+
+```bash
+# 1. Build frontend (from Mac)
+cd controller/web && npm run build && cd ../..
+
+# 2. Sync source to dev box
+rsync -az --exclude target --exclude node_modules --exclude .git . ubuntu@202.8.11.101:/tmp/pillar-build/
+
+# 3. Build controller on dev box (clear fingerprints for include_str! changes)
+ssh ubuntu@202.8.11.101 "cd /tmp/pillar-build && \
+  rm -rf target/release/.fingerprint/pillar-controller-* target/release/deps/pillar_controller-* target/release/controller && \
+  export PATH=/home/ubuntu/.cargo/bin:\$PATH && \
+  cargo build --release -p pillar-controller"
+
+# 4. Deploy controller
+ssh ubuntu@202.8.11.101 "sudo systemctl stop pillar-controller && \
+  sudo cp /tmp/pillar-build/target/release/controller /usr/local/bin/controller && \
+  sudo systemctl start pillar-controller"
+
+# 5. Build + deploy agent (only if agent code changed)
+ssh ubuntu@202.8.11.101 "cd /tmp/pillar-build && \
+  export PATH=/home/ubuntu/.cargo/bin:\$PATH && \
+  cargo build --release -p pillar-agent && \
+  sudo systemctl stop pillar-agent && \
+  sudo cp /tmp/pillar-build/target/release/agent /usr/local/bin/pillar-agent && \
+  sudo systemctl start pillar-agent"
+
+# 6. Verify
+ssh ubuntu@202.8.11.101 "sudo journalctl -u pillar-controller --since '10 seconds ago' --no-pager | head -5"
+```
+
+**Important notes:**
+- `include_str!` template changes require fingerprint removal (step 3) or they won't recompile
+- Controller binary is at `/usr/local/bin/controller` (NOT `pillar-controller`)
+- Agent binary is at `/usr/local/bin/pillar-agent`
+- Always build on the dev box (Linux x86_64), not on macOS (cross-compile fails for libsqlite3-sys)
+
 ## Dev Environment Quick Reference
 
 | Resource | URL / Path |
