@@ -377,9 +377,10 @@ if [[ -f "$GRAFANA_CONF" ]]; then
     # Anonymous auth — Admin role + no login form (auto sign-in)
     sed -i '/^\[auth.anonymous\]/,/^\[/ s/^;*\s*enabled\s*=.*/enabled = true/' "$GRAFANA_CONF"
     sed -i '/^\[auth.anonymous\]/,/^\[/ s/^;*\s*org_role\s*=.*/org_role = Admin/' "$GRAFANA_CONF"
-    # Disable login form so anonymous users go straight to dashboards
+    # Disable login entirely — anonymous Admin users go straight to dashboards, no "Sign in" link
     sed -i '/^\[auth\]/,/^\[/ s/^;*\s*disable_login_form\s*=.*/disable_login_form = true/' "$GRAFANA_CONF"
-    ok "grafana.ini: allow_embedding=true, anonymous auth=Admin, login form disabled, port=$GRAFANA_PORT"
+    sed -i '/^\[auth\]/,/^\[/ s/^;*\s*disable_login\s*=.*/disable_login = true/' "$GRAFANA_CONF"
+    ok "grafana.ini: allow_embedding=true, anonymous auth=Admin, login disabled, port=$GRAFANA_PORT"
 fi
 
 # 6b: Provision Prometheus data source (remove conflicting defaults first)
