@@ -8,7 +8,7 @@ use axum::{
         sse::{Event, Sse},
         IntoResponse, Response,
     },
-    routing::{any, get, post},
+    routing::{any, get, post, put},
     Json, Router,
 };
 use serde::{Deserialize, Serialize};
@@ -19,6 +19,7 @@ use pillar_shared::proto::{
     controller_command, ControllerCommand, ExecuteScript, LogEntry, NodeStatus,
 };
 
+use crate::auth::SessionStore;
 use crate::config::ControllerConfig;
 use crate::db::{self, Db, NodeRow};
 use crate::node_registry::NodeRegistry;
@@ -34,10 +35,21 @@ pub struct ApiState {
     pub config: ControllerConfig,
     pub auth_token: String,
     pub update_info: SharedUpdateInfo,
+    pub sessions: SessionStore,
 }
 
 pub fn router(state: ApiState) -> Router {
-    Router::new()
+    // Public routes (no auth required)
+    let public = Router::new()
+        .route("/api/login", post(crate::auth::login))
+        .route("/api/logout", post(crate::auth::logout))
+        .route("/api/auth/check", get(crate::auth::auth_check))
+        .route("/api/certs/client-bundle", get(client_cert_bundle))
+        .route("/metrics", get(crate::metrics_endpoint::metrics_handler))
+        .with_state(state.clone());
+
+    // Protected routes (auth required)
+    let protected = Router::new()
         .route("/api/overview", get(overview))
         .route("/api/nodes", get(list_nodes))
         .route("/api/nodes/{id}", get(get_node).delete(delete_node))
@@ -55,18 +67,26 @@ pub fn router(state: ApiState) -> Router {
         .route("/api/version", get(version_info))
         .route("/api/upgrade-controller", post(upgrade_controller))
         .route("/api/nodes/{id}/upgrade-agent", post(upgrade_agent))
-        .route("/api/certs/client-bundle", get(client_cert_bundle))
         .route(
             "/api/settings/grafana",
             get(get_grafana_settings).put(set_grafana_settings),
+        )
+        .route(
+            "/api/auth/credentials",
+            put(crate::auth::change_credentials),
         )
         .route(
             "/api/dashboards/fleet-overview",
             get(dashboard_fleet_overview),
         )
         .route("/api/dashboards/node-detail", get(dashboard_node_detail))
-        .route("/metrics", get(crate::metrics_endpoint::metrics_handler))
-        .with_state(state)
+        .layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            crate::auth::require_auth,
+        ))
+        .with_state(state);
+
+    public.merge(protected)
 }
 
 // ---------------------------------------------------------------------------

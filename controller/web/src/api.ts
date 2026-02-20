@@ -49,6 +49,10 @@ export interface LogEntry {
 
 async function api<T>(path: string, opts?: RequestInit): Promise<T> {
   const res = await fetch(path, opts)
+  if (res.status === 401) {
+    window.location.reload()
+    throw new Error('Session expired')
+  }
   if (!res.ok) {
     const text = await res.text()
     throw new Error(`${res.status}: ${text}`)
@@ -90,16 +94,20 @@ export async function fetchOnboardCommand(): Promise<{ command: string }> {
   return api('/api/onboard-command')
 }
 
-export async function restartNode(id: string): Promise<void> {
-  await fetch(`/api/nodes/${encodeURIComponent(id)}/restart`, { method: 'POST' })
+export async function restartNode(id: string): Promise<{ ok: boolean; message: string }> {
+  return api(`/api/nodes/${encodeURIComponent(id)}/restart`, { method: 'POST' })
 }
 
-export async function recoverNode(id: string): Promise<void> {
-  await fetch(`/api/nodes/${encodeURIComponent(id)}/recover`, { method: 'POST' })
+export async function recoverNode(id: string): Promise<{ ok: boolean; message: string }> {
+  return api(`/api/nodes/${encodeURIComponent(id)}/recover`, { method: 'POST' })
 }
 
 export async function deleteNode(id: string): Promise<void> {
-  await fetch(`/api/nodes/${encodeURIComponent(id)}`, { method: 'DELETE' })
+  const res = await fetch(`/api/nodes/${encodeURIComponent(id)}`, { method: 'DELETE' })
+  if (res.status === 401) {
+    window.location.reload()
+    throw new Error('Session expired')
+  }
 }
 
 export async function stopNode(id: string): Promise<{ ok: boolean; message: string }> {
@@ -245,7 +253,11 @@ export async function updateAlertRule(
 }
 
 export async function deleteAlertRule(id: string): Promise<void> {
-  await fetch(`/api/alerts/rules/${encodeURIComponent(id)}`, { method: 'DELETE' })
+  const res = await fetch(`/api/alerts/rules/${encodeURIComponent(id)}`, { method: 'DELETE' })
+  if (res.status === 401) {
+    window.location.reload()
+    throw new Error('Session expired')
+  }
 }
 
 export async function fetchAlertHistory(params?: {
@@ -294,7 +306,11 @@ export async function updateNotificationChannel(
 }
 
 export async function deleteNotificationChannel(id: string): Promise<void> {
-  await fetch(`/api/alerts/channels/${encodeURIComponent(id)}`, { method: 'DELETE' })
+  const res = await fetch(`/api/alerts/channels/${encodeURIComponent(id)}`, { method: 'DELETE' })
+  if (res.status === 401) {
+    window.location.reload()
+    throw new Error('Session expired')
+  }
 }
 
 export async function testNotificationChannel(id: string): Promise<{ ok: boolean; message?: string; error?: string }> {

@@ -1,4 +1,5 @@
 mod api;
+mod auth;
 mod certs;
 mod config;
 mod db;
@@ -114,6 +115,15 @@ async fn main() -> anyhow::Result<()> {
         None
     };
 
+    // Seed default admin credentials if not present.
+    if db::get_setting(&database, "admin_username").await?.is_none() {
+        db::set_setting(&database, "admin_username", "admin").await?;
+        let hash = auth::hash_password("admin")
+            .map_err(|e| anyhow::anyhow!("failed to hash default password: {e}"))?;
+        db::set_setting(&database, "admin_password_hash", &hash).await?;
+        tracing::info!("default admin credentials created (admin/admin)");
+    }
+
     // Ensure auth token exists: use config value, else load from DB, else generate + persist.
     let auth_token = if !config.auth_token.is_empty() {
         config.auth_token.clone()
@@ -189,17 +199,25 @@ async fn main() -> anyhow::Result<()> {
     update_checker::spawn_initial_check(VERSION.to_string(), update_info.clone());
 
     // Build HTTP router
+    let sessions = auth::SessionStore::new();
     let api_state = api::ApiState {
         db: database.clone(),
         registry: registry.clone(),
         config: config.clone(),
         auth_token: auth_token.clone(),
         update_info: update_info.clone(),
+        sessions,
     };
 
     let grafana_state = api_state.clone();
+    let auth_state = api_state.clone();
     let app = api::router(api_state)
-        .nest("/grafana", api::grafana_router(grafana_state))
+        .nest(
+            "/grafana",
+            api::grafana_router(grafana_state).layer(
+                axum::middleware::from_fn_with_state(auth_state, auth::require_auth),
+            ),
+        )
         .merge(web::router())
         .layer(CorsLayer::permissive());
 
