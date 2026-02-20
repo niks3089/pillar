@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.3.1](https://github.com/niks3089/pillar/compare/pillar-v0.2.0...pillar-v0.3.1) (2026-02-20)
+
+
+### Features
+
+* update the ui ([e08bd85](https://github.com/niks3089/pillar/commit/e08bd85d8009e24f47a04acae151617675ef0860))
+
+
+### Bug Fixes
+
+* add creds ([51ea365](https://github.com/niks3089/pillar/commit/51ea365b4a927c12d00013e591aa41e88c5d6eb8))
+* disable grafana login form for auto sign-in ([dd957ac](https://github.com/niks3089/pillar/commit/dd957acbf284f5960abfe5932c4d812d43242860))
+* grafana anonymous role to Admin for auto sign-in ([d49bd6b](https://github.com/niks3089/pillar/commit/d49bd6b99bb1b27c8d26e48c582ff858a0953620))
+* hide grafana sign-in link with disable_login ([4038e39](https://github.com/niks3089/pillar/commit/4038e3978c25c2b540697eb6fbf93010c29dfa4f))
+* sync grafana dashboards and alert rules from dev machine ([fc51aa8](https://github.com/niks3089/pillar/commit/fc51aa82eded16d635b58727ca8aba918939a135))
+* update checker manifest URL and CI manifest generation ([8e69a85](https://github.com/niks3089/pillar/commit/8e69a859b3ed339f2811625523b51bb725754b31))
+
+
+### Miscellaneous Chores
+
+* release 0.3.1 ([3101417](https://github.com/niks3089/pillar/commit/3101417a031caa69fd9976a081cd2d76aeb7160c))
+
 ## [0.2.0](https://github.com/niks3089/pillar/compare/pillar-v0.1.0...pillar-v0.2.0) (2026-02-20)
 
 
