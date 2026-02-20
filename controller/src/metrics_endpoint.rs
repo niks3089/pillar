@@ -10,6 +10,7 @@ use crate::node_registry::NodeRegistry;
 
 /// Metric definitions: (name, help text).
 const METRIC_HEADERS: &[(&str, &str)] = &[
+    ("pillar_node_info", "Node metadata (role, cluster) — always 1"),
     ("pillar_node_healthy", "Whether the node is healthy (1) or not (0)"),
     ("pillar_node_slots_behind", "Number of slots behind the reference"),
     ("pillar_node_local_slot", "Current local slot of the node"),
@@ -48,10 +49,15 @@ const METRIC_HEADERS: &[(&str, &str)] = &[
 ];
 
 fn emit_node_metrics(out: &mut String, node_id: &str, status: &NodeStatus) {
-    let base = format!(
+    // Info metric carries role/cluster as labels; all other metrics use only node_id.
+    // This avoids duplicate time series when role or cluster changes.
+    let info_labels = format!(
         "node_id=\"{}\",role=\"{}\",cluster=\"{}\"",
         node_id, status.role, status.cluster
     );
+    let _ = writeln!(out, "pillar_node_info{{{info_labels}}} 1");
+
+    let base = format!("node_id=\"{}\"", node_id);
 
     // Node health metrics
     let node_metrics: &[(&str, f64)] = &[
@@ -112,7 +118,7 @@ fn emit_node_metrics(out: &mut String, node_id: &str, status: &NodeStatus) {
         let _ = writeln!(out, "{name}{{{base}}} {value}");
     }
 
-    // Per-process metrics
+    // Per-process metrics (need process label in addition to node_id)
     let processes: &[(&str, f64, u64)] = &[
         ("validator", status.validator_cpu_percent, status.validator_memory_bytes),
         ("agent", status.agent_cpu_percent, status.agent_memory_bytes),
@@ -204,8 +210,10 @@ mod tests {
 
         let output = gather_metrics(&reg).await;
         assert!(output.contains("node_id=\"node-1\""));
-        assert!(output.contains("role=\"rpc\""));
-        assert!(output.contains("cluster=\"mainnet\""));
+        // role and cluster only on info metric
+        assert!(output.contains("pillar_node_info{node_id=\"node-1\",role=\"rpc\",cluster=\"mainnet\"} 1"));
+        // other metrics use only node_id
+        assert!(output.contains("pillar_node_healthy{node_id=\"node-1\"} 1"));
     }
 
     #[tokio::test]
@@ -242,7 +250,7 @@ mod tests {
         reg.update_status("n1", sample_status()).await;
 
         let output = gather_metrics(&reg).await;
-        assert!(output.contains("pillar_node_healthy{node_id=\"n1\",role=\"rpc\",cluster=\"mainnet\"} 1"));
+        assert!(output.contains("pillar_node_healthy{node_id=\"n1\"} 1"));
     }
 
     #[tokio::test]
@@ -254,6 +262,6 @@ mod tests {
         reg.update_status("n1", status).await;
 
         let output = gather_metrics(&reg).await;
-        assert!(output.contains("pillar_node_healthy{node_id=\"n1\",role=\"rpc\",cluster=\"mainnet\"} 0"));
+        assert!(output.contains("pillar_node_healthy{node_id=\"n1\"} 0"));
     }
 }

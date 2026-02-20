@@ -7,7 +7,7 @@ use tokio::net::TcpStream;
 
 use crate::error::{PillarError, PillarResult};
 
-use super::scan_snapshot_dir;
+use super::{scan_snapshot_dir, scan_snapshot_slots};
 
 /// RAII guard that resets the downloading flag on drop, even if a panic occurs.
 struct DownloadGuard<'a> {
@@ -110,7 +110,55 @@ impl TcpSnapshotManager {
             tracing::warn!(error = %e, "incremental download failed, continuing with full only");
         }
 
+        // Verify compatibility: incremental base_slot must match full snapshot slot
+        self.check_snapshot_compatibility().await;
+
         Ok(())
+    }
+
+    /// Verify that the incremental snapshot's base slot matches the full snapshot slot.
+    /// If they don't match, delete the incremental (validator would reject it anyway).
+    async fn check_snapshot_compatibility(&self) {
+        let (full_slot, incr_slots) = match scan_snapshot_slots(&self.snapshot_dir).await {
+            Ok(slots) => slots,
+            Err(e) => {
+                tracing::warn!(error = %e, "failed to scan snapshots for compatibility check");
+                return;
+            }
+        };
+
+        let (Some(full), Some((incr_base, incr_end))) = (full_slot, incr_slots) else {
+            return; // Nothing to check if either is missing
+        };
+
+        if incr_base != full {
+            tracing::warn!(
+                full_slot = full,
+                incremental_base = incr_base,
+                incremental_end = incr_end,
+                "incremental snapshot base slot does not match full snapshot — deleting incremental"
+            );
+            // Find and delete the incompatible incremental file
+            if let Ok(mut entries) = tokio::fs::read_dir(&self.snapshot_dir).await {
+                while let Ok(Some(entry)) = entries.next_entry().await {
+                    let name = entry.file_name();
+                    let name = name.to_string_lossy();
+                    if name.starts_with("incremental-snapshot-") {
+                        if let Err(e) = tokio::fs::remove_file(entry.path()).await {
+                            tracing::warn!(error = %e, file = %name, "failed to delete incompatible incremental");
+                        } else {
+                            tracing::info!(file = %name, "deleted incompatible incremental snapshot");
+                        }
+                    }
+                }
+            }
+        } else {
+            tracing::info!(
+                full_slot = full,
+                incremental_end = incr_end,
+                "snapshot compatibility check passed"
+            );
+        }
     }
 }
 

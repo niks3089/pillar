@@ -257,69 +257,67 @@
       ]
     },
     {
-      "collapsed": true,
+      "collapsed": false,
       "gridPos": { "h": 1, "w": 24, "x": 0, "y": 30 },
       "id": 102,
       "title": "Snapshot Download",
-      "type": "row",
-      "panels": [
-        {
-          "datasource": { "type": "prometheus", "uid": "${datasource}" },
-          "fieldConfig": {
-            "defaults": {
-              "thresholds": { "mode": "percentage", "steps": [{ "color": "#f44336", "value": null }, { "color": "#ffc107", "value": 25 }, { "color": "#4caf50", "value": 75 }] },
-              "color": { "mode": "thresholds" },
-              "max": 100, "min": 0, "unit": "percent"
-            },
-            "overrides": []
-          },
-          "gridPos": { "h": 6, "w": 8, "x": 0, "y": 31 },
-          "id": 30,
-          "options": { "orientation": "auto", "showThresholdLabels": false, "showThresholdMarkers": true, "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } },
-          "title": "Download Progress",
-          "type": "gauge",
-          "targets": [{ "expr": "pillar_snapshot_download_bytes{node_id=\"$node_id\"} / pillar_snapshot_download_total_bytes{node_id=\"$node_id\"} * 100", "legendFormat": "progress %", "refId": "A" }]
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": { "mode": "percentage", "steps": [{ "color": "#f44336", "value": null }, { "color": "#ffc107", "value": 25 }, { "color": "#4caf50", "value": 75 }] },
+          "color": { "mode": "thresholds" },
+          "max": 100, "min": 0, "unit": "percent"
         },
-        {
-          "datasource": { "type": "prometheus", "uid": "${datasource}" },
-          "fieldConfig": {
-            "defaults": {
-              "color": { "mode": "palette-classic" },
-              "custom": { "axisBorderShow": false, "axisLabel": "", "drawStyle": "line", "fillOpacity": 10, "lineWidth": 2, "pointSize": 5, "showPoints": "never", "spanNulls": false, "stacking": { "mode": "none" } },
-              "unit": "Bps"
-            },
-            "overrides": []
-          },
-          "gridPos": { "h": 6, "w": 8, "x": 8, "y": 31 },
-          "id": 31,
-          "options": {
-            "legend": { "calcs": ["lastNotNull", "max", "mean"], "displayMode": "table", "placement": "bottom" },
-            "tooltip": { "mode": "multi", "sort": "desc" }
-          },
-          "title": "Download Speed",
-          "type": "timeseries",
-          "targets": [{ "expr": "pillar_snapshot_download_speed_bps{node_id=\"$node_id\"}", "legendFormat": "speed", "refId": "A" }]
+        "overrides": []
+      },
+      "gridPos": { "h": 6, "w": 8, "x": 0, "y": 31 },
+      "id": 30,
+      "options": { "orientation": "auto", "showThresholdLabels": false, "showThresholdMarkers": true, "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } },
+      "title": "Download Progress",
+      "type": "gauge",
+      "targets": [{ "expr": "pillar_snapshot_download_bytes{node_id=\"$node_id\"} / pillar_snapshot_download_total_bytes{node_id=\"$node_id\"} * 100", "legendFormat": "progress %", "refId": "A" }]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "axisBorderShow": false, "axisLabel": "", "drawStyle": "line", "fillOpacity": 10, "lineWidth": 2, "pointSize": 5, "showPoints": "never", "spanNulls": false, "stacking": { "mode": "none" } },
+          "unit": "Bps"
         },
-        {
-          "datasource": { "type": "prometheus", "uid": "${datasource}" },
-          "fieldConfig": {
-            "defaults": {
-              "thresholds": { "mode": "absolute", "steps": [{ "color": "#2196f3", "value": null }] },
-              "color": { "mode": "thresholds" },
-              "unit": "bytes"
-            },
-            "overrides": []
-          },
-          "gridPos": { "h": 6, "w": 8, "x": 16, "y": 31 },
-          "id": 32,
-          "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "textMode": "value_and_name", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } },
-          "title": "Bytes Downloaded",
-          "type": "stat",
-          "targets": [
-            { "expr": "pillar_snapshot_download_bytes{node_id=\"$node_id\"}", "legendFormat": "downloaded", "refId": "A" },
-            { "expr": "pillar_snapshot_download_total_bytes{node_id=\"$node_id\"}", "legendFormat": "total", "refId": "B" }
-          ]
-        }
+        "overrides": []
+      },
+      "gridPos": { "h": 6, "w": 8, "x": 8, "y": 31 },
+      "id": 31,
+      "options": {
+        "legend": { "calcs": ["lastNotNull", "max", "mean"], "displayMode": "table", "placement": "bottom" },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "title": "Download Speed",
+      "type": "timeseries",
+      "targets": [{ "expr": "pillar_snapshot_download_speed_bps{node_id=\"$node_id\"}", "legendFormat": "speed", "refId": "A" }]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "#2196f3", "value": null }] },
+          "color": { "mode": "thresholds" },
+          "unit": "bytes"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 6, "w": 8, "x": 16, "y": 31 },
+      "id": 32,
+      "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "textMode": "value_and_name", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } },
+      "title": "Bytes Downloaded",
+      "type": "stat",
+      "targets": [
+        { "expr": "pillar_snapshot_download_bytes{node_id=\"$node_id\"}", "legendFormat": "downloaded", "refId": "A" },
+        { "expr": "pillar_snapshot_download_total_bytes{node_id=\"$node_id\"}", "legendFormat": "total", "refId": "B" }
       ]
     }
   ],

@@ -1,16 +1,24 @@
 use std::path::Path;
 
-use crate::error::{PillarError, PillarResult};
+use crate::error::PillarResult;
 use crate::lifecycle::SystemdManager;
 
 use super::download_tcp::TcpSnapshotManager;
 use super::staleness::is_stale;
+use super::wipe_directory;
 
-/// Orchestrates the full recovery flow: stop → wipe ledger → download snapshot → restart.
+/// Orchestrates the full recovery flow:
+///   stop → wipe ledger + accounts → download snapshot → restart.
+///
+/// When no TCP snapshot server is configured, the download step is skipped
+/// and the validator is restarted to bootstrap via gossip (native peer
+/// discovery + snapshot download from the network).
 pub struct SnapshotRecovery<'a> {
     service: &'a SystemdManager,
     snapshots: &'a TcpSnapshotManager,
     ledger_dir: &'a Path,
+    accounts_dir: &'a Path,
+    snapshot_dir: &'a Path,
     staleness_threshold: u64,
 }
 
@@ -19,12 +27,16 @@ impl<'a> SnapshotRecovery<'a> {
         service: &'a SystemdManager,
         snapshots: &'a TcpSnapshotManager,
         ledger_dir: &'a Path,
+        accounts_dir: &'a Path,
+        snapshot_dir: &'a Path,
         staleness_threshold: u64,
     ) -> Self {
         Self {
             service,
             snapshots,
             ledger_dir,
+            accounts_dir,
+            snapshot_dir,
             staleness_threshold,
         }
     }
@@ -67,49 +79,37 @@ impl<'a> SnapshotRecovery<'a> {
         tracing::info!("stopping validator for recovery");
         self.service.stop().await?;
 
-        // 2. Wipe ledger
+        // 2. Wipe ledger and accounts (like rpc-operator's WIPE_ACCOUNTS_AND_LEDGER)
         tracing::info!(dir = %self.ledger_dir.display(), "wiping ledger directory");
         wipe_directory(self.ledger_dir).await?;
 
-        // 3. Download fresh snapshot
-        tracing::info!("downloading fresh snapshot");
-        self.snapshots.download_snapshot().await?;
+        tracing::info!(dir = %self.accounts_dir.display(), "wiping accounts directory");
+        wipe_directory(self.accounts_dir).await?;
 
-        // 4. Restart the validator
+        // 3. Wipe stale snapshots so validator downloads fresh ones
+        tracing::info!(dir = %self.snapshot_dir.display(), "wiping snapshot directory");
+        wipe_directory(self.snapshot_dir).await?;
+
+        // 4. Try TCP snapshot download if a server is configured.
+        //    If no server configured, skip — the validator will bootstrap via
+        //    native gossip-based peer discovery and download from the network.
+        match self.snapshots.download_snapshot().await {
+            Ok(()) => {
+                tracing::info!("TCP snapshot download complete");
+            }
+            Err(e) => {
+                tracing::warn!(
+                    error = %e,
+                    "snapshot download failed — validator will bootstrap via gossip"
+                );
+            }
+        }
+
+        // 5. Restart the validator
         tracing::info!("restarting validator after recovery");
         self.service.start().await?;
 
         tracing::info!("recovery complete");
         Ok(())
     }
-}
-
-/// Remove all contents of a directory without removing the directory itself.
-async fn wipe_directory(dir: &Path) -> PillarResult<()> {
-    if !dir.exists() {
-        return Ok(());
-    }
-
-    let mut entries = tokio::fs::read_dir(dir)
-        .await
-        .map_err(|e| PillarError::Snapshot(format!("failed to read {}: {e}", dir.display())))?;
-
-    while let Some(entry) = entries
-        .next_entry()
-        .await
-        .map_err(|e| PillarError::Snapshot(format!("failed to read dir entry: {e}")))?
-    {
-        let path = entry.path();
-        if path.is_dir() {
-            tokio::fs::remove_dir_all(&path).await.map_err(|e| {
-                PillarError::Snapshot(format!("failed to remove {}: {e}", path.display()))
-            })?;
-        } else {
-            tokio::fs::remove_file(&path).await.map_err(|e| {
-                PillarError::Snapshot(format!("failed to remove {}: {e}", path.display()))
-            })?;
-        }
-    }
-
-    Ok(())
 }

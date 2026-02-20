@@ -19,11 +19,12 @@
 
 - **Cluster**: switched from testnet → **devnet**
 - **pillar-controller**: running, HTTP `:8080`, gRPC `:50051`
-- **pillar-agent**: running, HTTP `:9090`, connected to controller, **bootstrap-aware recovery** deployed
+- **pillar-agent**: running, HTTP `:9090`, connected to controller, **rpc-operator parity recovery** deployed
 - **solana-validator**: running on devnet, downloading snapshot (~55GB, ~17 MB/s)
 - **rpc-operator**: stopped + disabled
 - Agent correctly detects validator is bootstrapping and skips destructive recovery
 - Bootstrap/download INFO lines flowing to controller UI
+- Recovery now wipes ledger + accounts + snapshots (like rpc-operator), with gossip-bootstrap fallback
 
 ### Devnet Configuration
 
@@ -91,8 +92,38 @@ match self.service_manager.is_active().await {
 **`agent/src/config.rs` — Default timeouts increased**:
 - `max_startup_wait_secs`: 600 → **3600** (1 hour, matches rpc-operator)
 - `max_catchup_wait_secs`: 1800 → **7200** (2 hours)
+- Added `accounts_path` to PathConfig (default `/mnt/accounts`)
 
 **`agent/src/lifecycle.rs`**: Removed `#[allow(dead_code)]` from `is_active()` — now used by the reconciler.
+
+### Snapshot Handling Gaps Closed (rpc-operator parity)
+
+Four gaps between pillar-agent and rpc-operator were identified and fixed:
+
+**Gap 1: Incremental snapshot awareness in staleness checks**
+- `snapshot/mod.rs`: Added `parse_incremental_slots()` to parse `incremental-snapshot-<base>-<end>-<hash>.tar.zst`
+- `scan_snapshot_dir()` now considers BOTH full and incremental snapshot slots (returns highest of either)
+- Added `scan_snapshot_slots()` for separate full/incremental slot tracking
+- Previously only matched `snapshot-*` (full), now also matches `incremental-snapshot-*`
+
+**Gap 2: Snapshot compatibility check after download**
+- `snapshot/download_tcp.rs`: Added `check_snapshot_compatibility()` called after downloading both snapshots
+- Verifies incremental base_slot matches full snapshot slot
+- If mismatched, deletes the incompatible incremental file (validator would reject it anyway)
+- Logs compatibility pass/fail for observability
+
+**Gap 3: Accounts wipe during recovery**
+- `snapshot/recovery.rs`: `do_recovery()` now wipes **ledger + accounts + snapshots** (was ledger only)
+- Matches rpc-operator's `WIPE_ACCOUNTS_AND_LEDGER=true` behavior
+- `accounts_dir` and `snapshot_dir` threaded through from config → main.rs → reconciler → recovery
+- Ensures clean state before bootstrap (no stale accounts DB interfering with snapshot loading)
+
+**Gap 4: Gossip-based bootstrap fallback**
+- `snapshot/recovery.rs`: When TCP snapshot download fails (no server configured), recovery continues instead of failing
+- Logs warning "snapshot download failed — validator will bootstrap via gossip"
+- Wipes stale dirs and restarts validator, which then uses native gossip-based peer discovery
+- Previously, download failure caused recovery to fail → fell back to plain `systemctl restart` without wiping
+- `wipe_directory()` moved to `snapshot/mod.rs` as a public utility (shared between recovery and download)
 
 ### Verification
 
@@ -170,10 +201,19 @@ Pillar is designed to eventually replace rpc-operator with a more observable, ce
 - Catchup timeout: 4 hours → forces restart
 - Checks supermajority status to avoid restarting during network halts
 
+### Gaps Closed (pillar-agent now matches rpc-operator)
+
+1. **Incremental snapshot awareness** — staleness checks now consider both full and incremental snapshot slots (highest wins)
+2. **Snapshot compatibility check** — after TCP download, verifies incremental base_slot matches full snapshot slot; deletes incompatible incrementals
+3. **Full state wipe on recovery** — wipes ledger + accounts + snapshots (was ledger only), matching rpc-operator's `WIPE_ACCOUNTS_AND_LEDGER`
+4. **Gossip-based bootstrap fallback** — when no TCP snapshot server is configured, recovery wipes stale data and lets the validator bootstrap via native gossip peer discovery
+5. **Bootstrap-aware recovery** — checks `systemctl is-active` before destructive actions; skips recovery if validator process is alive (bootstrapping)
+6. **rpc-operator-matched timeouts** — startup 1hr, catchup 2hr (was 10min/30min)
+
 ### What rpc-operator Does That Pillar Agent Doesn't (Yet)
 
-1. **Admin RPC socket** — uses validator admin socket for startup progress tracking (DownloadingSnapshot, SearchingForRpcService, LoadingLedger, WaitingForSupermajority)
-2. **Integrated snapshot download** — WDT (Warp Data Transfer) from Helius internal pool + snapfinder.py for public snapshots
+1. **Admin RPC socket** — uses validator admin socket for startup progress tracking (DownloadingSnapshot, SearchingForRpcService, LoadingLedger, WaitingForSupermajority). Pillar uses `systemctl is-active` as a coarser proxy.
+2. **Integrated snapshot download** — WDT (Warp Data Transfer) from Helius internal pool + snapfinder.py for public snapshots. Pillar relies on TCP server or gossip bootstrap.
 3. **Geyser plugin management** — monitors Yellowstone gRPC plugin health, reloads if stuck
 4. **RocksDB backup** — scheduled backups to S3/R2 with zstd compression
 5. **Email alerts** — SendGrid notifications on Down/CaughtUp events
@@ -403,13 +443,23 @@ sudo systemctl start solana-validator
 7. Started validator + agent on devnet
 8. Validator found devnet peers (shred version 29062) and began downloading snapshot at ~17 MB/s
 
+### Completed
+
+- [x] **Crash loop bug fix** — `systemctl is-active` check prevents destructive recovery during bootstrap
+- [x] **Timeout alignment** — startup 1hr, catchup 2hr (matching rpc-operator)
+- [x] **Incremental snapshot awareness** — staleness checks consider both full and incremental slots
+- [x] **Snapshot compatibility check** — verifies incremental base_slot matches full slot after download
+- [x] **Accounts wipe** — recovery now wipes ledger + accounts + snapshots (was ledger only)
+- [x] **Gossip-bootstrap fallback** — when no TCP server configured, wipes and lets validator bootstrap via gossip
+- [x] **Switched to devnet** — validator systemd unit, agent config, data dirs wiped
+
 ### Pending TODO
 
 - [ ] **Wait for devnet snapshot download to complete** (~55GB at 17 MB/s ≈ ~55 min)
 - [ ] **Verify state transitions**: Off → StartingUp → Behind → Healthy
 - [ ] **Verify Prometheus metrics** during download: `pillar_snapshot_download_bytes`, speed, total
 - [ ] **Verify controller UI** shows devnet logs and status
-- [ ] **Test recovery when service actually stops**: kill validator, verify agent detects service stopped and triggers real recovery
+- [ ] **Test recovery when service actually stops**: kill validator, verify agent detects service stopped and triggers real recovery (full wipe + gossip bootstrap)
 - [ ] **Consider admin RPC socket** — add Solana admin RPC support to pillar-agent for better bootstrap visibility (like rpc-operator), without adding Solana SDK dependency
 - [ ] **Update controller cluster-defaults** — add devnet entrypoints/known-validators/reference-rpc to `/api/cluster-defaults/devnet`
 - [ ] **Rename node ID** — `mainnet-validator-1` is misleading now that we're on devnet

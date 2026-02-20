@@ -315,11 +315,13 @@ EOF
 sysctl -p "$SYSCTL_CONF" >/dev/null 2>&1 || warn "failed to apply sysctl settings (may require reboot)"
 ok "wrote $SYSCTL_CONF"
 
-LIMITS_CONF="/etc/security/limits.d/sol-nofile.conf"
+LIMITS_CONF="/etc/security/limits.d/sol-limits.conf"
 cat > "$LIMITS_CONF" <<EOF
-# Solana validator file descriptor limits
+# Solana validator limits
 sol soft nofile 1000000
 sol hard nofile 1000000
+sol soft memlock unlimited
+sol hard memlock unlimited
 EOF
 ok "wrote $LIMITS_CONF"
 
