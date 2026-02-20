@@ -3,7 +3,8 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 
-const MANIFEST_URL: &str = "https://pillar-releases.s3.amazonaws.com/manifest.json";
+const MANIFEST_URL: &str =
+    "https://janus-meter.s3.eu-north-1.amazonaws.com/pillar/latest/manifest.json";
 const STALE_AFTER_MS: i64 = 3_600_000; // 1 hour
 
 /// S3 release manifest shape.

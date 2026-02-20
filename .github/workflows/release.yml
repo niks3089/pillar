@@ -66,6 +66,13 @@ jobs:
       - name: Build release binaries
         run: cargo build --release -p pillar-agent -p pillar-controller
 
+      - name: Read version from Cargo.toml
+        id: version
+        run: |
+          VERSION=$(grep -m1 'version' Cargo.toml | sed 's/.*"\(.*\)".*/\1/')
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "Version: ${VERSION}"
+
       - name: Prepare artifacts
         run: |
           mkdir -p artifacts
@@ -74,6 +81,25 @@ jobs:
           cp scripts/install-controller.sh artifacts/install-controller.sh
           cp scripts/install-node.sh artifacts/install-node.sh
           chmod +x artifacts/*
+
+      - name: Generate manifest.json
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          S3_URL: https://${{ env.S3_BUCKET }}.s3.${{ env.S3_REGION }}.amazonaws.com/${{ env.S3_PREFIX }}
+        run: |
+          CTRL_SHA=$(sha256sum artifacts/pillar-controller-linux-amd64 | awk '{print $1}')
+          AGENT_SHA=$(sha256sum artifacts/pillar-agent-linux-amd64 | awk '{print $1}')
+          jq -n \
+            --arg cv "$VERSION" \
+            --arg cu "$S3_URL/latest/pillar-controller-linux-amd64" \
+            --arg cs "$CTRL_SHA" \
+            --arg av "$VERSION" \
+            --arg au "$S3_URL/latest/pillar-agent-linux-amd64" \
+            --arg ash "$AGENT_SHA" \
+            '{controller:{version:$cv,download_url:$cu,sha256:$cs,release_notes:""},agent:{version:$av,download_url:$au,sha256:$ash,release_notes:""}}' \
+            > artifacts/manifest.json
+          echo "Generated manifest.json:"
+          cat artifacts/manifest.json
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4

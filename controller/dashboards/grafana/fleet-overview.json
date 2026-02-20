@@ -15,7 +15,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 0 },
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
       "id": 1,
       "options": {
         "colorMode": "value", "graphMode": "none", "justifyMode": "auto", "textMode": "value",
@@ -34,53 +34,15 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 0 },
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
       "id": 2,
       "options": {
         "colorMode": "value", "graphMode": "none", "justifyMode": "auto", "textMode": "value",
         "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }
       },
-      "title": "Healthy Nodes",
+      "title": "Healthy",
       "type": "stat",
       "targets": [{ "expr": "count(pillar_node_healthy == 1) or vector(0)", "legendFormat": "", "refId": "A" }]
-    },
-    {
-      "datasource": { "type": "prometheus", "uid": "${datasource}" },
-      "fieldConfig": {
-        "defaults": {
-          "thresholds": { "mode": "absolute", "steps": [{ "color": "#4caf50", "value": null }, { "color": "#f44336", "value": 1 }] },
-          "color": { "mode": "thresholds" }
-        },
-        "overrides": []
-      },
-      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 0 },
-      "id": 3,
-      "options": {
-        "colorMode": "value", "graphMode": "none", "justifyMode": "auto", "textMode": "value",
-        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }
-      },
-      "title": "Unhealthy / Offline",
-      "type": "stat",
-      "targets": [{ "expr": "count(pillar_node_healthy == 0) or vector(0)", "legendFormat": "", "refId": "A" }]
-    },
-    {
-      "datasource": { "type": "prometheus", "uid": "${datasource}" },
-      "fieldConfig": {
-        "defaults": {
-          "thresholds": { "mode": "absolute", "steps": [{ "color": "#4caf50", "value": null }, { "color": "#f44336", "value": 1 }] },
-          "color": { "mode": "thresholds" }
-        },
-        "overrides": []
-      },
-      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 0 },
-      "id": 8,
-      "options": {
-        "colorMode": "value", "graphMode": "none", "justifyMode": "auto", "textMode": "value",
-        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }
-      },
-      "title": "Crash Looping",
-      "type": "stat",
-      "targets": [{ "expr": "count(pillar_node_crash_looping == 1) or vector(0)", "legendFormat": "", "refId": "A" }]
     },
     {
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
@@ -91,7 +53,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 4, "w": 4, "x": 16, "y": 0 },
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 },
       "id": 9,
       "options": {
         "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "textMode": "value",
@@ -110,7 +72,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 4, "w": 4, "x": 20, "y": 0 },
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 },
       "id": 10,
       "options": {
         "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "textMode": "value",
@@ -178,11 +140,11 @@
       "title": "Node List",
       "type": "table",
       "targets": [
-        { "expr": "pillar_node_healthy", "format": "table", "instant": true, "refId": "healthy" },
-        { "expr": "pillar_node_slots_behind", "format": "table", "instant": true, "refId": "slots_behind" },
-        { "expr": "pillar_system_cpu_usage_percent", "format": "table", "instant": true, "refId": "cpu" },
-        { "expr": "pillar_system_memory_used_bytes / pillar_system_memory_total_bytes * 100", "format": "table", "instant": true, "refId": "memory_pct" },
-        { "expr": "pillar_system_disk_used_bytes / pillar_system_disk_total_bytes * 100", "format": "table", "instant": true, "refId": "disk_pct" }
+        { "expr": "max by (node_id) (pillar_node_healthy)", "format": "table", "instant": true, "refId": "healthy" },
+        { "expr": "max by (node_id) (pillar_node_slots_behind)", "format": "table", "instant": true, "refId": "slots_behind" },
+        { "expr": "max by (node_id) (pillar_system_cpu_usage_percent)", "format": "table", "instant": true, "refId": "cpu" },
+        { "expr": "max by (node_id) (pillar_system_memory_used_bytes) / max by (node_id) (pillar_system_memory_total_bytes) * 100", "format": "table", "instant": true, "refId": "memory_pct" },
+        { "expr": "max by (node_id) (pillar_system_disk_used_bytes) / max by (node_id) (pillar_system_disk_total_bytes) * 100", "format": "table", "instant": true, "refId": "disk_pct" }
       ],
       "transformations": [
         { "id": "merge", "options": {} },
