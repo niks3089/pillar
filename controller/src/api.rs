@@ -19,7 +19,6 @@ use pillar_shared::proto::{
     controller_command, ControllerCommand, ExecuteScript, LogEntry, NodeStatus,
 };
 
-use crate::alerts;
 use crate::config::ControllerConfig;
 use crate::db::{self, Db, NodeRow};
 use crate::node_registry::NodeRegistry;
@@ -31,7 +30,6 @@ pub struct ApiState {
     pub registry: NodeRegistry,
     pub config: ControllerConfig,
     pub auth_token: String,
-    pub alert_engine: alerts::AlertEngine,
 }
 
 pub fn router(state: ApiState) -> Router {
@@ -60,8 +58,6 @@ pub fn router(state: ApiState) -> Router {
             get(dashboard_fleet_overview),
         )
         .route("/api/dashboards/node-detail", get(dashboard_node_detail))
-        // Alert engine routes
-        .nest("/api/alerts", alerts::api::router())
         .route("/metrics", get(crate::metrics_endpoint::metrics_handler))
         .with_state(state)
 }

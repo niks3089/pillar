@@ -100,9 +100,6 @@ fn init_schema(conn: &Connection) -> Result<()> {
     )
     .context("creating script_executions table")?;
 
-    // Alert engine tables
-    crate::alerts::db::init_alert_schema(conn)?;
-
     Ok(())
 }
 

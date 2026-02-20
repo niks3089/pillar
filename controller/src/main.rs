@@ -1,4 +1,3 @@
-mod alerts;
 mod api;
 mod certs;
 mod config;
@@ -84,11 +83,6 @@ async fn main() -> anyhow::Result<()> {
     }
 
     let registry = NodeRegistry::new();
-    let alert_engine = alerts::AlertEngine::new(database.clone());
-    alert_engine
-        .init()
-        .await
-        .context("initializing alert engine")?;
 
     let cancel = CancellationToken::new();
 
@@ -140,7 +134,6 @@ async fn main() -> anyhow::Result<()> {
     let grpc = GrpcServer::new(
         database.clone(),
         registry.clone(),
-        alert_engine.clone(),
         &config.external_url,
     );
     let grpc_cancel = cancel.clone();
@@ -196,7 +189,6 @@ async fn main() -> anyhow::Result<()> {
         registry: registry.clone(),
         config: config.clone(),
         auth_token: auth_token.clone(),
-        alert_engine: alert_engine.clone(),
     };
 
     let grafana_state = api_state.clone();
