@@ -6,6 +6,7 @@ mod grpc_server;
 mod metrics_endpoint;
 mod node_registry;
 mod templates;
+mod update_checker;
 mod web;
 
 use std::time::Duration;
@@ -183,12 +184,32 @@ async fn main() -> anyhow::Result<()> {
         }
     });
 
+    // Spawn update checker (if configured)
+    let update_info: update_checker::SharedUpdateInfo = Default::default();
+    if !config.update_check_url.is_empty() {
+        let checker_url = config.update_check_url.clone();
+        let checker_version = VERSION.to_string();
+        let checker_info = update_info.clone();
+        let checker_cancel = cancel.clone();
+        tokio::spawn(async move {
+            update_checker::run_update_checker(
+                checker_url,
+                checker_version,
+                checker_info,
+                checker_cancel,
+            )
+            .await;
+        });
+        tracing::info!(url = %config.update_check_url, "update checker started");
+    }
+
     // Build HTTP router
     let api_state = api::ApiState {
         db: database.clone(),
         registry: registry.clone(),
         config: config.clone(),
         auth_token: auth_token.clone(),
+        update_info: update_info.clone(),
     };
 
     let grafana_state = api_state.clone();

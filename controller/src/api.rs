@@ -23,6 +23,9 @@ use crate::config::ControllerConfig;
 use crate::db::{self, Db, NodeRow};
 use crate::node_registry::NodeRegistry;
 use crate::templates;
+use crate::update_checker::SharedUpdateInfo;
+
+const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 #[derive(Clone)]
 pub struct ApiState {
@@ -30,6 +33,7 @@ pub struct ApiState {
     pub registry: NodeRegistry,
     pub config: ControllerConfig,
     pub auth_token: String,
+    pub update_info: SharedUpdateInfo,
 }
 
 pub fn router(state: ApiState) -> Router {
@@ -48,6 +52,9 @@ pub fn router(state: ApiState) -> Router {
         .route("/api/nodes/{id}/cancel", post(cancel_deployment))
         .route("/api/cluster-defaults/{cluster}", get(cluster_defaults))
         .route("/api/onboard-command", get(onboard_command))
+        .route("/api/version", get(version_info))
+        .route("/api/upgrade-controller", post(upgrade_controller))
+        .route("/api/nodes/{id}/upgrade-agent", post(upgrade_agent))
         .route("/api/certs/client-bundle", get(client_cert_bundle))
         .route(
             "/api/settings/grafana",
@@ -1093,6 +1100,163 @@ async fn onboard_command(State(state): State<ApiState>) -> impl IntoResponse {
     }
 
     Json(OnboardCommandResponse { command: cmd })
+}
+
+// ---------------------------------------------------------------------------
+// Version / upgrade endpoints
+// ---------------------------------------------------------------------------
+
+#[derive(Serialize)]
+struct VersionInfoResponse {
+    current_version: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    controller_update: Option<crate::update_checker::AvailableUpdate>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    agent_update: Option<crate::update_checker::AvailableUpdate>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    checked_at: Option<i64>,
+}
+
+async fn version_info(State(state): State<ApiState>) -> impl IntoResponse {
+    let info = state.update_info.read().await;
+    Json(VersionInfoResponse {
+        current_version: VERSION.to_string(),
+        controller_update: info.controller_update.clone(),
+        agent_update: info.agent_update.clone(),
+        checked_at: info.checked_at,
+    })
+}
+
+async fn upgrade_controller(State(state): State<ApiState>) -> impl IntoResponse {
+    let info = state.update_info.read().await;
+    let update = match &info.controller_update {
+        Some(u) => u.clone(),
+        None => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(CommandResponse {
+                    ok: false,
+                    message: "no controller update available".to_string(),
+                }),
+            )
+                .into_response();
+        }
+    };
+    drop(info);
+
+    let download_url = update.download_url.clone();
+    let sha256 = update.sha256.clone();
+    let version = update.version.clone();
+
+    tracing::info!(version = %version, "controller self-upgrade initiated");
+
+    // Spawn background task — sleep briefly so the HTTP response flushes,
+    // then download, verify, install, and restart.
+    tokio::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+
+        let script = format!(
+            r#"#!/usr/bin/env bash
+set -euo pipefail
+STAGING="/tmp/pillar-controller-upgrade"
+rm -rf "$STAGING" && mkdir -p "$STAGING"
+curl -sSL -o "$STAGING/binary" "{download_url}"
+echo "{sha256}  $STAGING/binary" | sha256sum -c
+sudo install -m 755 "$STAGING/binary" /usr/local/bin/controller
+rm -rf "$STAGING"
+sudo systemctl restart pillar-controller
+"#,
+            download_url = download_url,
+            sha256 = sha256,
+        );
+
+        let output = tokio::process::Command::new("bash")
+            .arg("-c")
+            .arg(&script)
+            .output()
+            .await;
+
+        match output {
+            Ok(o) if o.status.success() => {
+                tracing::info!("controller upgrade script completed (process will restart)");
+            }
+            Ok(o) => {
+                let stderr = String::from_utf8_lossy(&o.stderr);
+                tracing::error!(stderr = %stderr, "controller upgrade script failed");
+            }
+            Err(e) => {
+                tracing::error!(error = %e, "failed to run controller upgrade script");
+            }
+        }
+    });
+
+    Json(CommandResponse {
+        ok: true,
+        message: format!("controller upgrade to v{version} initiated, restarting shortly"),
+    })
+    .into_response()
+}
+
+async fn upgrade_agent(
+    State(state): State<ApiState>,
+    Path(id): Path<String>,
+) -> impl IntoResponse {
+    let info = state.update_info.read().await;
+    let update = match &info.agent_update {
+        Some(u) => u.clone(),
+        None => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(CommandResponse {
+                    ok: false,
+                    message: "no agent update available".to_string(),
+                }),
+            )
+                .into_response();
+        }
+    };
+    drop(info);
+
+    let mut vars = HashMap::new();
+    vars.insert("version".to_string(), update.version.clone());
+    vars.insert("download_url".to_string(), update.download_url.clone());
+    vars.insert("sha256".to_string(), update.sha256.clone());
+
+    let script = templates::render(templates::scripts::UPGRADE_AGENT, &vars);
+    let description = format!("Upgrade agent to v{}", update.version);
+
+    let cmd = wrap_script(ExecuteScript {
+        script_id: generate_script_id(),
+        script,
+        description: description.clone(),
+        timeout_secs: 300,
+    });
+
+    match state.registry.send_command(&id, cmd).await {
+        Ok(()) => {
+            emit_controller_log(
+                &state.registry,
+                &state.db,
+                &id,
+                "info",
+                &format!("Agent upgrade to v{} initiated", update.version),
+            )
+            .await;
+            Json(CommandResponse {
+                ok: true,
+                message: format!("agent upgrade to v{} command sent", update.version),
+            })
+            .into_response()
+        }
+        Err(e) => (
+            StatusCode::BAD_REQUEST,
+            Json(CommandResponse {
+                ok: false,
+                message: e,
+            }),
+        )
+            .into_response(),
+    }
 }
 
 #[derive(Serialize)]

@@ -27,6 +27,9 @@ pub struct ControllerConfig {
     /// Auto-generated on first startup and persisted to the DB `settings` table.
     #[serde(default)]
     pub auth_token: String,
+    /// URL to poll for release manifest (S3 JSON). Empty = update checking disabled.
+    #[serde(default)]
+    pub update_check_url: String,
 }
 
 impl ControllerConfig {
@@ -94,6 +97,7 @@ mod tests {
             grafana_url: String::new(),
             certs_dir: String::new(),
             auth_token: String::new(),
+            update_check_url: String::new(),
         };
         let err = config.validate().unwrap_err();
         assert!(err.contains("grpc_listen"));
@@ -110,6 +114,7 @@ mod tests {
             grafana_url: String::new(),
             certs_dir: String::new(),
             auth_token: String::new(),
+            update_check_url: String::new(),
         };
         let err = config.validate().unwrap_err();
         assert!(err.contains("retention_days"));
