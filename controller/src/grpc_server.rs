@@ -7,6 +7,7 @@ use pillar_shared::proto::{
     ScriptResultAck,
 };
 
+use crate::alerts::AlertEngine;
 use crate::db::{self, Db};
 use crate::node_registry::NodeRegistry;
 
@@ -43,12 +44,18 @@ pub fn check_auth_token(
 pub struct GrpcServer {
     db: Db,
     registry: NodeRegistry,
+    alert_engine: AlertEngine,
     /// IP extracted from external_url, used as fallback for local connections.
     self_ip: String,
 }
 
 impl GrpcServer {
-    pub fn new(db: Db, registry: NodeRegistry, external_url: &str) -> Self {
+    pub fn new(
+        db: Db,
+        registry: NodeRegistry,
+        alert_engine: AlertEngine,
+        external_url: &str,
+    ) -> Self {
         let host = external_url
             .trim_start_matches("http://")
             .trim_start_matches("https://");
@@ -63,6 +70,7 @@ impl GrpcServer {
         Self {
             db,
             registry,
+            alert_engine,
             self_ip,
         }
     }
@@ -111,6 +119,8 @@ impl PillarController for GrpcServer {
         db::update_node_status(&self.db, &req.node_id, &status)
             .await
             .map_err(|e| Status::internal(format!("db error: {e}")))?;
+
+        self.alert_engine.evaluate(&req.node_id, &status).await;
 
         Ok(Response::new(ReportStatusResponse {}))
     }

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { fetchOverview, fetchNodes, fetchOnboardCommand } from '../api'
+import { fetchOverview, fetchNodes, fetchOnboardCommand, fetchActiveAlerts } from '../api'
 import type { FleetOverview, Node } from '../api'
 
 const STATE_COLORS: Record<string, string> = {
@@ -29,12 +29,14 @@ function Overview() {
   const [nodes, setNodes] = useState<Node[]>([])
   const [onboardCmd, setOnboardCmd] = useState('')
   const [copied, setCopied] = useState(false)
+  const [activeAlertCount, setActiveAlertCount] = useState(0)
 
   const refresh = useCallback(async () => {
     try {
-      const [ov, ns] = await Promise.all([fetchOverview(), fetchNodes()])
+      const [ov, ns, alerts] = await Promise.all([fetchOverview(), fetchNodes(), fetchActiveAlerts()])
       setOverview(ov)
       setNodes(ns)
+      setActiveAlertCount(alerts.length)
     } catch {
       // API may not be available yet
     }
@@ -87,6 +89,12 @@ function Overview() {
           <div className="label">Unhealthy</div>
           <div className="value">{stateCount('unhealthy')}</div>
         </div>
+        {activeAlertCount > 0 && (
+          <div className="summary-card red" style={{ cursor: 'pointer' }} onClick={() => navigate('/alerts')}>
+            <div className="label">Active Alerts</div>
+            <div className="value">{activeAlertCount}</div>
+          </div>
+        )}
       </div>
 
       <table className="node-table">

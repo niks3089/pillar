@@ -19,6 +19,12 @@ pub fn open_db(path: &str) -> Result<Db> {
     Ok(Arc::new(Mutex::new(conn)))
 }
 
+/// Exposed for test use by other modules.
+#[cfg(test)]
+pub fn init_schema_for_test(conn: &Connection) {
+    init_schema(conn).unwrap();
+}
+
 fn init_schema(conn: &Connection) -> Result<()> {
     conn.execute_batch(
         "
@@ -93,6 +99,9 @@ fn init_schema(conn: &Connection) -> Result<()> {
         ",
     )
     .context("creating script_executions table")?;
+
+    // Alert engine tables
+    crate::alerts::db::init_alert_schema(conn)?;
 
     Ok(())
 }

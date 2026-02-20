@@ -8,7 +8,7 @@ use axum::{
         sse::{Event, Sse},
         IntoResponse, Response,
     },
-    routing::{any, get, post},
+    routing::{any, delete, get, post, put},
     Json, Router,
 };
 use serde::{Deserialize, Serialize};
@@ -19,6 +19,7 @@ use pillar_shared::proto::{
     controller_command, ControllerCommand, ExecuteScript, LogEntry, NodeStatus,
 };
 
+use crate::alerts::{self, AlertEngine};
 use crate::config::ControllerConfig;
 use crate::db::{self, Db, NodeRow};
 use crate::node_registry::NodeRegistry;
@@ -30,6 +31,7 @@ pub struct ApiState {
     pub registry: NodeRegistry,
     pub config: ControllerConfig,
     pub auth_token: String,
+    pub alert_engine: AlertEngine,
 }
 
 pub fn router(state: ApiState) -> Router {
@@ -58,6 +60,21 @@ pub fn router(state: ApiState) -> Router {
             get(dashboard_fleet_overview),
         )
         .route("/api/dashboards/node-detail", get(dashboard_node_detail))
+        // Alert engine routes
+        .route("/api/alerts/rules", get(list_alert_rules).post(create_alert_rule))
+        .route(
+            "/api/alerts/rules/{id}",
+            get(get_alert_rule).put(update_alert_rule).delete(delete_alert_rule),
+        )
+        .route("/api/alerts/history", get(list_alert_history))
+        .route("/api/alerts/active", get(list_active_alerts))
+        .route("/api/alerts/channels", get(list_channels).post(create_channel))
+        .route(
+            "/api/alerts/channels/{id}",
+            put(update_channel).delete(delete_channel),
+        )
+        .route("/api/alerts/channels/{id}/test", post(test_channel))
+        .route("/api/alerts/export", get(export_alerts))
         .route("/metrics", get(crate::metrics_endpoint::metrics_handler))
         .with_state(state)
 }

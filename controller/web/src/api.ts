@@ -159,3 +159,144 @@ export async function saveGrafanaUrl(url: string): Promise<{ grafana_url: string
     body: JSON.stringify({ grafana_url: url }),
   })
 }
+
+// ---------------------------------------------------------------------------
+// Alert types
+// ---------------------------------------------------------------------------
+
+export interface AlertRule {
+  id: string
+  name: string
+  description: string
+  category: string
+  field: string
+  operator: string
+  threshold: string
+  node_id_filter?: string
+  enabled: boolean
+  severity: string
+  cooldown_secs: number
+  well_known: boolean
+  created_at: number
+  updated_at: number
+}
+
+export interface AlertHistoryEntry {
+  id: number
+  node_id: string
+  rule_id: string
+  rule_name: string
+  severity: string
+  fired_at: number
+  resolved_at?: number
+  trigger_value: string
+  notification_sent: boolean
+}
+
+export interface NotificationChannel {
+  id: string
+  channel_type: string
+  name: string
+  config_json: string
+  enabled: boolean
+  created_at: number
+  updated_at: number
+}
+
+// ---------------------------------------------------------------------------
+// Alert API functions
+// ---------------------------------------------------------------------------
+
+export async function fetchAlertRules(): Promise<AlertRule[]> {
+  return api('/api/alerts/rules')
+}
+
+export async function fetchAlertRule(id: string): Promise<AlertRule> {
+  return api(`/api/alerts/rules/${encodeURIComponent(id)}`)
+}
+
+export async function createAlertRule(rule: {
+  name: string
+  field: string
+  operator: string
+  threshold: string
+  description?: string
+  node_id_filter?: string
+  enabled?: boolean
+  severity?: string
+  cooldown_secs?: number
+}): Promise<AlertRule> {
+  return api('/api/alerts/rules', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(rule),
+  })
+}
+
+export async function updateAlertRule(
+  id: string,
+  updates: Partial<Pick<AlertRule, 'name' | 'description' | 'field' | 'operator' | 'threshold' | 'node_id_filter' | 'enabled' | 'severity' | 'cooldown_secs'>>,
+): Promise<AlertRule> {
+  return api(`/api/alerts/rules/${encodeURIComponent(id)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(updates),
+  })
+}
+
+export async function deleteAlertRule(id: string): Promise<void> {
+  await fetch(`/api/alerts/rules/${encodeURIComponent(id)}`, { method: 'DELETE' })
+}
+
+export async function fetchAlertHistory(params?: {
+  node_id?: string
+  severity?: string
+  limit?: number
+}): Promise<AlertHistoryEntry[]> {
+  const qs = new URLSearchParams()
+  if (params?.node_id) qs.set('node_id', params.node_id)
+  if (params?.severity) qs.set('severity', params.severity)
+  if (params?.limit) qs.set('limit', String(params.limit))
+  const query = qs.toString()
+  return api(`/api/alerts/history${query ? '?' + query : ''}`)
+}
+
+export async function fetchActiveAlerts(): Promise<AlertHistoryEntry[]> {
+  return api('/api/alerts/active')
+}
+
+export async function fetchNotificationChannels(): Promise<NotificationChannel[]> {
+  return api('/api/alerts/channels')
+}
+
+export async function createNotificationChannel(ch: {
+  channel_type: string
+  name: string
+  config_json: string
+  enabled?: boolean
+}): Promise<NotificationChannel> {
+  return api('/api/alerts/channels', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(ch),
+  })
+}
+
+export async function updateNotificationChannel(
+  id: string,
+  updates: { name?: string; config_json?: string; enabled?: boolean },
+): Promise<NotificationChannel> {
+  return api(`/api/alerts/channels/${encodeURIComponent(id)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(updates),
+  })
+}
+
+export async function deleteNotificationChannel(id: string): Promise<void> {
+  await fetch(`/api/alerts/channels/${encodeURIComponent(id)}`, { method: 'DELETE' })
+}
+
+export async function testNotificationChannel(id: string): Promise<{ ok: boolean; message?: string; error?: string }> {
+  return api(`/api/alerts/channels/${encodeURIComponent(id)}/test`, { method: 'POST' })
+}

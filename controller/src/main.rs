@@ -1,3 +1,4 @@
+mod alerts;
 mod api;
 mod certs;
 mod config;
@@ -83,6 +84,12 @@ async fn main() -> anyhow::Result<()> {
     }
 
     let registry = NodeRegistry::new();
+    let alert_engine = alerts::AlertEngine::new(database.clone());
+    alert_engine
+        .init()
+        .await
+        .context("initializing alert engine")?;
+
     let cancel = CancellationToken::new();
 
     // Handle SIGINT/SIGTERM
@@ -130,7 +137,12 @@ async fn main() -> anyhow::Result<()> {
         .grpc_listen
         .parse()
         .context("parsing grpc_listen address")?;
-    let grpc = GrpcServer::new(database.clone(), registry.clone(), &config.external_url);
+    let grpc = GrpcServer::new(
+        database.clone(),
+        registry.clone(),
+        alert_engine.clone(),
+        &config.external_url,
+    );
     let grpc_cancel = cancel.clone();
     let grpc_token = auth_token.clone();
     tokio::spawn(async move {
@@ -184,6 +196,7 @@ async fn main() -> anyhow::Result<()> {
         registry: registry.clone(),
         config: config.clone(),
         auth_token: auth_token.clone(),
+        alert_engine: alert_engine.clone(),
     };
 
     let grafana_state = api_state.clone();
