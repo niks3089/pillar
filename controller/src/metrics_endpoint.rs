@@ -41,6 +41,10 @@ const METRIC_HEADERS: &[(&str, &str)] = &[
     ("pillar_commands_received", "Commands received via CommandStream"),
     // Process start time (unix epoch, stable per process lifetime)
     ("pillar_agent_started_at_unix_secs", "Agent process start time (unix epoch)"),
+    // Snapshot download progress
+    ("pillar_snapshot_download_bytes", "Snapshot download bytes received"),
+    ("pillar_snapshot_download_total_bytes", "Snapshot download total size in bytes"),
+    ("pillar_snapshot_download_speed_bps", "Snapshot download speed in bytes/s"),
 ];
 
 fn emit_node_metrics(out: &mut String, node_id: &str, status: &NodeStatus) {
@@ -91,11 +95,19 @@ fn emit_node_metrics(out: &mut String, node_id: &str, status: &NodeStatus) {
         ("pillar_agent_started_at_unix_secs", status.agent_started_at_unix_secs as f64),
     ];
 
+    // Snapshot download progress
+    let snapshot_metrics: &[(&str, f64)] = &[
+        ("pillar_snapshot_download_bytes", status.snapshot_download_bytes as f64),
+        ("pillar_snapshot_download_total_bytes", status.snapshot_download_total_bytes as f64),
+        ("pillar_snapshot_download_speed_bps", status.snapshot_download_speed_bps),
+    ];
+
     for (name, value) in node_metrics
         .iter()
         .chain(reconciler_metrics.iter())
         .chain(controller_metrics.iter())
         .chain(start_time_metrics.iter())
+        .chain(snapshot_metrics.iter())
     {
         let _ = writeln!(out, "{name}{{{base}}} {value}");
     }

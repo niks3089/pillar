@@ -76,6 +76,11 @@ pub struct Metrics {
 
     // Start time (unix epoch, stable per process lifetime)
     agent_started_at_unix_secs: IntGauge,
+
+    // Snapshot download progress
+    snapshot_download_bytes: IntGauge,
+    snapshot_download_total_bytes: IntGauge,
+    snapshot_download_speed_bps: Gauge,
 }
 
 impl Metrics {
@@ -120,6 +125,11 @@ impl Metrics {
 
             // Start time
             agent_started_at_unix_secs: register_int_gauge(&registry, "pillar_agent_started_at_unix_secs", "Agent process start time (unix epoch)"),
+
+            // Snapshot download progress
+            snapshot_download_bytes: register_int_gauge(&registry, "pillar_snapshot_download_bytes", "Snapshot download bytes received"),
+            snapshot_download_total_bytes: register_int_gauge(&registry, "pillar_snapshot_download_total_bytes", "Snapshot download total size in bytes"),
+            snapshot_download_speed_bps: register_gauge(&registry, "pillar_snapshot_download_speed_bps", "Snapshot download speed in bytes/s"),
 
             registry,
         }
@@ -217,6 +227,14 @@ impl Metrics {
         // Start time
         self.agent_started_at_unix_secs
             .set(status.agent_started_at_unix_secs);
+
+        // Snapshot download progress
+        self.snapshot_download_bytes
+            .set(status.snapshot_download_bytes as i64);
+        self.snapshot_download_total_bytes
+            .set(status.snapshot_download_total_bytes as i64);
+        self.snapshot_download_speed_bps
+            .set(status.snapshot_download_speed_bps);
     }
 
     /// Gather all metrics and encode as Prometheus text format.

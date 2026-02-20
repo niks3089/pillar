@@ -80,6 +80,11 @@ message NodeStatus {
     // --- Process start time (unix epoch, stable per process lifetime) ---
     int64  agent_started_at_unix_secs = 50;
     reserved 51;        // was link_started_at_unix_secs (duplicate of 50)
+
+    // --- Snapshot download progress (zero when no download active) ---
+    uint64 snapshot_download_bytes = 52;
+    uint64 snapshot_download_total_bytes = 53;
+    double snapshot_download_speed_bps = 54;
 }
 
 // Commands pushed from controller to agent.

@@ -154,9 +154,10 @@ async fn main() -> anyhow::Result<()> {
         let lc_config = config.log_collector.clone();
         let lc_controller = config.controller.clone();
         let lc_health = agent_health.clone();
+        let lc_shared = shared_status.clone();
         let lc_cancel = cancel.clone();
         tokio::spawn(async move {
-            log_collector::run(lc_config, lc_controller, lc_health, lc_cancel).await;
+            log_collector::run(lc_config, lc_controller, lc_health, lc_shared, lc_cancel).await;
         });
     }
 

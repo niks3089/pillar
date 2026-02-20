@@ -263,6 +263,11 @@ else
     ok "created user $SOL_USER with home /home/sol"
 fi
 
+# Ensure sol can read journald logs (needed for log collector)
+if getent group systemd-journal &>/dev/null; then
+    usermod -aG systemd-journal "$SOL_USER" 2>/dev/null || true
+fi
+
 for dir in "$CONFIG_DIR" "$STATE_DIR" "$LOG_DIR"; do
     mkdir -p "$dir"
     chown "$SOL_USER:$SOL_USER" "$dir"
@@ -282,13 +287,15 @@ done
 # Phase 3b: Sudoers for sol to manage validator systemd services
 # ------------------------------------------------------------------------------
 
-SUDOERS_FILE="/etc/sudoers.d/sol-systemctl"
+SUDOERS_FILE="/etc/sudoers.d/sol-pillar"
 cat > "$SUDOERS_FILE" <<'EOF'
-# Allow sol user to manage systemd services without a password.
-# Used by pillar-agent to start/stop/restart the validator.
-sol ALL=(root) NOPASSWD: /usr/bin/systemctl
+# Allow sol user to manage systemd services and run provisioning without a password.
+# Used by pillar-agent to start/stop/restart the validator and run provision scripts.
+sol ALL=(root) NOPASSWD: /usr/bin/systemctl, /usr/bin/install, /usr/bin/tee, /usr/bin/sed, /usr/bin/mkdir, /usr/bin/cp, /usr/bin/find
 EOF
 chmod 440 "$SUDOERS_FILE"
+# Remove old sudoers file if it exists
+rm -f /etc/sudoers.d/sol-systemctl 2>/dev/null || true
 ok "wrote $SUDOERS_FILE"
 
 # ------------------------------------------------------------------------------

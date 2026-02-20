@@ -126,7 +126,7 @@ function NodeDetail() {
   const [provJitoBlockEngineUrl, setProvJitoBlockEngineUrl] = useState('')
   const [provYellowstoneGrpc, setProvYellowstoneGrpc] = useState(false)
   const [provRpcPort, setProvRpcPort] = useState('8899')
-  const [provDynamicPortRange, setProvDynamicPortRange] = useState('8000-8020')
+  const [provDynamicPortRange, setProvDynamicPortRange] = useState('8000-8030')
   const [provSubmitting, setProvSubmitting] = useState(false)
   const [provNodeType, setProvNodeType] = useState('validator')
   const [provGossipPort, setProvGossipPort] = useState('8001')
@@ -457,7 +457,7 @@ function NodeDetail() {
           </div>
           <div className="form-group">
             <label>Dynamic Port Range</label>
-            <input type="text" value={provDynamicPortRange} onChange={e => setProvDynamicPortRange(e.target.value)} placeholder="8000-8020" />
+            <input type="text" value={provDynamicPortRange} onChange={e => setProvDynamicPortRange(e.target.value)} placeholder="8000-8030" />
           </div>
         </div>
 

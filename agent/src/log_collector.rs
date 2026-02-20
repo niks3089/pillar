@@ -11,12 +11,112 @@ use tokio_util::sync::CancellationToken;
 
 use crate::agent_health::AgentHealth;
 use crate::config::{ControllerConfig, LogCollectorConfig};
+use crate::metrics_updater::SharedStatus;
 
 pub mod proto {
     tonic::include_proto!("pillar");
 }
 
 use pillar_shared::proto::{LogBatch, LogEntry};
+
+/// Parsed snapshot download progress from validator logs.
+#[derive(Debug, Clone)]
+struct SnapshotProgress {
+    downloaded_bytes: u64,
+    total_bytes: u64,
+    speed_bps: f64,
+}
+
+/// Parse snapshot download progress from a validator log message.
+///
+/// Matches lines like:
+///   "Downloading 52428800000 bytes from ..."  → sets total, resets downloaded to 0
+///   "downloaded 548684968 bytes 10.4% 13474726.0 bytes/s" → incremental progress
+///   "Downloaded 52428800000 bytes in 3845s"  → download complete
+fn detect_snapshot_progress(message: &str) -> Option<SnapshotProgress> {
+    // "Downloading <total> bytes from ..." — start of a new download
+    if let Some(rest) = message.strip_prefix("Downloading ") {
+        let total: u64 = rest.split_whitespace().next()?.parse().ok()?;
+        return Some(SnapshotProgress {
+            downloaded_bytes: 0,
+            total_bytes: total,
+            speed_bps: 0.0,
+        });
+    }
+
+    // "downloaded <bytes> bytes <percent>% <speed> bytes/s" — incremental progress
+    if message.starts_with("downloaded ") {
+        let parts: Vec<&str> = message.split_whitespace().collect();
+        // downloaded <bytes> bytes <pct>% <speed> bytes/s
+        if parts.len() >= 6 && parts[2] == "bytes" && parts[5] == "bytes/s" {
+            let downloaded: u64 = parts[1].parse().ok()?;
+            let pct: f64 = parts[3].trim_end_matches('%').parse().ok()?;
+            let speed: f64 = parts[4].parse().ok()?;
+            // Reconstruct total from percentage
+            let total = if pct > 0.0 {
+                (downloaded as f64 / (pct / 100.0)) as u64
+            } else {
+                0
+            };
+            return Some(SnapshotProgress {
+                downloaded_bytes: downloaded,
+                total_bytes: total,
+                speed_bps: speed,
+            });
+        }
+    }
+
+    // "Downloaded <total> bytes in <duration>" — download finished
+    if message.starts_with("Downloaded ") && message.contains(" bytes in ") {
+        let parts: Vec<&str> = message.split_whitespace().collect();
+        if parts.len() >= 2 {
+            let total: u64 = parts[1].parse().ok()?;
+            return Some(SnapshotProgress {
+                downloaded_bytes: total,
+                total_bytes: total,
+                speed_bps: 0.0,
+            });
+        }
+    }
+
+    None
+}
+
+/// Returns true if the message is a bootstrap/download related line that should
+/// bypass the min_level filter for validator logs.
+fn is_bootstrap_message(message: &str) -> bool {
+    // Check for snapshot download progress
+    if message.starts_with("Downloading ")
+        || message.starts_with("downloaded ")
+        || (message.starts_with("Downloaded ") && message.contains(" bytes"))
+    {
+        return true;
+    }
+    // Bootstrap peer discovery, RPC search
+    let lower = message.to_lowercase();
+    if lower.contains("bootstrap") {
+        return true;
+    }
+    false
+}
+
+/// Update shared status with snapshot download progress. Zeros out fields
+/// when download is complete (downloaded == total and both > 0).
+async fn update_snapshot_progress(shared: &SharedStatus, progress: &SnapshotProgress) {
+    let mut guard = shared.write().await;
+    if let Some(ref mut status) = *guard {
+        if progress.downloaded_bytes == progress.total_bytes && progress.total_bytes > 0 {
+            // Download finished — clear fields
+            status.snapshot_download_bytes = 0;
+            status.snapshot_download_total_bytes = 0;
+            status.snapshot_download_speed_bps = 0.0;
+        } else {
+            status.snapshot_download_bytes = progress.downloaded_bytes;
+            status.snapshot_download_total_bytes = progress.total_bytes;
+            status.snapshot_download_speed_bps = progress.speed_bps;
+        }
+    }
+}
 
 /// Map journald priority (0-7) to a level string.
 fn priority_to_level(priority: &str) -> &'static str {
@@ -230,6 +330,7 @@ pub async fn run(
     config: LogCollectorConfig,
     controller: ControllerConfig,
     agent_health: Arc<AgentHealth>,
+    shared_status: SharedStatus,
     cancel: CancellationToken,
 ) {
     tracing::info!(
@@ -276,14 +377,25 @@ pub async fn run(
             entry = rx.recv() => {
                 match entry {
                     Some(e) => {
+                        // Check for snapshot download progress before filtering.
+                        let is_bootstrap = e.service == "validator" && is_bootstrap_message(&e.message);
+                        if e.service == "validator" {
+                            if let Some(progress) = detect_snapshot_progress(&e.message) {
+                                update_snapshot_progress(&shared_status, &progress).await;
+                            }
+                        }
+
                         // Filter by min level: validator defaults to warn, others to debug.
-                        let min = if e.service == "validator" {
-                            &validator_min_level
-                        } else {
-                            &default_min_level
-                        };
-                        if !level_passes(&e.level, min) {
-                            continue;
+                        // Bootstrap/download messages bypass the filter.
+                        if !is_bootstrap {
+                            let min = if e.service == "validator" {
+                                &validator_min_level
+                            } else {
+                                &default_min_level
+                            };
+                            if !level_passes(&e.level, min) {
+                                continue;
+                            }
                         }
                         buffer.push(e);
                         if buffer.len() >= buffer_size {
@@ -427,6 +539,48 @@ mod tests {
         assert_eq!(unit_to_service("pillar-agent.service"), "agent");
         assert_eq!(unit_to_service("controller.service"), "controller");
         assert_eq!(unit_to_service("custom.service"), "custom");
+    }
+
+    #[test]
+    fn detect_download_start() {
+        let msg = "Downloading 52428800000 bytes from 10.0.0.5:8899";
+        let progress = detect_snapshot_progress(msg).unwrap();
+        assert_eq!(progress.total_bytes, 52428800000);
+        assert_eq!(progress.downloaded_bytes, 0);
+        assert_eq!(progress.speed_bps, 0.0);
+    }
+
+    #[test]
+    fn detect_download_progress() {
+        let msg = "downloaded 548684968 bytes 10.4% 13474726.0 bytes/s";
+        let progress = detect_snapshot_progress(msg).unwrap();
+        assert_eq!(progress.downloaded_bytes, 548684968);
+        assert!(progress.speed_bps > 13_000_000.0);
+        assert!(progress.total_bytes > 5_000_000_000);
+    }
+
+    #[test]
+    fn detect_download_complete() {
+        let msg = "Downloaded 52428800000 bytes in 3845s";
+        let progress = detect_snapshot_progress(msg).unwrap();
+        assert_eq!(progress.downloaded_bytes, 52428800000);
+        assert_eq!(progress.total_bytes, 52428800000);
+        assert_eq!(progress.speed_bps, 0.0);
+    }
+
+    #[test]
+    fn detect_no_progress_for_unrelated() {
+        assert!(detect_snapshot_progress("validator started").is_none());
+        assert!(detect_snapshot_progress("ERROR crash happened").is_none());
+    }
+
+    #[test]
+    fn bootstrap_message_detection() {
+        assert!(is_bootstrap_message("Downloading 52428800000 bytes from 10.0.0.5:8899"));
+        assert!(is_bootstrap_message("downloaded 548684968 bytes 10.4% 13474726.0 bytes/s"));
+        assert!(is_bootstrap_message("Downloaded 52428800000 bytes in 3845s"));
+        assert!(is_bootstrap_message("Searching for an RPC service with bootstrap config"));
+        assert!(!is_bootstrap_message("validator started successfully"));
     }
 
     #[test]

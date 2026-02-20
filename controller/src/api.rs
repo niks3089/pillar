@@ -647,7 +647,7 @@ fn build_provision_vars(req: &ProvisionRequest) -> HashMap<String, String> {
         req.gossip_port
     };
     let dynamic_port_range = if req.dynamic_port_range.is_empty() {
-        "8000-8020".to_string()
+        "8000-8030".to_string()
     } else {
         req.dynamic_port_range.clone()
     };
