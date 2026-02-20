@@ -17,6 +17,7 @@ const DEFAULT_SLOTS_BEHIND_THRESHOLD: u64 = 100;
 const DEFAULT_RPC_TIMEOUT_SECS: u64 = 10;
 const DEFAULT_LOCAL_RPC_URL: &str = "http://127.0.0.1:8899";
 const DEFAULT_LEDGER_PATH: &str = "/mnt/ledger";
+const DEFAULT_ACCOUNTS_PATH: &str = "/mnt/accounts";
 const DEFAULT_SNAPSHOT_PATH: &str = "/mnt/snapshots";
 const DEFAULT_HTTP_LISTEN: &str = "0.0.0.0:9090";
 const DEFAULT_REPORT_INTERVAL_SECS: u64 = 10;
@@ -99,6 +100,13 @@ impl AgentConfig {
             errors.push(format!("paths.ledger_path must be absolute: {}", self.paths.ledger_path));
         } else if ledger.components().count() < 3 {
             errors.push(format!("paths.ledger_path too shallow: {}", self.paths.ledger_path));
+        }
+
+        let accounts = std::path::Path::new(&self.paths.accounts_path);
+        if !accounts.is_absolute() {
+            errors.push(format!("paths.accounts_path must be absolute: {}", self.paths.accounts_path));
+        } else if accounts.components().count() < 3 {
+            errors.push(format!("paths.accounts_path too shallow: {}", self.paths.accounts_path));
         }
 
         let snapshot = std::path::Path::new(&self.paths.snapshot_path);
@@ -201,6 +209,8 @@ impl Default for HealthConfig {
 pub struct PathConfig {
     #[serde(default = "default_ledger_path")]
     pub ledger_path: String,
+    #[serde(default = "default_accounts_path")]
+    pub accounts_path: String,
     #[serde(default = "default_snapshot_path")]
     pub snapshot_path: String,
 }
@@ -209,6 +219,7 @@ impl Default for PathConfig {
     fn default() -> Self {
         Self {
             ledger_path: DEFAULT_LEDGER_PATH.to_string(),
+            accounts_path: DEFAULT_ACCOUNTS_PATH.to_string(),
             snapshot_path: DEFAULT_SNAPSHOT_PATH.to_string(),
         }
     }
@@ -287,6 +298,7 @@ fn default_slots_behind_threshold() -> u64 { DEFAULT_SLOTS_BEHIND_THRESHOLD }
 fn default_rpc_timeout_secs() -> u64 { DEFAULT_RPC_TIMEOUT_SECS }
 fn default_local_rpc_url() -> String { DEFAULT_LOCAL_RPC_URL.to_string() }
 fn default_ledger_path() -> String { DEFAULT_LEDGER_PATH.to_string() }
+fn default_accounts_path() -> String { DEFAULT_ACCOUNTS_PATH.to_string() }
 fn default_snapshot_path() -> String { DEFAULT_SNAPSHOT_PATH.to_string() }
 fn default_http_listen() -> String { DEFAULT_HTTP_LISTEN.to_string() }
 fn default_report_interval_secs() -> u64 { DEFAULT_REPORT_INTERVAL_SECS }

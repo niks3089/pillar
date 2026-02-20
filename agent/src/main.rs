@@ -122,6 +122,8 @@ async fn main() -> anyhow::Result<()> {
     // 1. Spawn reconcile loop
     let reconcile_config = config.clone();
     let ledger_dir = PathBuf::from(&config.paths.ledger_path);
+    let accounts_dir = PathBuf::from(&config.paths.accounts_path);
+    let snapshot_dir = PathBuf::from(&config.paths.snapshot_path);
     let reconcile_shared = shared_status.clone();
     let reconcile_cancel = cancel.clone();
     tokio::spawn(async move {
@@ -131,6 +133,8 @@ async fn main() -> anyhow::Result<()> {
             service_manager,
             snapshot_manager,
             ledger_dir,
+            accounts_dir,
+            snapshot_dir,
             validator_process,
             reconcile_shared,
             cmd_rx,
