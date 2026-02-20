@@ -9,8 +9,8 @@ const STATE_COLORS: Record<string, string> = {
   offline: 'red',
   unhealthy: 'red',
   recovering: 'orange',
-  registered: 'blue',
-  provisioning: 'blue',
+  registered: 'purple',
+  provisioning: 'purple',
   starting_up: 'yellow',
 }
 
@@ -21,6 +21,12 @@ function formatLastSeen(ts?: number): string {
   if (ago < 3600) return `${Math.floor(ago / 60)}m ago`
   if (ago < 86400) return `${Math.floor(ago / 3600)}h ago`
   return `${Math.floor(ago / 86400)}d ago`
+}
+
+function clusterLabel(cluster?: string): string {
+  if (!cluster) return '-'
+  if (cluster === 'mainnet-beta') return 'mainnet'
+  return cluster
 }
 
 function Overview() {
@@ -67,7 +73,7 @@ function Overview() {
   return (
     <div>
       <div className="summary-cards">
-        <div className="summary-card blue">
+        <div className="summary-card purple">
           <div className="label">Total Nodes</div>
           <div className="value">{overview?.total ?? 0}</div>
         </div>
@@ -98,6 +104,7 @@ function Overview() {
             <th>Link</th>
             <th>Client</th>
             <th>Cluster</th>
+            <th>Version</th>
             <th>Slots Behind</th>
             <th>Last Seen</th>
           </tr>
@@ -117,15 +124,22 @@ function Overview() {
                   {node.live_status ? 'Connected' : 'Disconnected'}
                 </span>
               </td>
-              <td>{node.client ?? '-'}</td>
-              <td>{node.cluster ?? '-'}</td>
+              <td>{node.client ?? node.live_status?.client ?? '-'}</td>
+              <td>
+                {(node.cluster || node.live_status?.cluster) ? (
+                  <span className={`cluster-badge ${node.cluster ?? node.live_status?.cluster ?? ''}`}>
+                    {clusterLabel(node.cluster ?? node.live_status?.cluster)}
+                  </span>
+                ) : '-'}
+              </td>
+              <td>{node.live_status?.version ?? '-'}</td>
               <td>{node.live_status?.slots_behind ?? '-'}</td>
               <td>{formatLastSeen(node.last_seen_at)}</td>
             </tr>
           ))}
           {nodes.length === 0 && (
             <tr>
-              <td colSpan={8} style={{ textAlign: 'center', color: 'var(--text-dim)', padding: '2rem' }}>
+              <td colSpan={9} style={{ textAlign: 'center', color: 'var(--text-dim)', padding: '2rem' }}>
                 No nodes connected. Use the command below to add one.
               </td>
             </tr>

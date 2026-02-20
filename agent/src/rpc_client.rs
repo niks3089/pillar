@@ -95,6 +95,19 @@ impl RpcClient {
         Ok((current, delinquent))
     }
 
+    /// Call `getVersion` on the local validator RPC.
+    /// Returns the `solana-core` version string (e.g. `"3.1.8"`), or `None` on failure.
+    pub async fn get_local_version(&self) -> Option<String> {
+        match self.call(&self.local_url, "getVersion", json!([])).await {
+            Ok(resp) => resp
+                .get("result")
+                .and_then(|r| r.get("solana-core"))
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string()),
+            Err(_) => None,
+        }
+    }
+
     /// Call `getVersion` on the first responsive reference RPC.
     /// Returns the `solana-core` version string (e.g. `"3.1.8"`), or `None` on failure.
     pub async fn get_reference_version(&self) -> Option<String> {

@@ -225,7 +225,12 @@ impl Reconciler {
 
         self.last_health = health;
 
-        // 2b. Version mismatch detection
+        // 2b. Track local validator version
+        if let Some(ref lv) = self.last_health.local_version {
+            self.local_validator_version = Some(lv.clone());
+        }
+
+        // 2c. Version mismatch detection
         if let Some(ref cv) = self.last_health.cluster_version {
             self.cluster_version = Some(cv.clone());
         }
@@ -412,7 +417,7 @@ impl Reconciler {
         status.restart_count = self.restarts_in_window() as u64;
         status.crash_looping = self.restarts_in_window() >= self.config.lifecycle.crash_threshold;
         status.health_check_duration_secs = self.last_check_duration_secs;
-        status.version = env!("CARGO_PKG_VERSION").to_string();
+        status.version = self.local_validator_version.clone().unwrap_or_default();
         status.role = self.config.role.to_string();
         status.client = self.config.client.to_string();
         status.cluster = self.config.network.cluster.clone();

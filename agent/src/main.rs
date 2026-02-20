@@ -62,8 +62,14 @@ async fn main() -> anyhow::Result<()> {
     init_logger();
     tracing::info!("{SERVICE_NAME} v{VERSION} starting");
 
-    let config = load_config()?;
+    let mut config = load_config()?;
     config.validate().map_err(|e| anyhow::anyhow!(e))?;
+
+    // Default node_id to system hostname if not explicitly set
+    if config.controller.node_id.is_empty() {
+        config.controller.node_id = sysinfo::System::host_name()
+            .unwrap_or_else(|| "unknown".to_string());
+    }
     tracing::info!(
         role = %config.role,
         client = %config.client,

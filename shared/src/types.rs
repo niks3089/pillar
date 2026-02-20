@@ -36,4 +36,5 @@ pub struct NodeHealth {
     pub slot_info: SlotInfo,
     pub slots_behind: Option<i64>,
     pub cluster_version: Option<String>,
+    pub local_version: Option<String>,
 }

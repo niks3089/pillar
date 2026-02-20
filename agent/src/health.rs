@@ -77,6 +77,7 @@ impl HealthChecker for SlotHealthChecker {
         let cmp = self.client.compare_slots().await;
         let is_voting = self.is_voting().await;
         let cluster_version = self.client.get_reference_version().await;
+        let local_version = self.client.get_local_version().await;
 
         let state = determine_state(
             cmp.local_slot,
@@ -93,6 +94,7 @@ impl HealthChecker for SlotHealthChecker {
             },
             slots_behind: cmp.slots_behind,
             cluster_version,
+            local_version,
         })
     }
 }

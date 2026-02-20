@@ -87,9 +87,7 @@ impl AgentConfig {
         if self.controller.endpoint.is_empty() {
             errors.push("controller.endpoint must not be empty".to_string());
         }
-        if self.controller.node_id.is_empty() {
-            errors.push("controller.node_id must not be empty".to_string());
-        }
+        // node_id is auto-filled from hostname if empty — no validation needed
         if self.sysinfo_refresh_interval_secs == 0 {
             errors.push("sysinfo_refresh_interval_secs must be > 0".to_string());
         }
@@ -228,6 +226,8 @@ impl Default for PathConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ControllerConfig {
     pub endpoint: String,
+    /// Node identifier. Defaults to the system hostname if empty or omitted.
+    #[serde(default)]
     pub node_id: String,
     #[serde(default = "default_report_interval_secs")]
     pub report_interval_secs: u64,
