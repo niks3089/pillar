@@ -70,7 +70,6 @@ GET  /api/onboard-command            node onboard command (with controller URL)
 GET  /api/overview                   fleet summary
 GET  /api/nodes                      all nodes with latest status
 GET  /api/nodes/:id                  node detail
-GET  /api/nodes/:id/history          paginated status history
 GET  /api/nodes/:id/logs             paginated logs (service, level, since, limit)
 GET  /api/nodes/:id/logs/stream      SSE live log stream
 POST /api/nodes/:id/restart          restart validator
@@ -149,7 +148,6 @@ rm -rf target/release/.fingerprint/pillar-controller-* target/release/deps/pilla
 - Operational runbook: `SKILL.md` — bootstrap loop diagnosis/fix
 
 **TODO**:
-- [ ] Controller alert engine — condition eval, webhook/log actions, dedup on transition
 - [ ] Controller artifact storage — upload, serve, SHA256 verification
 - [ ] `scripts/install-controller.sh` — single-command installer with NAT detection + Cloudflare Tunnel
 - [ ] Update `scripts/install-node.sh` — download prebuilt binary from GitHub Releases

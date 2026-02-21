@@ -92,12 +92,10 @@ Defined in `shared/proto/pillar.proto`:
 ## SQLite Schema
 
 ```sql
-nodes                -- node_id, lifecycle_state, role, client, cluster, last_seen_at, ...
-status_history       -- node_id, status_blob (proto binary), received_at (pruned by retention_days)
+nodes                -- node_id, lifecycle_state, role, client, cluster, last_seen_at, last_raw_state, ...
 logs                 -- node_id, service, level, message, timestamp_ms (pruned by retention_days)
-alerts               -- node_id, rule_name, message, fired_at, resolved_at
-artifacts            -- name, version, sha256, size_bytes, uploaded_at
-upgrade_history      -- node_id, binary_name, from/to version, success, error
+settings             -- key, value (e.g. grafana_url)
+script_executions    -- script_id, node_id, description, initiated_at, completed_at, exit_code
 ```
 
 ## Node Lifecycle States

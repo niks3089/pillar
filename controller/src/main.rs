@@ -177,12 +177,11 @@ async fn main() -> anyhow::Result<()> {
             tokio::select! {
                 _ = interval.tick() => {
                     match db::prune_old_data(&prune_db, retention_days).await {
-                        Ok((status_deleted, logs_deleted)) => {
-                            if status_deleted > 0 || logs_deleted > 0 {
+                        Ok(logs_deleted) => {
+                            if logs_deleted > 0 {
                                 tracing::info!(
-                                    status_deleted,
                                     logs_deleted,
-                                    "pruned old data"
+                                    "pruned old logs"
                                 );
                             }
                         }

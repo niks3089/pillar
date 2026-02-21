@@ -3,7 +3,6 @@ use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result};
-use prost::Message;
 use rusqlite::{params, Connection};
 use serde::Serialize;
 
@@ -43,15 +42,6 @@ fn init_schema(conn: &Connection) -> Result<()> {
             registered_at INTEGER
         );
 
-        CREATE TABLE IF NOT EXISTS status_history (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            node_id TEXT NOT NULL,
-            status_blob BLOB NOT NULL,
-            received_at INTEGER NOT NULL
-        );
-        CREATE INDEX IF NOT EXISTS idx_status_history_node_time
-            ON status_history(node_id, received_at);
-
         CREATE TABLE IF NOT EXISTS logs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             node_id TEXT NOT NULL,
@@ -82,6 +72,12 @@ fn init_schema(conn: &Connection) -> Result<()> {
 
     // Migration: merge operator_version + link_version → agent_version
     let _ = conn.execute_batch("ALTER TABLE nodes ADD COLUMN agent_version TEXT;");
+
+    // Migration: track last raw state for transition detection (replaces status_history)
+    let _ = conn.execute_batch("ALTER TABLE nodes ADD COLUMN last_raw_state TEXT;");
+
+    // Migration: drop status_history table if it exists (data now redundant with Prometheus)
+    let _ = conn.execute_batch("DROP TABLE IF EXISTS status_history;");
 
     // Script execution tracking
     conn.execute_batch(
@@ -129,14 +125,6 @@ pub struct NodeRow {
     /// Populated at runtime from the in-memory NodeRegistry, not from SQLite.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub live_status: Option<NodeStatus>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct StatusHistoryRow {
-    pub id: i64,
-    pub node_id: String,
-    pub status: NodeStatus,
-    pub received_at: i64,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -210,33 +198,25 @@ pub async fn update_node_status(
         // Map operator state string to lifecycle state
         let lifecycle = map_state_to_lifecycle(&status.state);
 
-        conn.execute(
-            "UPDATE nodes SET lifecycle_state = ?1, last_seen_at = ?2 WHERE node_id = ?3",
-            params![lifecycle, now, node_id],
-        )
-        .context("update lifecycle_state")?;
-
-        // Only insert history when state changes
+        // Read the previous raw state for transition detection
         let last_state: Option<String> = conn
             .query_row(
-                "SELECT status_blob FROM status_history
-                 WHERE node_id = ?1 ORDER BY received_at DESC LIMIT 1",
+                "SELECT last_raw_state FROM nodes WHERE node_id = ?1",
                 params![node_id],
-                |row| {
-                    let blob: Vec<u8> = row.get(0)?;
-                    let prev = NodeStatus::decode(blob.as_slice()).unwrap_or_default();
-                    Ok(prev.state)
-                },
+                |row| row.get(0),
             )
-            .optional()?;
+            .optional()?
+            .flatten();
 
+        // Update lifecycle, heartbeat, and last_raw_state
+        conn.execute(
+            "UPDATE nodes SET lifecycle_state = ?1, last_seen_at = ?2, last_raw_state = ?3 WHERE node_id = ?4",
+            params![lifecycle, now, status.state, node_id],
+        )
+        .context("update node status")?;
+
+        // Detect state transitions
         let transitioned_from = if last_state.as_deref() != Some(&status.state) {
-            let status_blob = status.encode_to_vec();
-            conn.execute(
-                "INSERT INTO status_history (node_id, status_blob, received_at) VALUES (?1, ?2, ?3)",
-                params![node_id, status_blob, now],
-            )
-            .context("insert status_history")?;
             last_state
         } else {
             None
@@ -413,50 +393,6 @@ pub async fn complete_script_execution(
     .await?
 }
 
-pub async fn get_status_history(
-    db: &Db,
-    node_id: &str,
-    limit: u32,
-) -> Result<Vec<StatusHistoryRow>> {
-    let db = db.clone();
-    let node_id = node_id.to_owned();
-    tokio::task::spawn_blocking(move || {
-        let conn = db.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
-        let limit_i64 = limit as i64;
-        let mut stmt = conn
-            .prepare(
-                "SELECT id, node_id, status_blob, received_at
-                 FROM status_history
-                 WHERE node_id = ?1
-                 ORDER BY received_at DESC
-                 LIMIT ?2",
-            )
-            .context("prepare get_status_history")?;
-
-        let rows = stmt
-            .query_map(params![node_id, limit_i64], |row| {
-                let id: i64 = row.get(0)?;
-                let node_id: String = row.get(1)?;
-                let blob: Vec<u8> = row.get(2)?;
-                let received_at: i64 = row.get(3)?;
-                let status = NodeStatus::decode(blob.as_slice())
-                    .unwrap_or_default();
-                Ok(StatusHistoryRow {
-                    id,
-                    node_id,
-                    status,
-                    received_at,
-                })
-            })
-            .context("query get_status_history")?
-            .collect::<std::result::Result<Vec<_>, _>>()
-            .context("collect get_status_history")?;
-
-        Ok(rows)
-    })
-    .await?
-}
-
 pub async fn insert_logs(db: &Db, node_id: &str, entries: &[LogEntry]) -> Result<u64> {
     let db = db.clone();
     let node_id = node_id.to_owned();
@@ -624,20 +560,13 @@ pub async fn set_setting(db: &Db, key: &str, value: &str) -> Result<()> {
     .await?
 }
 
-pub async fn prune_old_data(db: &Db, retention_days: u32) -> Result<(usize, usize)> {
+pub async fn prune_old_data(db: &Db, retention_days: u32) -> Result<usize> {
     let db = db.clone();
     tokio::task::spawn_blocking(move || {
         let conn = db.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
         let cutoff = now_epoch_secs() - (retention_days as i64 * 86400);
-
-        let status_deleted = conn
-            .execute(
-                "DELETE FROM status_history WHERE received_at < ?1",
-                params![cutoff],
-            )
-            .context("prune status_history")?;
-
         let cutoff_ms = cutoff * 1000;
+
         let logs_deleted = conn
             .execute(
                 "DELETE FROM logs WHERE timestamp_ms < ?1",
@@ -645,7 +574,7 @@ pub async fn prune_old_data(db: &Db, retention_days: u32) -> Result<(usize, usiz
             )
             .context("prune logs")?;
 
-        Ok((status_deleted, logs_deleted))
+        Ok(logs_deleted)
     })
     .await?
 }
@@ -781,30 +710,25 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn update_status_and_history() {
+    async fn update_status_and_transitions() {
         let db = test_db();
         upsert_node(&db, &sample_register_request(), "10.0.0.1").await.unwrap();
 
         let status = sample_status(); // state = "healthy"
-        update_node_status(&db, "node-1", &status).await.unwrap();
 
-        // First insert creates a history row
-        let history = get_status_history(&db, "node-1", 10u32).await.unwrap();
-        assert_eq!(history.len(), 1);
-        assert_eq!(history[0].status.state, "healthy");
+        // First update: no previous state → transition from None
+        let prev = update_node_status(&db, "node-1", &status).await.unwrap();
+        assert!(prev.is_none()); // first time, last_raw_state was NULL
 
-        // Same state again — no new row
-        update_node_status(&db, "node-1", &status).await.unwrap();
-        let history = get_status_history(&db, "node-1", 10u32).await.unwrap();
-        assert_eq!(history.len(), 1);
+        // Same state again — no transition
+        let prev = update_node_status(&db, "node-1", &status).await.unwrap();
+        assert!(prev.is_none());
 
-        // Different state — new row
+        // Different state — transition detected
         let mut changed = status.clone();
         changed.state = "behind".to_string();
-        update_node_status(&db, "node-1", &changed).await.unwrap();
-        let history = get_status_history(&db, "node-1", 10u32).await.unwrap();
-        assert_eq!(history.len(), 2);
-        assert_eq!(history[0].status.state, "behind"); // most recent first (ORDER BY DESC)
+        let prev = update_node_status(&db, "node-1", &changed).await.unwrap();
+        assert_eq!(prev.as_deref(), Some("healthy"));
 
         // Verify lifecycle + heartbeat still updated
         let node = get_node(&db, "node-1").await.unwrap().unwrap();
@@ -922,16 +846,9 @@ mod tests {
     #[tokio::test]
     async fn prune_removes_old_data() {
         let db = test_db();
-        // Insert old status_history directly
         {
             let conn = db.lock().unwrap();
             let old_time = now_epoch_secs() - 100 * 86400; // 100 days ago
-            let empty_status = NodeStatus::default().encode_to_vec();
-            conn.execute(
-                "INSERT INTO status_history (node_id, status_blob, received_at) VALUES (?1, ?2, ?3)",
-                params!["node-old", empty_status, old_time],
-            )
-            .unwrap();
             let old_time_ms = old_time * 1000;
             conn.execute(
                 "INSERT INTO logs (node_id, service, level, message, timestamp_ms) VALUES (?1, ?2, ?3, ?4, ?5)",
@@ -940,8 +857,7 @@ mod tests {
             .unwrap();
         }
 
-        let (status_pruned, logs_pruned) = prune_old_data(&db, 30).await.unwrap();
-        assert_eq!(status_pruned, 1);
+        let logs_pruned = prune_old_data(&db, 30).await.unwrap();
         assert_eq!(logs_pruned, 1);
     }
 }

@@ -53,7 +53,6 @@ pub fn router(state: ApiState) -> Router {
         .route("/api/overview", get(overview))
         .route("/api/nodes", get(list_nodes))
         .route("/api/nodes/{id}", get(get_node).delete(delete_node))
-        .route("/api/nodes/{id}/history", get(node_history))
         .route("/api/nodes/{id}/logs", get(node_logs))
         .route("/api/nodes/{id}/logs/stream", get(node_logs_stream))
         .route("/api/nodes/{id}/restart", post(restart_node))
@@ -92,12 +91,6 @@ pub fn router(state: ApiState) -> Router {
 // ---------------------------------------------------------------------------
 // Query parameter structs
 // ---------------------------------------------------------------------------
-
-#[derive(Debug, Deserialize)]
-struct HistoryQuery {
-    #[serde(default = "default_limit")]
-    limit: u32,
-}
 
 #[derive(Debug, Deserialize)]
 struct LogsQuery {
@@ -314,21 +307,6 @@ async fn delete_node(
             Json(serde_json::json!({"error": "node not found"})),
         )
             .into_response(),
-        Err(e) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(serde_json::json!({"error": e.to_string()})),
-        )
-            .into_response(),
-    }
-}
-
-async fn node_history(
-    State(state): State<ApiState>,
-    Path(id): Path<String>,
-    Query(query): Query<HistoryQuery>,
-) -> impl IntoResponse {
-    match db::get_status_history(&state.db, &id, query.limit).await {
-        Ok(history) => Json(history).into_response(),
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(serde_json::json!({"error": e.to_string()})),
