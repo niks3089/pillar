@@ -1,16 +1,9 @@
 {
   "packages": {
     ".": {
-      "release-type": "simple",
+      "release-type": "rust",
       "component": "pillar",
-      "bump-minor-pre-major": true,
-      "extra-files": [
-        {
-          "type": "toml",
-          "path": "Cargo.toml",
-          "jsonpath": "$.workspace.package.version"
-        }
-      ]
+      "bump-minor-pre-major": true
     }
   }
 }
