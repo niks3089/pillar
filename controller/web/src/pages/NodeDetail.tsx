@@ -28,6 +28,15 @@ function formatLastSeen(ts?: number): string {
   return `${Math.floor(ago / 3600)}h ago`
 }
 
+function formatDuration(secs: number): string {
+  if (secs < 60) return `${secs}s`
+  if (secs < 3600) return `${Math.floor(secs / 60)}m ${secs % 60}s`
+  if (secs < 86400) return `${Math.floor(secs / 3600)}h ${Math.floor((secs % 3600) / 60)}m`
+  const days = Math.floor(secs / 86400)
+  const hours = Math.floor((secs % 86400) / 3600)
+  return `${days}d ${hours}h`
+}
+
 function clusterLabel(cluster?: string): string {
   if (!cluster) return '-'
   if (cluster === 'mainnet-beta') return 'mainnet'
@@ -211,41 +220,57 @@ function NodeDetail() {
     fetchVersionInfo().then(setVersionInfo).catch(() => {})
   }, [])
 
-  // Populate provision form from saved config when panel is opened
+  // Populate provision form from saved config or live node data when panel is opened
   useEffect(() => {
-    if (!showProvision || !node?.provision_config_json) return
-    try {
-      const cfg = JSON.parse(node.provision_config_json) as Partial<ProvisionRequest>
-      if (cfg.client) setProvClient(cfg.client)
-      if (cfg.version) setProvVersion(cfg.version)
-      if (cfg.cluster) setProvCluster(cfg.cluster)
-      if (cfg.ledger_path) setProvLedgerPath(cfg.ledger_path)
-      if (cfg.snapshot_path) setProvSnapshotPath(cfg.snapshot_path)
-      if (cfg.accounts_path) setProvAccountsPath(cfg.accounts_path)
-      if (cfg.identity_keypair_path) setProvIdentityPath(cfg.identity_keypair_path)
-      if (cfg.vote_account_keypair_path) setProvVotePath(cfg.vote_account_keypair_path)
-      if (cfg.entrypoints) setProvEntrypoints(cfg.entrypoints.join('\n'))
-      if (cfg.known_validators) setProvKnownValidators(cfg.known_validators.join('\n'))
-      if (cfg.download_url !== undefined) setProvDownloadUrl(cfg.download_url)
-      if (cfg.sha256 !== undefined) setProvSha256(cfg.sha256)
-      if (cfg.jito_mev !== undefined) setProvJitoMev(cfg.jito_mev)
-      if (cfg.jito_block_engine_url !== undefined) setProvJitoBlockEngineUrl(cfg.jito_block_engine_url)
-      if (cfg.yellowstone_grpc !== undefined) setProvYellowstoneGrpc(cfg.yellowstone_grpc)
-      if (cfg.rpc_port) setProvRpcPort(String(cfg.rpc_port))
-      if (cfg.dynamic_port_range) setProvDynamicPortRange(cfg.dynamic_port_range)
-      if (cfg.node_type) setProvNodeType(cfg.node_type)
-      if (cfg.gossip_port) setProvGossipPort(String(cfg.gossip_port))
-      if (cfg.validator_flags) setProvValidatorFlags(flagsToText(cfg.validator_flags))
-      if (cfg.geyser_plugin_configs) setProvGeyserPluginConfigs(cfg.geyser_plugin_configs.join('\n'))
-      if (cfg.environment_vars) setProvEnvironmentVars(envVarsToText(cfg.environment_vars))
-      if (cfg.extra_args) setProvExtraArgs(cfg.extra_args.join('\n'))
-      if (cfg.restart_sec) setProvRestartSec(String(cfg.restart_sec))
-      if (cfg.log_rate_limit_disable !== undefined) setProvLogRateLimitDisable(cfg.log_rate_limit_disable)
-      if (cfg.start_limit_disable !== undefined) setProvStartLimitDisable(cfg.start_limit_disable)
-    } catch {
-      // Invalid JSON — use defaults
+    if (!showProvision || !node) return
+
+    if (node.provision_config_json) {
+      try {
+        const cfg = JSON.parse(node.provision_config_json) as Partial<ProvisionRequest>
+        if (cfg.client) setProvClient(cfg.client)
+        if (cfg.version) setProvVersion(cfg.version)
+        if (cfg.cluster) setProvCluster(cfg.cluster)
+        if (cfg.ledger_path) setProvLedgerPath(cfg.ledger_path)
+        if (cfg.snapshot_path) setProvSnapshotPath(cfg.snapshot_path)
+        if (cfg.accounts_path) setProvAccountsPath(cfg.accounts_path)
+        if (cfg.identity_keypair_path) setProvIdentityPath(cfg.identity_keypair_path)
+        if (cfg.vote_account_keypair_path) setProvVotePath(cfg.vote_account_keypair_path)
+        if (cfg.entrypoints) setProvEntrypoints(cfg.entrypoints.join('\n'))
+        if (cfg.known_validators) setProvKnownValidators(cfg.known_validators.join('\n'))
+        if (cfg.download_url !== undefined) setProvDownloadUrl(cfg.download_url)
+        if (cfg.sha256 !== undefined) setProvSha256(cfg.sha256)
+        if (cfg.jito_mev !== undefined) setProvJitoMev(cfg.jito_mev)
+        if (cfg.jito_block_engine_url !== undefined) setProvJitoBlockEngineUrl(cfg.jito_block_engine_url)
+        if (cfg.yellowstone_grpc !== undefined) setProvYellowstoneGrpc(cfg.yellowstone_grpc)
+        if (cfg.rpc_port) setProvRpcPort(String(cfg.rpc_port))
+        if (cfg.dynamic_port_range) setProvDynamicPortRange(cfg.dynamic_port_range)
+        if (cfg.node_type) setProvNodeType(cfg.node_type)
+        if (cfg.gossip_port) setProvGossipPort(String(cfg.gossip_port))
+        if (cfg.validator_flags) setProvValidatorFlags(flagsToText(cfg.validator_flags))
+        if (cfg.geyser_plugin_configs) setProvGeyserPluginConfigs(cfg.geyser_plugin_configs.join('\n'))
+        if (cfg.environment_vars) setProvEnvironmentVars(envVarsToText(cfg.environment_vars))
+        if (cfg.extra_args) setProvExtraArgs(cfg.extra_args.join('\n'))
+        if (cfg.restart_sec) setProvRestartSec(String(cfg.restart_sec))
+        if (cfg.log_rate_limit_disable !== undefined) setProvLogRateLimitDisable(cfg.log_rate_limit_disable)
+        if (cfg.start_limit_disable !== undefined) setProvStartLimitDisable(cfg.start_limit_disable)
+        return
+      } catch {
+        // Invalid JSON — fall through to live data
+      }
     }
-  }, [showProvision, node?.provision_config_json])
+
+    // No saved provision config — seed from live node data
+    const s = node.live_status
+    const cluster = node.cluster ?? s?.cluster
+    if (cluster) {
+      setProvCluster(cluster)
+      setProvEntrypoints(CLUSTER_ENTRYPOINTS[cluster] || '')
+      setProvKnownValidators(CLUSTER_KNOWN_VALIDATORS[cluster] || '')
+      setProvValidatorFlags(buildPreset(cluster, provNodeType))
+    }
+    if (node.client ?? s?.client) setProvClient((node.client ?? s?.client)!)
+    if (s?.version) setProvVersion(s.version)
+  }, [showProvision, node?.provision_config_json, node?.node_id])
 
   const handleUpgradeAgent = async () => {
     if (!id || !versionInfo?.agent_update) return
@@ -412,7 +437,7 @@ function NodeDetail() {
         <span className={`link-status ${node.live_status ? 'connected' : 'disconnected'}`}>
           {node.live_status ? 'Connected' : 'Disconnected'}
         </span>
-        {node.hostname && <span className="meta">{node.hostname}</span>}
+        {node.hostname && node.hostname !== node.node_id && <span className="meta">{node.hostname}</span>}
         <span className="meta">Last seen: {formatLastSeen(node.last_seen_at)}</span>
       </div>
 
@@ -471,6 +496,10 @@ function NodeDetail() {
         <div className="metric-card">
           <div className="label">Restarts</div>
           <div className="value">{s?.restart_count ?? '-'}</div>
+        </div>
+        <div className="metric-card">
+          <div className="label">Running Since</div>
+          <div className="value" style={{ fontSize: '1rem' }}>{s?.state_duration_secs != null ? formatDuration(s.state_duration_secs) : '-'}</div>
         </div>
       </div>
 

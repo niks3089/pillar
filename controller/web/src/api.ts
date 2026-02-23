@@ -16,6 +16,7 @@ export interface NodeStatus {
   disk_used_bytes: number
   disk_total_bytes: number
   updated_at_unix_secs: number
+  state_duration_secs: number
   hostname: string
 }
 
