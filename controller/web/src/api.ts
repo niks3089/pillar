@@ -30,6 +30,7 @@ export interface Node {
   agent_version?: string
   last_seen_at?: number
   registered_at?: number
+  provision_config_json?: string
   live_status?: NodeStatus
 }
 

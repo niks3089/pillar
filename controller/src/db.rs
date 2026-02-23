@@ -122,6 +122,8 @@ pub struct NodeRow {
     pub ip_address: Option<String>,
     pub last_seen_at: Option<i64>,
     pub registered_at: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub provision_config_json: Option<String>,
     /// Populated at runtime from the in-memory NodeRegistry, not from SQLite.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub live_status: Option<NodeStatus>,
@@ -609,7 +611,7 @@ use rusqlite::OptionalExtension;
 
 const NODE_SELECT_COLUMNS: &str =
     "node_id, lifecycle_state, role, client, cluster, hostname,
-     agent_version, ip_address, last_seen_at, registered_at";
+     agent_version, ip_address, last_seen_at, registered_at, provision_config_json";
 
 fn row_to_node(row: &rusqlite::Row) -> rusqlite::Result<NodeRow> {
     Ok(NodeRow {
@@ -623,6 +625,7 @@ fn row_to_node(row: &rusqlite::Row) -> rusqlite::Result<NodeRow> {
         ip_address: row.get(7)?,
         last_seen_at: row.get(8)?,
         registered_at: row.get(9)?,
+        provision_config_json: row.get(10)?,
         live_status: None,
     })
 }

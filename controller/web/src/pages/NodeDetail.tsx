@@ -100,12 +100,20 @@ function parseEnvVars(text: string): Record<string, string> {
   return vars
 }
 
+function flagsToText(flags: Record<string, string>): string {
+  return Object.entries(flags).map(([k, v]) => v ? `${k}=${v}` : k).join('\n')
+}
+
+function envVarsToText(vars: Record<string, string>): string {
+  return Object.entries(vars).map(([k, v]) => `${k}=${v}`).join('\n')
+}
+
 function NodeDetail() {
   const { id } = useParams<{ id: string }>()
   const [node, setNode] = useState<Node | null>(null)
   const [logs, setLogs] = useState<LogEntry[]>([])
   const [error, setError] = useState('')
-  const [logFilter, setLogFilter] = useState<string>('all')
+  const [logFilter, setLogFilter] = useState<string>('validator')
   const [sseConnected, setSseConnected] = useState(false)
   const logContainerRef = useRef<HTMLDivElement>(null)
   const eventSourceRef = useRef<EventSource | null>(null)
@@ -158,7 +166,7 @@ function NodeDetail() {
   useEffect(() => {
     if (!id) return
     fetchNodeLogs(id, { limit: 200 })
-      .then(setLogs)
+      .then(entries => setLogs(entries.reverse()))
       .catch(() => {})
   }, [id])
 
@@ -202,6 +210,42 @@ function NodeDetail() {
   useEffect(() => {
     fetchVersionInfo().then(setVersionInfo).catch(() => {})
   }, [])
+
+  // Populate provision form from saved config when panel is opened
+  useEffect(() => {
+    if (!showProvision || !node?.provision_config_json) return
+    try {
+      const cfg = JSON.parse(node.provision_config_json) as Partial<ProvisionRequest>
+      if (cfg.client) setProvClient(cfg.client)
+      if (cfg.version) setProvVersion(cfg.version)
+      if (cfg.cluster) setProvCluster(cfg.cluster)
+      if (cfg.ledger_path) setProvLedgerPath(cfg.ledger_path)
+      if (cfg.snapshot_path) setProvSnapshotPath(cfg.snapshot_path)
+      if (cfg.accounts_path) setProvAccountsPath(cfg.accounts_path)
+      if (cfg.identity_keypair_path) setProvIdentityPath(cfg.identity_keypair_path)
+      if (cfg.vote_account_keypair_path) setProvVotePath(cfg.vote_account_keypair_path)
+      if (cfg.entrypoints) setProvEntrypoints(cfg.entrypoints.join('\n'))
+      if (cfg.known_validators) setProvKnownValidators(cfg.known_validators.join('\n'))
+      if (cfg.download_url !== undefined) setProvDownloadUrl(cfg.download_url)
+      if (cfg.sha256 !== undefined) setProvSha256(cfg.sha256)
+      if (cfg.jito_mev !== undefined) setProvJitoMev(cfg.jito_mev)
+      if (cfg.jito_block_engine_url !== undefined) setProvJitoBlockEngineUrl(cfg.jito_block_engine_url)
+      if (cfg.yellowstone_grpc !== undefined) setProvYellowstoneGrpc(cfg.yellowstone_grpc)
+      if (cfg.rpc_port) setProvRpcPort(String(cfg.rpc_port))
+      if (cfg.dynamic_port_range) setProvDynamicPortRange(cfg.dynamic_port_range)
+      if (cfg.node_type) setProvNodeType(cfg.node_type)
+      if (cfg.gossip_port) setProvGossipPort(String(cfg.gossip_port))
+      if (cfg.validator_flags) setProvValidatorFlags(flagsToText(cfg.validator_flags))
+      if (cfg.geyser_plugin_configs) setProvGeyserPluginConfigs(cfg.geyser_plugin_configs.join('\n'))
+      if (cfg.environment_vars) setProvEnvironmentVars(envVarsToText(cfg.environment_vars))
+      if (cfg.extra_args) setProvExtraArgs(cfg.extra_args.join('\n'))
+      if (cfg.restart_sec) setProvRestartSec(String(cfg.restart_sec))
+      if (cfg.log_rate_limit_disable !== undefined) setProvLogRateLimitDisable(cfg.log_rate_limit_disable)
+      if (cfg.start_limit_disable !== undefined) setProvStartLimitDisable(cfg.start_limit_disable)
+    } catch {
+      // Invalid JSON — use defaults
+    }
+  }, [showProvision, node?.provision_config_json])
 
   const handleUpgradeAgent = async () => {
     if (!id || !versionInfo?.agent_update) return
@@ -686,7 +730,7 @@ function NodeDetail() {
           </span>
         </div>
         <div className="log-tabs">
-          {['all', 'controller', 'validator', 'agent'].map(tab => (
+          {['controller', 'validator', 'agent'].map(tab => (
             <button
               key={tab}
               className={`log-tab ${logFilter === tab ? 'active' : ''}`}
@@ -697,13 +741,13 @@ function NodeDetail() {
           ))}
         </div>
         <div className="log-container" ref={logContainerRef}>
-          {logs.filter(e => logFilter === 'all' || e.service === logFilter).length === 0 && (
+          {logs.filter(e => e.service === logFilter).length === 0 && (
             <div style={{ color: 'var(--text-dim)', padding: '1rem', textAlign: 'center' }}>
               No logs available
             </div>
           )}
           {logs
-            .filter(e => logFilter === 'all' || e.service === logFilter)
+            .filter(e => e.service === logFilter)
             .map((entry) => (
             <div key={entry.id} className={`log-entry ${entry.level}`}>
               <span className="timestamp">{formatTimestamp(entry.timestamp_ms)}</span>
