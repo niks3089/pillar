@@ -18,9 +18,10 @@ jobs:
     name: Release Please
     runs-on: ubuntu-latest
     outputs:
-      release_created: ${{ steps.release.outputs['.--release_created'] }}
-      tag_name: ${{ steps.release.outputs['.--tag_name'] }}
-      version: ${{ steps.release.outputs['.--version'] }}
+      agent_release_created: ${{ steps.release.outputs['agent--release_created'] }}
+      agent_version: ${{ steps.release.outputs['agent--version'] }}
+      controller_release_created: ${{ steps.release.outputs['controller--release_created'] }}
+      controller_version: ${{ steps.release.outputs['controller--version'] }}
     steps:
       - uses: googleapis/release-please-action@v4
         id: release
@@ -66,12 +67,14 @@ jobs:
       - name: Build release binaries
         run: cargo build --release -p pillar-agent -p pillar-controller
 
-      - name: Read version from Cargo.toml
-        id: version
+      - name: Read versions
+        id: versions
         run: |
-          VERSION=$(grep -m1 'version' Cargo.toml | sed 's/.*"\(.*\)".*/\1/')
-          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
-          echo "Version: ${VERSION}"
+          AGENT_VERSION=$(grep -m1 '^version' agent/Cargo.toml | sed 's/.*"\(.*\)".*/\1/')
+          CTRL_VERSION=$(grep -m1 '^version' controller/Cargo.toml | sed 's/.*"\(.*\)".*/\1/')
+          echo "agent=${AGENT_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "controller=${CTRL_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "Agent: ${AGENT_VERSION}, Controller: ${CTRL_VERSION}"
 
       - name: Prepare artifacts
         run: |
@@ -84,16 +87,17 @@ jobs:
 
       - name: Generate manifest.json
         env:
-          VERSION: ${{ steps.version.outputs.version }}
+          AGENT_VERSION: ${{ steps.versions.outputs.agent }}
+          CTRL_VERSION: ${{ steps.versions.outputs.controller }}
           S3_URL: https://${{ env.S3_BUCKET }}.s3.${{ env.S3_REGION }}.amazonaws.com/${{ env.S3_PREFIX }}
         run: |
           CTRL_SHA=$(sha256sum artifacts/pillar-controller-linux-amd64 | awk '{print $1}')
           AGENT_SHA=$(sha256sum artifacts/pillar-agent-linux-amd64 | awk '{print $1}')
           jq -n \
-            --arg cv "$VERSION" \
+            --arg cv "$CTRL_VERSION" \
             --arg cu "$S3_URL/latest/pillar-controller-linux-amd64" \
             --arg cs "$CTRL_SHA" \
-            --arg av "$VERSION" \
+            --arg av "$AGENT_VERSION" \
             --arg au "$S3_URL/latest/pillar-agent-linux-amd64" \
             --arg ash "$AGENT_SHA" \
             '{controller:{version:$cv,download_url:$cu,sha256:$cs,release_notes:""},agent:{version:$av,download_url:$au,sha256:$ash,release_notes:""}}' \
@@ -129,12 +133,19 @@ jobs:
         run: |
           aws s3 cp artifacts/ "s3://${S3_BUCKET}/${S3_PREFIX}/latest/" --recursive
 
-      - name: Upload to S3 (versioned)
-        if: needs.release-please.outputs.release_created == 'true'
+      - name: Upload to S3 (versioned - agent)
+        if: needs.release-please.outputs.agent_release_created == 'true'
         run: |
-          VERSION="${{ needs.release-please.outputs.version }}"
-          aws s3 cp artifacts/ "s3://${S3_BUCKET}/${S3_PREFIX}/v${VERSION}/" --recursive
-          echo "Uploaded versioned release v${VERSION}"
+          VERSION="${{ needs.release-please.outputs.agent_version }}"
+          aws s3 cp artifacts/pillar-agent-linux-amd64 "s3://${S3_BUCKET}/${S3_PREFIX}/agent/v${VERSION}/pillar-agent-linux-amd64"
+          echo "Uploaded agent v${VERSION}"
+
+      - name: Upload to S3 (versioned - controller)
+        if: needs.release-please.outputs.controller_release_created == 'true'
+        run: |
+          VERSION="${{ needs.release-please.outputs.controller_version }}"
+          aws s3 cp artifacts/pillar-controller-linux-amd64 "s3://${S3_BUCKET}/${S3_PREFIX}/controller/v${VERSION}/pillar-controller-linux-amd64"
+          echo "Uploaded controller v${VERSION}"
 
       - name: Verify uploads
         run: |

@@ -3,7 +3,6 @@ resolver = "2"
 members = ["agent", "shared", "controller"]
 
 [workspace.package]
-version = "0.3.1"
 edition = "2021"
 authors = ["Nikhil Acharya"]
 
