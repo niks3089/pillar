@@ -339,6 +339,9 @@ impl Reconciler {
                     state_duration_secs = self.state_entered_at.elapsed().as_secs(),
                     "validator service is running — skipping recovery (bootstrap in progress)"
                 );
+                if self.current_state == NodeState::Off {
+                    self.on_state_transition(self.current_state, NodeState::StartingUp);
+                }
                 return;
             }
             Ok(false) => {
