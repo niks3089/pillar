@@ -380,12 +380,29 @@ impl Reconciler {
         let result = recovery.recover_if_stale(reference_slot).await;
 
         match result {
-            Ok(_) => {
+            Ok(true) => {
+                // Full recovery performed (wipe + download + restart)
                 self.record_restart();
                 self.emit_event(EventKind::ServiceRestarted {
                     reason: "recovery".to_string(),
                 });
                 self.on_state_transition(self.current_state, NodeState::StartingUp);
+            }
+            Ok(false) => {
+                // Data is fresh — just start the service without wiping
+                tracing::info!("node data is fresh, performing simple restart");
+                match self.service_manager.start().await {
+                    Ok(()) => {
+                        self.record_restart();
+                        self.emit_event(EventKind::ServiceRestarted {
+                            reason: "restart".to_string(),
+                        });
+                        self.on_state_transition(self.current_state, NodeState::StartingUp);
+                    }
+                    Err(e) => {
+                        tracing::error!(error = %e, "failed to start validator service");
+                    }
+                }
             }
             Err(e) => {
                 tracing::error!(error = %e, "recovery failed");
