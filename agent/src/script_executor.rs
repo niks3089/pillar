@@ -106,7 +106,7 @@ impl ScriptExecutor {
             let mut lines = tokio::io::BufReader::new(stderr_pipe).lines();
             let mut output = String::new();
             while let Ok(Some(line)) = lines.next_line().await {
-                tracing::warn!(script_id = %sid, "[stderr] {}", line);
+                tracing::info!(script_id = %sid, "[stderr] {}", line);
                 output.push_str(&line);
                 output.push('\n');
             }

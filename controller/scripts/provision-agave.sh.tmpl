@@ -47,8 +47,32 @@ if [ -z "${CURRENT:-}" ]; then
       sudo install -m 755 "$STAGING/download" {{binary_path}}
     fi
   else
-    echo "ERROR: no download_url provided and {{binary_path}} not found or wrong version" >&2
-    exit 1
+    # No download URL — build from source for v3.x
+    echo "No download_url provided, building agave-validator v{{version}} from source..."
+    BUILD_DIR="/tmp/agave-build"
+    rm -rf "$BUILD_DIR"
+
+    # Install build deps if missing
+    if ! dpkg -s libudev-dev pkg-config libclang-dev >/dev/null 2>&1; then
+      echo "Installing build dependencies..."
+      sudo apt-get update -qq && sudo apt-get install -y -qq libudev-dev pkg-config libclang-dev protobuf-compiler
+    fi
+
+    # Ensure Rust toolchain
+    if ! command -v cargo >/dev/null 2>&1; then
+      echo "Installing Rust toolchain..."
+      curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+      export PATH="$HOME/.cargo/bin:$PATH"
+    fi
+
+    git clone --depth 1 --branch v{{version}} https://github.com/anza-xyz/agave.git "$BUILD_DIR"
+    cd "$BUILD_DIR"
+    echo "Building agave-validator (this may take 10-30 minutes)..."
+    cargo build --release --bin agave-validator
+    sudo install -m 755 target/release/agave-validator {{binary_path}}
+    cd /
+    rm -rf "$BUILD_DIR"
+    echo "Built and installed agave-validator v{{version}}"
   fi
 fi
 echo "Binary ready at {{binary_path}}"
@@ -88,7 +112,8 @@ echo "Service {{service_name}} started"
 CONFIG="${PILLAR_AGENT_CONFIG:-/etc/pillar/agent.yaml}"
 {{agent_config_sed_commands}}
 
-# Restart agent for config reload
-sudo systemctl restart pillar-agent
 rm -rf "$STAGING"
 echo "=== Provision complete ==="
+
+# Restart agent for config reload (deferred so script result can be reported)
+(sleep 3 && sudo systemctl restart pillar-agent) &
