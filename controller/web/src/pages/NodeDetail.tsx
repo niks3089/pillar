@@ -145,6 +145,7 @@ function NodeDetail() {
   const [provJitoRelayerUrl, setProvJitoRelayerUrl] = useState('')
   const [provJitoShredReceiverAddr, setProvJitoShredReceiverAddr] = useState('')
   const [provYellowstoneGrpc, setProvYellowstoneGrpc] = useState(false)
+  const [provNoPortCheck, setProvNoPortCheck] = useState(false)
   const [provRpcPort, setProvRpcPort] = useState('8899')
   const [provDynamicPortRange, setProvDynamicPortRange] = useState('8000-8030')
   const [provSubmitting, setProvSubmitting] = useState(false)
@@ -246,6 +247,7 @@ function NodeDetail() {
         if (cfg.jito_relayer_url !== undefined) setProvJitoRelayerUrl(cfg.jito_relayer_url)
         if (cfg.jito_shred_receiver_addr !== undefined) setProvJitoShredReceiverAddr(cfg.jito_shred_receiver_addr)
         if (cfg.yellowstone_grpc !== undefined) setProvYellowstoneGrpc(cfg.yellowstone_grpc)
+        if (cfg.no_port_check !== undefined) setProvNoPortCheck(cfg.no_port_check)
         if (cfg.rpc_port) setProvRpcPort(String(cfg.rpc_port))
         if (cfg.dynamic_port_range) setProvDynamicPortRange(cfg.dynamic_port_range)
         if (cfg.node_type) setProvNodeType(cfg.node_type)
@@ -384,6 +386,7 @@ function NodeDetail() {
         jito_relayer_url: provJitoRelayerUrl,
         jito_shred_receiver_addr: provJitoShredReceiverAddr,
         yellowstone_grpc: provYellowstoneGrpc,
+        no_port_check: provNoPortCheck,
         rpc_port: parseInt(provRpcPort) || 8899,
         dynamic_port_range: provDynamicPortRange,
         node_type: provNodeType,
@@ -688,6 +691,12 @@ function NodeDetail() {
                 <label className="checkbox-label">
                   <input type="checkbox" checked={provYellowstoneGrpc} onChange={e => setProvYellowstoneGrpc(e.target.checked)} />
                   Yellowstone gRPC
+                </label>
+              </div>
+              <div className="form-group">
+                <label className="checkbox-label">
+                  <input type="checkbox" checked={provNoPortCheck} onChange={e => setProvNoPortCheck(e.target.checked)} />
+                  Skip port check (NAT/firewall)
                 </label>
               </div>
             </div>

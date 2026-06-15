@@ -145,6 +145,7 @@ export interface ProvisionRequest {
   restart_sec?: number
   log_rate_limit_disable?: boolean
   start_limit_disable?: boolean
+  no_port_check?: boolean
 }
 
 export async function provisionNode(id: string, config: ProvisionRequest): Promise<{ ok: boolean; message: string }> {

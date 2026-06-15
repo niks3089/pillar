@@ -643,6 +643,11 @@ struct ProvisionRequest {
     log_rate_limit_disable: bool,
     #[serde(default)]
     start_limit_disable: bool,
+    /// Skip the validator's inbound UDP port reachability check. Needed on hosts behind
+    /// NAT or an upstream firewall that blocks inbound UDP (the validator otherwise hangs
+    /// retrying ip_echo before it will bootstrap).
+    #[serde(default)]
+    no_port_check: bool,
 }
 
 /// Build template variables from a ProvisionRequest.
@@ -693,6 +698,7 @@ fn build_provision_vars(req: &ProvisionRequest) -> HashMap<String, String> {
             &req.geyser_plugin_configs,
             &req.validator_flags,
             &req.extra_args,
+            req.no_port_check,
         )
     };
 
@@ -763,8 +769,8 @@ echo "Wrote /etc/pillar/yellowstone-grpc.json""#
     let agent_config_sed_commands = format!(
         r#"if [ -f "$CONFIG" ]; then
   sudo sed -i 's/^client:.*/client: {client}/' "$CONFIG"
-  sudo sed -i 's/^\\(  \\)cluster:.*/\\1cluster: {cluster}/' "$CONFIG"
-  sudo sed -i 's|^\\(  \\)service_name:.*|\\1service_name: {service_name}|' "$CONFIG"
+  sudo sed -i 's/^  cluster:.*/  cluster: {cluster}/' "$CONFIG"
+  sudo sed -i 's|^  service_name:.*|  service_name: {service_name}|' "$CONFIG"
   sudo sed -i '/reference_rpc_urls:/,/^[^ ]/ {{ /- http/d }}' "$CONFIG"
   sudo sed -i '/reference_rpc_urls:/a\\    - {reference_rpc}' "$CONFIG"
   echo "Updated agent config: client={client}, cluster={cluster}, service={service_name}"

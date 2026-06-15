@@ -146,6 +146,24 @@ else
     ok "/proc available"
 fi
 
+# bzip2 is required to extract validator release tarballs (solana-release-*.tar.bz2).
+# Without it `tar -xf` fails silently during provisioning.
+if ! command -v bzip2 &>/dev/null; then
+    if command -v apt-get &>/dev/null; then
+        apt-get update -qq 2>/dev/null || true
+        apt-get install -y -qq bzip2 >/dev/null 2>&1 || true
+    elif command -v dnf &>/dev/null; then
+        dnf install -y bzip2 >/dev/null 2>&1 || true
+    elif command -v yum &>/dev/null; then
+        yum install -y bzip2 >/dev/null 2>&1 || true
+    fi
+fi
+if command -v bzip2 &>/dev/null; then
+    ok "bzip2 available"
+else
+    warn "bzip2 missing — .bz2 release tarballs cannot be extracted"
+fi
+
 # ------------------------------------------------------------------------------
 # Phase 2: System assessment (cluster-aware thresholds)
 # ------------------------------------------------------------------------------

@@ -136,6 +136,7 @@ pub fn build_exec_start(
     geyser_plugin_configs: &[String],
     validator_flags: &HashMap<String, String>,
     extra_args: &[String],
+    no_port_check: bool,
 ) -> String {
     let mut args = vec![
         binary_path.to_string(),
@@ -223,6 +224,10 @@ pub fn build_exec_start(
         args.push(arg.clone());
     }
 
+    if no_port_check && !validator_flags.contains_key("no-port-check") {
+        args.push("--no-port-check".to_string());
+    }
+
     args.join(" \\\n  ")
 }
 
@@ -287,6 +292,7 @@ mod tests {
             &[],
             &HashMap::new(),
             &[],
+            false,
         );
         assert!(exec.contains("--identity /home/sol/validator-keypair.json"));
         assert!(exec.contains("--entrypoint entrypoint.mainnet-beta.solana.com:8001"));
@@ -318,6 +324,7 @@ mod tests {
             &[],
             flags,
             &[],
+            false,
         )
     }
 
@@ -392,5 +399,33 @@ mod tests {
         // The default commission/tip-payment must not also be emitted.
         assert!(!exec.contains("--commission-bps 800"));
         assert!(!exec.contains("T1pyyaTNZsKv2WcRAB8oVnk93mLJw2XzjtVYqCsaHqt"));
+    }
+
+    #[test]
+    fn no_port_check_appended_only_when_requested() {
+        let base = |npc: bool| {
+            build_exec_start(
+                "/usr/local/bin/agave-validator",
+                "/id.json",
+                "/vote.json",
+                "/l",
+                "/s",
+                "/a",
+                8899,
+                8001,
+                "8000-8030",
+                &[],
+                &[],
+                "testnet",
+                &JitoConfig::default(),
+                false,
+                &[],
+                &HashMap::new(),
+                &[],
+                npc,
+            )
+        };
+        assert!(base(true).contains("--no-port-check"));
+        assert!(!base(false).contains("--no-port-check"));
     }
 }
