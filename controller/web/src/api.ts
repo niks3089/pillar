@@ -130,6 +130,8 @@ export interface ProvisionRequest {
   sha256: string
   jito_mev: boolean
   jito_block_engine_url: string
+  jito_relayer_url?: string
+  jito_shred_receiver_addr?: string
   yellowstone_grpc: boolean
   rpc_port: number
   dynamic_port_range: string

@@ -151,17 +151,29 @@ template, (b) client-specific health/version probing, and (c) end-to-end validat
 | Client | `ClientKind` | Provision template | Health probe | E2E tested | Status |
 |---|---|---|---|---|---|
 | **Agave** | ✅ | ✅ `provision-agave.sh.tmpl` | ✅ RPC + process | ✅ testnet v3.1.8 | **Production path** |
-| **Jito** | ✅ | ⚠️ template exists, untested | ⚠️ reuses RPC probe | ❌ | TODO |
+| **Jito** | ✅ | ✅ cluster-aware MEV config | ✅ reuses RPC probe (same surface) | ⏳ on testnet | **Feature-complete, pending E2E** |
 | **Firedancer** | ✅ | ⚠️ template exists, untested | ❌ needs `fdctl`-aware probe | ❌ | TODO |
 | **Frankendancer** | ✅ | ⚠️ template exists, untested | ❌ needs `fdctl`-aware probe | ❌ | TODO |
 
-### Per-client TODOs
+### Per-client status
 
-**Jito** (closest to done — Agave-compatible):
-- [ ] Validate `provision-jito.sh.tmpl` end-to-end (relayer/block-engine/shred flags,
-      tip-distribution config).
-- [ ] Surface Jito-specific config (relayer URL, commission) in the UI provision form.
-- [ ] Confirm the RPC health probe is sufficient (Jito exposes the same RPC surface).
+**Jito** — feature-complete at the controller/UI layer:
+- ✅ Cluster-aware MEV defaults (`templates::jito_defaults_for_cluster`): block-engine URL,
+      tip-payment and tip-distribution programs are now selected per cluster. **Fixed a bug
+      where the mainnet tip-distribution program was hardcoded (and incorrect:
+      `…CfnBtxhxJBjKHHaBnQ4SYnHNDn`) and applied on every cluster** — verified against
+      `jito-foundation/jito-programs` `declare_id!` (mainnet
+      `4R3gSG8BpU4t19KYj8CfnbtRpnT8gtk4dvTHxVRwc2r7`, testnet
+      `DzvGET57TAgEDxvm3ERUM4GNcsAJdqjDLCne9sdfY4wf`).
+- ✅ Relayer URL + shred-receiver address plumbed through request → `build_exec_start` →
+      UI form (both optional — relayer-less is supported).
+- ✅ Block-engine URL defaults to the cluster value when left blank; operator overrides
+      win. Tip programs / commission overridable via `validator_flags`.
+- ✅ `cluster_defaults` API now returns Jito values so the UI can pre-fill them.
+- ✅ Unit tests cover mainnet/testnet program selection, relayer/shred inclusion, and
+      override precedence (`controller/src/templates.rs`).
+- [ ] Remaining: end-to-end validation on a live Jito-Solana testnet node (blocked on the
+      same validator-host access as Agave above).
 
 **Firedancer / Frankendancer** (largest gap — different process model & tooling):
 - [ ] Health/version probing via `fdctl` instead of (or in addition to) JSON-RPC; the

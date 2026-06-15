@@ -142,6 +142,8 @@ function NodeDetail() {
   const [provSha256, setProvSha256] = useState('')
   const [provJitoMev, setProvJitoMev] = useState(false)
   const [provJitoBlockEngineUrl, setProvJitoBlockEngineUrl] = useState('')
+  const [provJitoRelayerUrl, setProvJitoRelayerUrl] = useState('')
+  const [provJitoShredReceiverAddr, setProvJitoShredReceiverAddr] = useState('')
   const [provYellowstoneGrpc, setProvYellowstoneGrpc] = useState(false)
   const [provRpcPort, setProvRpcPort] = useState('8899')
   const [provDynamicPortRange, setProvDynamicPortRange] = useState('8000-8030')
@@ -241,6 +243,8 @@ function NodeDetail() {
         if (cfg.sha256 !== undefined) setProvSha256(cfg.sha256)
         if (cfg.jito_mev !== undefined) setProvJitoMev(cfg.jito_mev)
         if (cfg.jito_block_engine_url !== undefined) setProvJitoBlockEngineUrl(cfg.jito_block_engine_url)
+        if (cfg.jito_relayer_url !== undefined) setProvJitoRelayerUrl(cfg.jito_relayer_url)
+        if (cfg.jito_shred_receiver_addr !== undefined) setProvJitoShredReceiverAddr(cfg.jito_shred_receiver_addr)
         if (cfg.yellowstone_grpc !== undefined) setProvYellowstoneGrpc(cfg.yellowstone_grpc)
         if (cfg.rpc_port) setProvRpcPort(String(cfg.rpc_port))
         if (cfg.dynamic_port_range) setProvDynamicPortRange(cfg.dynamic_port_range)
@@ -377,6 +381,8 @@ function NodeDetail() {
         sha256: provSha256,
         jito_mev: provJitoMev,
         jito_block_engine_url: provJitoBlockEngineUrl,
+        jito_relayer_url: provJitoRelayerUrl,
+        jito_shred_receiver_addr: provJitoShredReceiverAddr,
         yellowstone_grpc: provYellowstoneGrpc,
         rpc_port: parseInt(provRpcPort) || 8899,
         dynamic_port_range: provDynamicPortRange,
@@ -671,8 +677,10 @@ function NodeDetail() {
                   Jito MEV
                 </label>
                 {provJitoMev && (
-                  <div style={{ marginTop: '0.375rem' }}>
-                    <input type="text" value={provJitoBlockEngineUrl} onChange={e => setProvJitoBlockEngineUrl(e.target.value)} placeholder="Block Engine URL" style={{ background: 'var(--bg-input)', border: '1px solid var(--border)', borderRadius: '6px', padding: '0.5rem 0.75rem', color: 'var(--text)', fontSize: '0.8125rem', fontFamily: "'SF Mono', 'Fira Code', monospace", outline: 'none', width: '100%' }} />
+                  <div style={{ marginTop: '0.375rem', display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
+                    <input type="text" value={provJitoBlockEngineUrl} onChange={e => setProvJitoBlockEngineUrl(e.target.value)} placeholder="Block Engine URL (blank = cluster default)" style={{ background: 'var(--bg-input)', border: '1px solid var(--border)', borderRadius: '6px', padding: '0.5rem 0.75rem', color: 'var(--text)', fontSize: '0.8125rem', fontFamily: "'SF Mono', 'Fira Code', monospace", outline: 'none', width: '100%' }} />
+                    <input type="text" value={provJitoRelayerUrl} onChange={e => setProvJitoRelayerUrl(e.target.value)} placeholder="Relayer URL (optional)" style={{ background: 'var(--bg-input)', border: '1px solid var(--border)', borderRadius: '6px', padding: '0.5rem 0.75rem', color: 'var(--text)', fontSize: '0.8125rem', fontFamily: "'SF Mono', 'Fira Code', monospace", outline: 'none', width: '100%' }} />
+                    <input type="text" value={provJitoShredReceiverAddr} onChange={e => setProvJitoShredReceiverAddr(e.target.value)} placeholder="Shred Receiver host:port (optional)" style={{ background: 'var(--bg-input)', border: '1px solid var(--border)', borderRadius: '6px', padding: '0.5rem 0.75rem', color: 'var(--text)', fontSize: '0.8125rem', fontFamily: "'SF Mono', 'Fira Code', monospace", outline: 'none', width: '100%' }} />
                   </div>
                 )}
               </div>

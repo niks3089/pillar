@@ -615,6 +615,10 @@ struct ProvisionRequest {
     #[serde(default)]
     jito_block_engine_url: String,
     #[serde(default)]
+    jito_relayer_url: String,
+    #[serde(default)]
+    jito_shred_receiver_addr: String,
+    #[serde(default)]
     yellowstone_grpc: bool,
     #[serde(default)]
     rpc_port: u32,
@@ -678,8 +682,13 @@ fn build_provision_vars(req: &ProvisionRequest) -> HashMap<String, String> {
             &dynamic_port_range,
             &req.entrypoints,
             &req.known_validators,
-            req.jito_mev,
-            &req.jito_block_engine_url,
+            &req.cluster,
+            &templates::JitoConfig {
+                enabled: req.jito_mev,
+                block_engine_url: req.jito_block_engine_url.clone(),
+                relayer_url: req.jito_relayer_url.clone(),
+                shred_receiver_addr: req.jito_shred_receiver_addr.clone(),
+            },
             req.yellowstone_grpc,
             &req.geyser_plugin_configs,
             &req.validator_flags,
@@ -989,6 +998,11 @@ struct ClusterDefaultsResponse {
     known_validators: Vec<String>,
     reference_rpc: String,
     expected_genesis_hash: String,
+    /// Jito MEV defaults for this cluster (block engine URL + tip programs), so the UI
+    /// can pre-fill the Jito fields with cluster-correct values.
+    jito_block_engine_url: String,
+    jito_tip_payment_program: String,
+    jito_tip_distribution_program: String,
 }
 
 async fn cluster_defaults(Path(cluster): Path<String>) -> impl IntoResponse {
@@ -1042,11 +1056,16 @@ async fn cluster_defaults(Path(cluster): Path<String>) -> impl IntoResponse {
             ),
         };
 
+    let jito = templates::jito_defaults_for_cluster(&cluster);
+
     Json(ClusterDefaultsResponse {
         entrypoints,
         known_validators,
         reference_rpc,
         expected_genesis_hash,
+        jito_block_engine_url: jito.block_engine_url.to_string(),
+        jito_tip_payment_program: jito.tip_payment_program.to_string(),
+        jito_tip_distribution_program: jito.tip_distribution_program.to_string(),
     })
 }
 
