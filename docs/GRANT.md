@@ -50,12 +50,15 @@ See [`ARCHITECTURE.md`](./ARCHITECTURE.md) for the full design and
 
 ## Architecture (one data type, end to end)
 
+A single controller manages **many** validators — every node runs its own agent, and
+all agents connect to the one shared controller.
+
 ```
-Agent (per node)                          Controller (one per fleet)
-   │  reconcile loop (health, state)         │
-   │  enrich w/ system metrics               │
-   │── RegisterNode ────────────────────────►│  store in SQLite
-   │── ReportStatus (every 10s) ────────────►│  NodeRegistry + SQLite
+Agent (one per validator node)            Controller (one, manages every validator)
+   │  reconcile loop (health, state)         │   ▲
+   │  enrich w/ system metrics               │   │  ... agent N
+   │── RegisterNode ────────────────────────►│   │  ... agent 2
+   │── ReportStatus (every 10s) ────────────►│ ◄─┘  many agents → one controller
    │◄─ CommandStream (server-stream) ─────────│  push restart/provision/upgrade
    │── PushLogs (client-stream) ─────────────►│  logs table + SSE to web UI
    │                                          │  serve web UI + /metrics + Grafana
