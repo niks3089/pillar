@@ -35,17 +35,31 @@ cargo clippy -- -D warnings
 
 ## Installation
 
+The controller binary requires GLIBC 2.39 — install on **Ubuntu 24.04 (Noble) or newer**.
+
 ### Controller
 
 ```bash
-curl -sSL https://github.com/niks3089/pillar/releases/latest/download/install-controller.sh | bash
+curl -sSL https://janus-meter.s3.eu-north-1.amazonaws.com/pillar/latest/install-controller.sh \
+  | sudo bash -s -- --external-url http://<controller-ip>:50051
 ```
+
+Installs the controller, Prometheus, and Grafana (dashboards provisioned automatically).
+Default login is `admin` / `admin` — change it before any real use.
 
 ### Node (agent)
 
+The controller issues the exact command (with token) at `GET /api/onboard-command`:
+
 ```bash
-curl -sSL https://get.pillar.sh | bash -s -- --controller <controller-endpoint>
+curl -sSL https://janus-meter.s3.eu-north-1.amazonaws.com/pillar/latest/install-node.sh \
+  | sudo bash -s -- --controller http://<controller-ip>:50051 --token <token> --http-url http://<controller-ip>:8080
 ```
+
+## Grant submission
+
+See [`docs/GRANT.md`](docs/GRANT.md) for the grant-submission overview, the live demo
+deployment, and the multi-client roadmap.
 
 ## Configuration
 
