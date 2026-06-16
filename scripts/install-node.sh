@@ -309,7 +309,7 @@ SUDOERS_FILE="/etc/sudoers.d/sol-pillar"
 cat > "$SUDOERS_FILE" <<'EOF'
 # Allow sol user to manage systemd services and run provisioning without a password.
 # Used by pillar-agent to start/stop/restart the validator and run provision scripts.
-sol ALL=(root) NOPASSWD: /usr/bin/systemctl, /usr/bin/install, /usr/bin/tee, /usr/bin/sed, /usr/bin/mkdir, /usr/bin/cp, /usr/bin/find
+sol ALL=(root) NOPASSWD: /usr/bin/systemctl, /usr/bin/install, /usr/bin/tee, /usr/bin/sed, /usr/bin/mkdir, /usr/bin/cp, /usr/bin/find, /usr/local/bin/fdctl
 EOF
 chmod 440 "$SUDOERS_FILE"
 # Remove old sudoers file if it exists

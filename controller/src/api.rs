@@ -730,8 +730,7 @@ echo "Wrote /etc/pillar/yellowstone-grpc.json""#
              vote_account_path = \"{vote}\"\n\
              expected_genesis_hash = \"auto\"\n\n\
              [ledger]\npath = \"{ledger}\"\n\
-             accounts_path = \"{accounts}\"\n\
-             limit_size = true\n\n\
+             accounts_path = \"{accounts}\"\n\n\
              [gossip]\nentrypoints = [{ep}]\n\n\
              [rpc]\nport = {rpc}\nfull = false\n",
             identity = req.identity_keypair_path,

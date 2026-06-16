@@ -154,8 +154,8 @@ template, (b) client-specific health/version probing, and (c) end-to-end validat
 | Client | `ClientKind` | Provision template | Health probe | E2E tested | Status |
 |---|---|---|---|---|---|
 | **Agave** | ✅ | ✅ `provision-agave.sh.tmpl` | ✅ RPC + process | ✅ testnet v3.1.8 | **Production path** |
-| **Jito** | ✅ | ✅ source build + cluster-aware MEV | ✅ reuses RPC probe (same surface) | ⏳ build verified | **Provisioning complete** |
-| **Firedancer** | ✅ | ✅ source build + `configure init` + TOML | ✅ RPC once running | ⚠️ runtime needs AF_XDP-capable NIC | **Provisioning complete; runtime host-gated** |
+| **Jito** | ✅ | ✅ source build + cluster-aware MEV | ✅ reuses RPC probe (same surface) | ✅ provisioned + ran via control plane (testnet) | **Working** |
+| **Firedancer** | ✅ | ✅ source build + `configure init` + TOML | ✅ RPC once running | ⚠️ builds + provisions; run blocked (sudoers/TOML/AF_XDP) | **Partial — gaps documented** |
 | **Frankendancer** | ✅ | ⚠️ shares `fdctl` path, untested | ❌ needs `fdctl`-aware probe | ❌ | TODO |
 
 ### Per-client status
@@ -175,22 +175,36 @@ template, (b) client-specific health/version probing, and (c) end-to-end validat
 - ✅ `cluster_defaults` API now returns Jito values so the UI can pre-fill them.
 - ✅ Unit tests cover mainnet/testnet program selection, relayer/shred inclusion, and
       override precedence (`controller/src/templates.rs`).
-- ✅ `provision-jito.sh.tmpl` now builds `jito-solana` from source when no `download_url`
+- ✅ `provision-jito.sh.tmpl` builds `jito-solana` from source when no `download_url`
       is given (Jito Labs publishes no standalone validator binary asset) — mirrors the
       Agave source-build path, with `--recurse-submodules` for the bundled jito-programs.
+- ✅ **Verified live end-to-end**: built `agave-validator 4.1.0-rc.0 (client:JitoLabs)`
+      from source, provisioned via the control plane on **testnet**, and confirmed the unit
+      carries the correct cluster-aware MEV flags — `--block-engine-url
+      https://testnet.block-engine.jito.wtf`, testnet tip-payment
+      (`GJHtFqM9agxPmkeKjHny6qiRKrXZALvvFGiKf11QE7hy`) and tip-distribution
+      (`DzvGET57TAgEDxvm3ERUM4GNcsAJdqjDLCne9sdfY4wf`) programs, `--commission-bps 800`.
 - [ ] Remaining: full chain sync on a live node (gated by the same inbound-UDP host
       firewall as Agave).
 
-**Firedancer** — provisioning implemented; runtime is host-gated:
-- ✅ `provision-firedancer.sh.tmpl` builds `fdctl` from source (clone + submodules +
-      `deps.sh` + `make fdctl`), runs `fdctl configure init all`, writes the TOML, and
-      installs the systemd unit (`fdctl run --config …`).
-- ✅ TOML generation in `build_provision_vars` includes `user`, `[consensus]`, `[ledger]`,
-      `[gossip]` entrypoints, and `[rpc]`. Health uses the standard JSON-RPC probe (Firedancer
-      serves the same RPC surface once running).
-- ⚠️ **Runtime is host-gated**: Firedancer requires an AF_XDP-capable NIC/driver and
-      hugepages. On hosts with a bonded/unsupported NIC, `fdctl configure init` / `fdctl run`
-      cannot bind — this is a hardware/driver constraint, surfaced clearly by the script.
+**Firedancer** — builds + provisions; running is blocked by three concrete gaps found
+during live testing (and largely addressed):
+- ✅ `provision-firedancer.sh.tmpl` builds `fdctl` from source. **Three build-tooling bugs
+      were fixed and the build validated** (`fdctl 0.101.0-beta.40101` produced): don't
+      shallow-clone (submodules incomplete → `opt/git/zstd` missing), `deps.sh` needs the
+      `fetch` subcommand before `install`, and the build needs Rust (`cargo`/`rustup`) in
+      the environment.
+- ⚠️ **Sudoers gap**: the agent runs provision scripts as `sol`, whose sudoers allowlist
+      did not include `fdctl`, so `sudo fdctl configure init` was denied
+      (`sol : command not allowed`). Fixed in `scripts/install-node.sh` (added
+      `/usr/local/bin/fdctl` to `sol-pillar`). Note `sol` also cannot `apt`, so Firedancer's
+      OS build deps must be pre-present (same constraint as Agave/Jito source builds).
+- ⚠️ **TOML schema**: FD `1.0.0` rejects `ledger.limit_size` (`unrecognized keys`); removed
+      from the generated TOML. FD's config schema is version-sensitive and needs ongoing
+      validation per release.
+- ⚠️ **Runtime / AF_XDP**: Firedancer requires an AF_XDP-capable NIC/driver + hugepages.
+      The grant test host has a bonded NIC, so `fdctl run` cannot bind regardless — a
+      hardware/driver constraint, surfaced clearly by the script.
 - [ ] `fdctl`-aware health/version probe (currently reuses the RPC probe).
 
 **Frankendancer** (shares the `fdctl` path):

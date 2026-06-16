@@ -40,12 +40,16 @@ if [ -z "${CURRENT:-}" ]; then
       sudo apt-get update -qq && sudo apt-get install -y -qq build-essential clang cmake gcc make pkg-config
     fi
 
-    git clone --recurse-submodules --depth 1 --branch v{{version}} https://github.com/firedancer-io/firedancer.git "$BUILD_DIR"
+    # NOT --depth 1: deps.sh resolves vendored libraries via submodules, which a shallow
+    # clone leaves incomplete (opt/git/<lib> missing).
+    git clone --recurse-submodules --branch v{{version}} https://github.com/firedancer-io/firedancer.git "$BUILD_DIR"
     cd "$BUILD_DIR"
+    git submodule update --init --recursive
 
-    # deps.sh fetches/builds vendored libraries; auto-accept OS package installs.
-    echo "Installing Firedancer dependencies (deps.sh)..."
-    FD_AUTO_INSTALL_PACKAGES=1 ./deps.sh +dev install
+    # deps.sh fetches (clones vendored libs into opt/git) then builds them. The `fetch`
+    # subcommand is required — `install` alone leaves opt/git/<lib> missing.
+    echo "Installing Firedancer dependencies (deps.sh fetch install)..."
+    FD_AUTO_INSTALL_PACKAGES=1 ./deps.sh fetch install
 
     echo "Building fdctl (this may take 20-40 minutes)..."
     make -j fdctl
