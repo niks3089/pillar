@@ -328,7 +328,9 @@ cat > "$SYSCTL_CONF" <<EOF
 net.core.rmem_max = 134217728
 net.core.wmem_max = 134217728
 vm.max_map_count = 1000000
-fs.nr_open = 1000000
+# Firedancer requires fs.nr_open >= 1024000 to raise RLIMIT_NOFILE; 1048576 covers it
+# and is harmless for agave/jito.
+fs.nr_open = 1048576
 EOF
 sysctl -p "$SYSCTL_CONF" >/dev/null 2>&1 || warn "failed to apply sysctl settings (may require reboot)"
 ok "wrote $SYSCTL_CONF"

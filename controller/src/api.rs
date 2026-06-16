@@ -648,6 +648,14 @@ struct ProvisionRequest {
     /// retrying ip_echo before it will bootstrap).
     #[serde(default)]
     no_port_check: bool,
+    /// Firedancer net provider: "xdp" (default, fastest, needs an AF_XDP-capable NIC) or
+    /// "socket" (XDP-less fallback that works on any interface, incl. bonded NICs).
+    #[serde(default)]
+    net_provider: String,
+    /// Firedancer network interface (e.g. "bond0"). Empty = FD auto-detects the route to
+    /// 8.8.8.8. Only meaningful for the "xdp" provider.
+    #[serde(default)]
+    net_interface: String,
 }
 
 /// Build template variables from a ProvisionRequest.
@@ -715,34 +723,69 @@ echo "Wrote /etc/pillar/yellowstone-grpc.json""#
         String::new()
     };
 
-    // Build Firedancer TOML for firedancer/frankendancer
-    let firedancer_toml = if req.client == "firedancer" || req.client == "frankendancer" {
-        let entrypoints_toml = req
-            .entrypoints
-            .iter()
-            .map(|e| format!("\"{e}\""))
-            .collect::<Vec<_>>()
-            .join(", ");
-        format!(
-            "user = \"sol\"\n\n\
-             [layout]\naffinity = \"auto\"\n\n\
-             [consensus]\nidentity_path = \"{identity}\"\n\
-             vote_account_path = \"{vote}\"\n\
-             expected_genesis_hash = \"auto\"\n\n\
-             [ledger]\npath = \"{ledger}\"\n\
-             accounts_path = \"{accounts}\"\n\n\
-             [gossip]\nentrypoints = [{ep}]\n\n\
-             [rpc]\nport = {rpc}\nfull = false\n",
-            identity = req.identity_keypair_path,
-            vote = req.vote_account_keypair_path,
-            ledger = req.ledger_path,
-            accounts = req.accounts_path,
-            ep = entrypoints_toml,
-            rpc = rpc_port,
-        )
-    } else {
-        String::new()
-    };
+    // Build Firedancer TOML for firedancer/frankendancer.
+    // Schema validated against fdctl 1.0: explicit genesis hash (no "auto"), 2 MB huge
+    // pages (gigantic/1 GB pages need GRUB + reboot), a configurable net provider, and
+    // `[gossip] port_check` as the equivalent of Agave's --no-port-check.
+    let (firedancer_toml, fd_configure_stages) =
+        if req.client == "firedancer" || req.client == "frankendancer" {
+            let entrypoints_toml = req
+                .entrypoints
+                .iter()
+                .map(|e| format!("\"{e}\""))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let net_provider = if req.net_provider.is_empty() {
+                "socket"
+            } else {
+                req.net_provider.as_str()
+            };
+            // The socket provider needs no NIC/XDP setup; xdp needs the full stage set.
+            let configure_stages = if net_provider == "xdp" {
+                "all"
+            } else {
+                "hugetlbfs sysctl"
+            };
+            let vote_line = if req.vote_account_keypair_path.is_empty() {
+                String::new()
+            } else {
+                format!(
+                    "    vote_account_path = \"{}\"\n",
+                    req.vote_account_keypair_path
+                )
+            };
+            let iface_line = if req.net_interface.is_empty() {
+                String::new()
+            } else {
+                format!("    interface = \"{}\"\n", req.net_interface)
+            };
+            let toml = format!(
+                "user = \"sol\"\n\n\
+                 [log]\n    level_stderr = \"INFO\"\n\n\
+                 [gossip]\n    entrypoints = [{ep}]\n    port_check = {port_check}\n\n\
+                 [consensus]\n    identity_path = \"{identity}\"\n{vote_line}    expected_genesis_hash = \"{genesis}\"\n\n\
+                 [rpc]\n    port = {rpc}\n\n\
+                 [ledger]\n    path = \"{ledger}\"\n    accounts_path = \"{accounts}\"\n\n\
+                 [snapshots]\n    path = \"{snapshot}\"\n\n\
+                 [net]\n    provider = \"{net_provider}\"\n{iface_line}\n\
+                 [hugetlbfs]\n    max_page_size = \"huge\"\n\n\
+                 [layout]\n    affinity = \"auto\"\n    agave_affinity = \"auto\"\n",
+                ep = entrypoints_toml,
+                port_check = !req.no_port_check,
+                identity = req.identity_keypair_path,
+                vote_line = vote_line,
+                genesis = templates::genesis_hash_for_cluster(&req.cluster),
+                rpc = rpc_port,
+                ledger = req.ledger_path,
+                accounts = req.accounts_path,
+                snapshot = req.snapshot_path,
+                net_provider = net_provider,
+                iface_line = iface_line,
+            );
+            (toml, configure_stages.to_string())
+        } else {
+            (String::new(), String::new())
+        };
 
     // Build start_limit and log_rate_limit lines
     let start_limit_line = if req.start_limit_disable {
@@ -799,6 +842,7 @@ fi"#,
     vars.insert("restart_sec".to_string(), restart_sec.to_string());
     vars.insert("yellowstone_section".to_string(), yellowstone_section);
     vars.insert("firedancer_toml".to_string(), firedancer_toml);
+    vars.insert("configure_stages".to_string(), fd_configure_stages);
     vars.insert("start_limit_line".to_string(), start_limit_line);
     vars.insert("log_rate_limit_line".to_string(), log_rate_limit_line);
     vars.insert("environment_lines".to_string(), environment_lines);

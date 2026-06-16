@@ -155,8 +155,8 @@ template, (b) client-specific health/version probing, and (c) end-to-end validat
 |---|---|---|---|---|---|
 | **Agave** | ✅ | ✅ `provision-agave.sh.tmpl` | ✅ RPC + process | ✅ testnet v3.1.8 | **Production path** |
 | **Jito** | ✅ | ✅ source build + cluster-aware MEV | ✅ reuses RPC probe (same surface) | ✅ provisioned + ran via control plane (testnet) | **Working** |
-| **Firedancer** | ✅ | ✅ source build + `configure init` + TOML | ✅ RPC once running | ⚠️ builds + provisions; run blocked (sudoers/TOML/AF_XDP) | **Partial — gaps documented** |
-| **Frankendancer** | ✅ | ⚠️ shares `fdctl` path, untested | ❌ needs `fdctl`-aware probe | ❌ | TODO |
+| **Firedancer** | ✅ | ✅ source build + provider-aware `configure` + validated TOML | ✅ RPC once running | ⚙️ provisions + boots all tiles; one tile-init frontier remains | **Boots; near-complete** |
+| **Frankendancer** | ✅ | ✅ shares `fdctl` path (same as Firedancer) | ⚙️ via `fdctl` | ⚙️ same as Firedancer | **Boots; near-complete** |
 
 ### Per-client status
 
@@ -187,29 +187,38 @@ template, (b) client-specific health/version probing, and (c) end-to-end validat
 - [ ] Remaining: full chain sync on a live node (gated by the same inbound-UDP host
       firewall as Agave).
 
-**Firedancer** — builds + provisions; running is blocked by three concrete gaps found
-during live testing (and largely addressed):
-- ✅ `provision-firedancer.sh.tmpl` builds `fdctl` from source. **Three build-tooling bugs
-      were fixed and the build validated** (`fdctl 0.101.0-beta.40101` produced): don't
-      shallow-clone (submodules incomplete → `opt/git/zstd` missing), `deps.sh` needs the
-      `fetch` subcommand before `install`, and the build needs Rust (`cargo`/`rustup`) in
-      the environment.
-- ⚠️ **Sudoers gap**: the agent runs provision scripts as `sol`, whose sudoers allowlist
-      did not include `fdctl`, so `sudo fdctl configure init` was denied
-      (`sol : command not allowed`). Fixed in `scripts/install-node.sh` (added
-      `/usr/local/bin/fdctl` to `sol-pillar`). Note `sol` also cannot `apt`, so Firedancer's
-      OS build deps must be pre-present (same constraint as Agave/Jito source builds).
-- ⚠️ **TOML schema**: FD `1.0.0` rejects `ledger.limit_size` (`unrecognized keys`); removed
-      from the generated TOML. FD's config schema is version-sensitive and needs ongoing
-      validation per release.
-- ⚠️ **Runtime / AF_XDP**: Firedancer requires an AF_XDP-capable NIC/driver + hugepages.
-      The grant test host has a bonded NIC, so `fdctl run` cannot bind regardless — a
-      hardware/driver constraint, surfaced clearly by the script.
-- [ ] `fdctl`-aware health/version probe (currently reuses the RPC probe).
-
-**Frankendancer** (shares the `fdctl` path):
-- [ ] Distinguish from full Firedancer in the lifecycle manager — same `fdctl` tooling,
-      different component mix.
+**Firedancer / Frankendancer** — provisions and **boots end-to-end** via the control plane;
+extensively tested live, down to a single remaining tile-init frontier:
+- ✅ `provision-firedancer.sh.tmpl` builds `fdctl` from source (`0.101.0-beta.40101`).
+      **Three build-tooling bugs fixed**: don't shallow-clone (submodules → `opt/git/zstd`
+      missing), use `deps.sh fetch install` (fetch clones the vendored libs), and put Rust
+      in the build env.
+- ✅ **Config schema reverse-engineered and validated against `fdctl 1.0`**. The generated
+      TOML now uses an explicit per-cluster `expected_genesis_hash` (FD rejects "auto"),
+      `[gossip] port_check` (the `--no-port-check` equivalent), `[snapshots] path`,
+      `[rpc] port`, and 2 MB huge pages (`[hugetlbfs] max_page_size = "huge"` — gigantic /
+      1 GB pages would need GRUB + reboot). Earlier wrong keys (`rpc.full`, bool
+      `ledger.limit_size`) removed.
+- ✅ **Net provider is selectable** (new `net_provider` field): `socket` (XDP-less
+      fallback, works on any NIC incl. bonded — the validated default) or `xdp`. This
+      corrects an earlier assumption: the host's Intel E810 (`ice`) NICs *do* support
+      AF_XDP and FD's `native_bond` handles bonds, so AF_XDP is not a hard wall.
+- ✅ **Runtime prerequisites validated and encoded**: `configure init hugetlbfs sysctl`
+      reserves 2 MB pages + creates the `/mnt/.fd` mounts (must run in the host mount
+      namespace — the agent's plain-bash executor does, a transient unit does not);
+      `fs.nr_open >= 1024000` (added to install-node sysctl tuning); the systemd unit runs
+      **as root** so fdctl can set up its PID namespace and drop to the TOML `user` (fixed
+      — unlike agave/jito which run as `sol`); `fdctl` added to the `sol` sudoers; configure
+      stages are provider-aware (socket → `hugetlbfs sysctl`, xdp → `all`).
+- ✅ With all of the above, **Frankendancer boots**: shmem, all tiles (gossip, shred,
+      verify, plugin) and the Agave subsystem (snapshot download + replay threads) start; it
+      reaches *"Waiting for shred version via gossip."*
+- [ ] **Remaining frontier**: on this host a tile exits during init, cascading through the
+      diag tile (`/proc/<tid>/stat` race) and fdctl's pidns supervisor (`wait4 unexpected
+      pid`). Needs FD-internals debugging specific to this `fdctl` build/host. Full chain
+      sync is additionally gated by the same inbound-UDP firewall as Agave.
+- [ ] `fdctl`-aware health/version probe (currently reuses the RPC probe); distinguish
+      Frankendancer from full Firedancer in the lifecycle manager (shared `fdctl`).
 
 ### Cross-cutting TODOs (apply to all clients)
 
