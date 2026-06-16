@@ -615,6 +615,10 @@ struct ProvisionRequest {
     #[serde(default)]
     jito_block_engine_url: String,
     #[serde(default)]
+    jito_relayer_url: String,
+    #[serde(default)]
+    jito_shred_receiver_addr: String,
+    #[serde(default)]
     yellowstone_grpc: bool,
     #[serde(default)]
     rpc_port: u32,
@@ -639,6 +643,11 @@ struct ProvisionRequest {
     log_rate_limit_disable: bool,
     #[serde(default)]
     start_limit_disable: bool,
+    /// Skip the validator's inbound UDP port reachability check. Needed on hosts behind
+    /// NAT or an upstream firewall that blocks inbound UDP (the validator otherwise hangs
+    /// retrying ip_echo before it will bootstrap).
+    #[serde(default)]
+    no_port_check: bool,
 }
 
 /// Build template variables from a ProvisionRequest.
@@ -678,12 +687,18 @@ fn build_provision_vars(req: &ProvisionRequest) -> HashMap<String, String> {
             &dynamic_port_range,
             &req.entrypoints,
             &req.known_validators,
-            req.jito_mev,
-            &req.jito_block_engine_url,
+            &req.cluster,
+            &templates::JitoConfig {
+                enabled: req.jito_mev,
+                block_engine_url: req.jito_block_engine_url.clone(),
+                relayer_url: req.jito_relayer_url.clone(),
+                shred_receiver_addr: req.jito_shred_receiver_addr.clone(),
+            },
             req.yellowstone_grpc,
             &req.geyser_plugin_configs,
             &req.validator_flags,
             &req.extra_args,
+            req.no_port_check,
         )
     };
 
@@ -709,19 +724,21 @@ echo "Wrote /etc/pillar/yellowstone-grpc.json""#
             .collect::<Vec<_>>()
             .join(", ");
         format!(
-            "[layout]\naffinity = \"auto\"\n\n\
+            "user = \"sol\"\n\n\
+             [layout]\naffinity = \"auto\"\n\n\
              [consensus]\nidentity_path = \"{identity}\"\n\
              vote_account_path = \"{vote}\"\n\
              expected_genesis_hash = \"auto\"\n\n\
              [ledger]\npath = \"{ledger}\"\n\
-             accounts_path = \"{accounts}\"\n\
-             limit_size = true\n\n\
-             [gossip]\nentrypoints = [{ep}]\n",
+             accounts_path = \"{accounts}\"\n\n\
+             [gossip]\nentrypoints = [{ep}]\n\n\
+             [rpc]\nport = {rpc}\nfull = false\n",
             identity = req.identity_keypair_path,
             vote = req.vote_account_keypair_path,
             ledger = req.ledger_path,
             accounts = req.accounts_path,
             ep = entrypoints_toml,
+            rpc = rpc_port,
         )
     } else {
         String::new()
@@ -754,8 +771,8 @@ echo "Wrote /etc/pillar/yellowstone-grpc.json""#
     let agent_config_sed_commands = format!(
         r#"if [ -f "$CONFIG" ]; then
   sudo sed -i 's/^client:.*/client: {client}/' "$CONFIG"
-  sudo sed -i 's/^\\(  \\)cluster:.*/\\1cluster: {cluster}/' "$CONFIG"
-  sudo sed -i 's|^\\(  \\)service_name:.*|\\1service_name: {service_name}|' "$CONFIG"
+  sudo sed -i 's/^  cluster:.*/  cluster: {cluster}/' "$CONFIG"
+  sudo sed -i 's|^  service_name:.*|  service_name: {service_name}|' "$CONFIG"
   sudo sed -i '/reference_rpc_urls:/,/^[^ ]/ {{ /- http/d }}' "$CONFIG"
   sudo sed -i '/reference_rpc_urls:/a\\    - {reference_rpc}' "$CONFIG"
   echo "Updated agent config: client={client}, cluster={cluster}, service={service_name}"
@@ -989,6 +1006,11 @@ struct ClusterDefaultsResponse {
     known_validators: Vec<String>,
     reference_rpc: String,
     expected_genesis_hash: String,
+    /// Jito MEV defaults for this cluster (block engine URL + tip programs), so the UI
+    /// can pre-fill the Jito fields with cluster-correct values.
+    jito_block_engine_url: String,
+    jito_tip_payment_program: String,
+    jito_tip_distribution_program: String,
 }
 
 async fn cluster_defaults(Path(cluster): Path<String>) -> impl IntoResponse {
@@ -1042,11 +1064,16 @@ async fn cluster_defaults(Path(cluster): Path<String>) -> impl IntoResponse {
             ),
         };
 
+    let jito = templates::jito_defaults_for_cluster(&cluster);
+
     Json(ClusterDefaultsResponse {
         entrypoints,
         known_validators,
         reference_rpc,
         expected_genesis_hash,
+        jito_block_engine_url: jito.block_engine_url.to_string(),
+        jito_tip_payment_program: jito.tip_payment_program.to_string(),
+        jito_tip_distribution_program: jito.tip_distribution_program.to_string(),
     })
 }
 

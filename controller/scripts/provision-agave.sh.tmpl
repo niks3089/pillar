@@ -9,7 +9,7 @@ rm -rf "$STAGING"
 
 # Check if the binary already exists at the correct version
 if [ -x "{{binary_path}}" ]; then
-  CURRENT=$("{{binary_path}}" --version 2>/dev/null | grep -oP '\d+\.\d+\.\d+' | head -1 || true)
+  CURRENT=$("{{binary_path}}" --version 2>/dev/null | grep -oP '\d+\.\d+\.\d+(-[a-zA-Z0-9.]+)?' | head -1 || true)
   if [ "$CURRENT" = "{{version}}" ]; then
     echo "Binary {{binary_path}} already at v{{version}}, skipping install"
   else
@@ -53,9 +53,9 @@ if [ -z "${CURRENT:-}" ]; then
     rm -rf "$BUILD_DIR"
 
     # Install build deps if missing
-    if ! dpkg -s libudev-dev pkg-config libclang-dev >/dev/null 2>&1; then
+    if ! dpkg -s build-essential clang cmake libudev-dev libssl-dev zlib1g-dev pkg-config libclang-dev protobuf-compiler >/dev/null 2>&1; then
       echo "Installing build dependencies..."
-      sudo apt-get update -qq && sudo apt-get install -y -qq libudev-dev pkg-config libclang-dev protobuf-compiler
+      sudo apt-get update -qq && sudo apt-get install -y -qq build-essential clang cmake libudev-dev libssl-dev zlib1g-dev pkg-config libclang-dev protobuf-compiler
     fi
 
     # Ensure Rust toolchain

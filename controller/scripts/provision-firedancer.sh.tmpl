@@ -2,14 +2,70 @@
 set -euo pipefail
 echo "=== Pillar: Provisioning Firedancer {{version}} on {{cluster}} ==="
 
-# Download and verify binary
+DOWNLOAD_URL="{{download_url}}"
 STAGING="/tmp/pillar-staging"
-rm -rf "$STAGING" && mkdir -p "$STAGING"
-echo "Downloading binary..."
-curl -sSL -o "$STAGING/binary" "{{download_url}}"
-echo "{{sha256}}  $STAGING/binary" | sha256sum -c
-sudo install -m 755 "$STAGING/binary" {{binary_path}}
-echo "Binary installed to {{binary_path}}"
+rm -rf "$STAGING"
+
+# Skip if fdctl is already at the requested version.
+if [ -x "{{binary_path}}" ]; then
+  CURRENT=$("{{binary_path}}" version 2>/dev/null | grep -oP '\d+\.\d+\.\d+(-[a-zA-Z0-9.]+)?' | head -1 || true)
+  if [ "$CURRENT" = "{{version}}" ]; then
+    echo "Binary {{binary_path}} already at v{{version}}, skipping install"
+  else
+    echo "fdctl exists but version $CURRENT != {{version}}, will reinstall"
+    CURRENT=""
+  fi
+fi
+
+if [ -z "${CURRENT:-}" ]; then
+  if [ -n "$DOWNLOAD_URL" ]; then
+    mkdir -p "$STAGING"
+    echo "Downloading fdctl from $DOWNLOAD_URL..."
+    curl -sSL -o "$STAGING/fdctl" "$DOWNLOAD_URL"
+    SHA="{{sha256}}"
+    if [ -n "$SHA" ]; then
+      echo "$SHA  $STAGING/fdctl" | sha256sum -c
+      echo "SHA256 verified"
+    fi
+    sudo install -m 755 "$STAGING/fdctl" {{binary_path}}
+  else
+    # Firedancer does not publish standalone fdctl binaries — build from source.
+    echo "No download_url provided, building Firedancer v{{version}} from source..."
+    BUILD_DIR="/tmp/firedancer-build"
+    rm -rf "$BUILD_DIR"
+
+    # Base build tools; Firedancer's deps.sh installs the rest.
+    if ! dpkg -s build-essential clang cmake gcc make pkg-config >/dev/null 2>&1; then
+      echo "Installing base build tools..."
+      sudo apt-get update -qq && sudo apt-get install -y -qq build-essential clang cmake gcc make pkg-config
+    fi
+
+    # NOT --depth 1: deps.sh resolves vendored libraries via submodules, which a shallow
+    # clone leaves incomplete (opt/git/<lib> missing).
+    git clone --recurse-submodules --branch v{{version}} https://github.com/firedancer-io/firedancer.git "$BUILD_DIR"
+    cd "$BUILD_DIR"
+    git submodule update --init --recursive
+
+    # deps.sh fetches (clones vendored libs into opt/git) then builds them. The `fetch`
+    # subcommand is required — `install` alone leaves opt/git/<lib> missing.
+    echo "Installing Firedancer dependencies (deps.sh fetch install)..."
+    FD_AUTO_INSTALL_PACKAGES=1 ./deps.sh fetch install
+
+    echo "Building fdctl (this may take 20-40 minutes)..."
+    make -j fdctl
+
+    FDCTL_BIN=$(find "$BUILD_DIR/build" -name fdctl -type f | head -1)
+    if [ -z "$FDCTL_BIN" ]; then
+      echo "ERROR: fdctl not found after build" >&2
+      exit 1
+    fi
+    sudo install -m 755 "$FDCTL_BIN" {{binary_path}}
+    cd /
+    rm -rf "$BUILD_DIR"
+    echo "Built and installed fdctl v{{version}}"
+  fi
+fi
+echo "Binary ready at {{binary_path}}"
 
 # Stop existing service if running
 sudo systemctl stop {{old_service_name}} 2>/dev/null || true
@@ -20,6 +76,14 @@ sudo tee /etc/pillar/validator.toml > /dev/null <<'TOML'
 {{firedancer_toml}}
 TOML
 echo "Wrote /etc/pillar/validator.toml"
+
+# Initialize the runtime environment (hugepages, XDP, workspaces). Requires root.
+# Non-fatal: surfaces clearly if the host's NIC/driver does not support AF_XDP.
+echo "Running fdctl configure init all..."
+if ! sudo {{binary_path}} configure init all --config /etc/pillar/validator.toml; then
+  echo "WARNING: 'fdctl configure init' failed — the host NIC/driver may not support AF_XDP," >&2
+  echo "         or hugepages are unavailable. Firedancer cannot run until this is resolved." >&2
+fi
 
 # Write systemd unit
 sudo tee /etc/systemd/system/{{service_name}}.service > /dev/null <<'UNIT'
@@ -51,7 +115,7 @@ echo "Service {{service_name}} started"
 CONFIG="${PILLAR_AGENT_CONFIG:-/etc/pillar/agent.yaml}"
 {{agent_config_sed_commands}}
 
-# Restart agent for config reload
-sudo systemctl restart pillar-agent
-rm -rf "$STAGING"
 echo "=== Provision complete ==="
+
+# Restart agent for config reload (deferred so script result can be reported)
+(sleep 3 && sudo systemctl restart pillar-agent) &

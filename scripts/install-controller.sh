@@ -101,7 +101,8 @@ ok "downloaded controller binary"
 if [[ -z "$EXTERNAL_URL" ]]; then
     PUBLIC_IP=$(curl -4 -sf --max-time 5 ifconfig.me 2>/dev/null || curl -4 -sf --max-time 5 ipinfo.io/ip 2>/dev/null || true)
     if [[ -n "$PUBLIC_IP" ]]; then
-        EXTERNAL_URL="http://${PUBLIC_IP}:50051"
+        # gRPC server runs with TLS (certs are generated below), so agents must use https.
+        EXTERNAL_URL="https://${PUBLIC_IP}:50051"
         info "auto-detected external URL: $EXTERNAL_URL"
     fi
 fi
@@ -592,7 +593,7 @@ echo "  Add nodes:"
 if [[ -n "$EXTERNAL_URL" ]]; then
 echo "    curl -sSL ${S3_BASE}/latest/install-node.sh | sudo bash -s -- --controller $EXTERNAL_URL"
 else
-echo "    curl -sSL ${S3_BASE}/latest/install-node.sh | sudo bash -s -- --controller http://<this-ip>:50051"
+echo "    curl -sSL ${S3_BASE}/latest/install-node.sh | sudo bash -s -- --controller https://<this-ip>:50051"
 fi
 echo ""
 echo "  Logs:"

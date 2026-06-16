@@ -146,6 +146,24 @@ else
     ok "/proc available"
 fi
 
+# bzip2 is required to extract validator release tarballs (solana-release-*.tar.bz2).
+# Without it `tar -xf` fails silently during provisioning.
+if ! command -v bzip2 &>/dev/null; then
+    if command -v apt-get &>/dev/null; then
+        apt-get update -qq 2>/dev/null || true
+        apt-get install -y -qq bzip2 >/dev/null 2>&1 || true
+    elif command -v dnf &>/dev/null; then
+        dnf install -y bzip2 >/dev/null 2>&1 || true
+    elif command -v yum &>/dev/null; then
+        yum install -y bzip2 >/dev/null 2>&1 || true
+    fi
+fi
+if command -v bzip2 &>/dev/null; then
+    ok "bzip2 available"
+else
+    warn "bzip2 missing — .bz2 release tarballs cannot be extracted"
+fi
+
 # ------------------------------------------------------------------------------
 # Phase 2: System assessment (cluster-aware thresholds)
 # ------------------------------------------------------------------------------
@@ -291,7 +309,7 @@ SUDOERS_FILE="/etc/sudoers.d/sol-pillar"
 cat > "$SUDOERS_FILE" <<'EOF'
 # Allow sol user to manage systemd services and run provisioning without a password.
 # Used by pillar-agent to start/stop/restart the validator and run provision scripts.
-sol ALL=(root) NOPASSWD: /usr/bin/systemctl, /usr/bin/install, /usr/bin/tee, /usr/bin/sed, /usr/bin/mkdir, /usr/bin/cp, /usr/bin/find
+sol ALL=(root) NOPASSWD: /usr/bin/systemctl, /usr/bin/install, /usr/bin/tee, /usr/bin/sed, /usr/bin/mkdir, /usr/bin/cp, /usr/bin/find, /usr/local/bin/fdctl
 EOF
 chmod 440 "$SUDOERS_FILE"
 # Remove old sudoers file if it exists
