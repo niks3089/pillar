@@ -154,9 +154,9 @@ template, (b) client-specific health/version probing, and (c) end-to-end validat
 | Client | `ClientKind` | Provision template | Health probe | E2E tested | Status |
 |---|---|---|---|---|---|
 | **Agave** | ✅ | ✅ `provision-agave.sh.tmpl` | ✅ RPC + process | ✅ testnet v3.1.8 | **Production path** |
-| **Jito** | ✅ | ✅ cluster-aware MEV config | ✅ reuses RPC probe (same surface) | ⏳ on testnet | **Feature-complete, pending E2E** |
-| **Firedancer** | ✅ | ⚠️ template exists, untested | ❌ needs `fdctl`-aware probe | ❌ | TODO |
-| **Frankendancer** | ✅ | ⚠️ template exists, untested | ❌ needs `fdctl`-aware probe | ❌ | TODO |
+| **Jito** | ✅ | ✅ source build + cluster-aware MEV | ✅ reuses RPC probe (same surface) | ⏳ build verified | **Provisioning complete** |
+| **Firedancer** | ✅ | ✅ source build + `configure init` + TOML | ✅ RPC once running | ⚠️ runtime needs AF_XDP-capable NIC | **Provisioning complete; runtime host-gated** |
+| **Frankendancer** | ✅ | ⚠️ shares `fdctl` path, untested | ❌ needs `fdctl`-aware probe | ❌ | TODO |
 
 ### Per-client status
 
@@ -175,17 +175,27 @@ template, (b) client-specific health/version probing, and (c) end-to-end validat
 - ✅ `cluster_defaults` API now returns Jito values so the UI can pre-fill them.
 - ✅ Unit tests cover mainnet/testnet program selection, relayer/shred inclusion, and
       override precedence (`controller/src/templates.rs`).
-- [ ] Remaining: end-to-end validation on a live Jito-Solana testnet node (blocked on the
-      same validator-host access as Agave above).
+- ✅ `provision-jito.sh.tmpl` now builds `jito-solana` from source when no `download_url`
+      is given (Jito Labs publishes no standalone validator binary asset) — mirrors the
+      Agave source-build path, with `--recurse-submodules` for the bundled jito-programs.
+- [ ] Remaining: full chain sync on a live node (gated by the same inbound-UDP host
+      firewall as Agave).
 
-**Firedancer / Frankendancer** (largest gap — different process model & tooling):
-- [ ] Health/version probing via `fdctl` instead of (or in addition to) JSON-RPC; the
-      process model and metrics surface differ from Agave.
-- [ ] Provision template needs the TOML config generation Firedancer expects (it is not
-      flag-driven the way Agave is) and the `fdctl configure` / `fdctl run` lifecycle.
-- [ ] Distinguish Frankendancer (Agave + FD components) from full Firedancer in the
-      lifecycle manager — they share `fdctl` but differ in what runs.
-- [ ] Map Firedancer's metrics/log surface into the common `NodeStatus` shape.
+**Firedancer** — provisioning implemented; runtime is host-gated:
+- ✅ `provision-firedancer.sh.tmpl` builds `fdctl` from source (clone + submodules +
+      `deps.sh` + `make fdctl`), runs `fdctl configure init all`, writes the TOML, and
+      installs the systemd unit (`fdctl run --config …`).
+- ✅ TOML generation in `build_provision_vars` includes `user`, `[consensus]`, `[ledger]`,
+      `[gossip]` entrypoints, and `[rpc]`. Health uses the standard JSON-RPC probe (Firedancer
+      serves the same RPC surface once running).
+- ⚠️ **Runtime is host-gated**: Firedancer requires an AF_XDP-capable NIC/driver and
+      hugepages. On hosts with a bonded/unsupported NIC, `fdctl configure init` / `fdctl run`
+      cannot bind — this is a hardware/driver constraint, surfaced clearly by the script.
+- [ ] `fdctl`-aware health/version probe (currently reuses the RPC probe).
+
+**Frankendancer** (shares the `fdctl` path):
+- [ ] Distinguish from full Firedancer in the lifecycle manager — same `fdctl` tooling,
+      different component mix.
 
 ### Cross-cutting TODOs (apply to all clients)
 

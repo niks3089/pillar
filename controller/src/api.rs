@@ -724,19 +724,22 @@ echo "Wrote /etc/pillar/yellowstone-grpc.json""#
             .collect::<Vec<_>>()
             .join(", ");
         format!(
-            "[layout]\naffinity = \"auto\"\n\n\
+            "user = \"sol\"\n\n\
+             [layout]\naffinity = \"auto\"\n\n\
              [consensus]\nidentity_path = \"{identity}\"\n\
              vote_account_path = \"{vote}\"\n\
              expected_genesis_hash = \"auto\"\n\n\
              [ledger]\npath = \"{ledger}\"\n\
              accounts_path = \"{accounts}\"\n\
              limit_size = true\n\n\
-             [gossip]\nentrypoints = [{ep}]\n",
+             [gossip]\nentrypoints = [{ep}]\n\n\
+             [rpc]\nport = {rpc}\nfull = false\n",
             identity = req.identity_keypair_path,
             vote = req.vote_account_keypair_path,
             ledger = req.ledger_path,
             accounts = req.accounts_path,
             ep = entrypoints_toml,
+            rpc = rpc_port,
         )
     } else {
         String::new()
