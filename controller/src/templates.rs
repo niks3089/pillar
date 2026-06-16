@@ -75,6 +75,16 @@ pub fn reference_rpc_for_cluster(cluster: &str) -> &'static str {
     }
 }
 
+/// Map cluster to its genesis hash. Firedancer requires an explicit
+/// `expected_genesis_hash` in its config (it does not accept "auto").
+pub fn genesis_hash_for_cluster(cluster: &str) -> &'static str {
+    match cluster {
+        "devnet" => "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG",
+        "testnet" => "4uhcVJyU9pJkvQyS88uRDiswHXSCkY3zQawwpjk2NsNY",
+        _ => "5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d",
+    }
+}
+
 /// Jito MEV defaults for a cluster.
 ///
 /// Sources (verified against jito-foundation/jito-programs `declare_id!` and the Jito
