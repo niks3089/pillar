@@ -130,6 +130,8 @@ export interface ProvisionRequest {
   sha256: string
   jito_mev: boolean
   jito_block_engine_url: string
+  jito_relayer_url?: string
+  jito_shred_receiver_addr?: string
   yellowstone_grpc: boolean
   rpc_port: number
   dynamic_port_range: string
@@ -143,6 +145,7 @@ export interface ProvisionRequest {
   restart_sec?: number
   log_rate_limit_disable?: boolean
   start_limit_disable?: boolean
+  no_port_check?: boolean
 }
 
 export async function provisionNode(id: string, config: ProvisionRequest): Promise<{ ok: boolean; message: string }> {
