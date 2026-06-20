@@ -73,12 +73,29 @@ flags, or cluster.
 
 ---
 
-## 4. Update / upgrade
+## 4. Upgrading
 
-- **Re-provision** (Update Validator) to change cluster, flags, or rebuild a version.
-- **Upgrade** a binary in place via the upgrade flow (download → SHA256-verify → swap →
-  restart) when you have a prebuilt artifact URL.
-- **Agent self-upgrade** appears as a button on the node when a newer agent is available.
+There are three distinct upgrade paths:
+
+**a) Upgrade the validator version (re-provision)**
+Node detail → **Update Validator → Configure**, change **Version** (and any flags), submit.
+The agent re-runs provisioning: for Agave v3/v4 and Jito it rebuilds from source; for v2.x it
+fetches the release tarball. The old service is stopped, the new binary installed, and the
+service restarted. Watch progress in the **Validator** logs tab.
+
+**b) Upgrade a binary in place (fast, prebuilt)**
+If you have a prebuilt artifact + SHA256, use the upgrade flow (`POST /api/nodes/:id/upgrade`
+with `binary_name`, `version`, `download_url`, `sha256`). The agent downloads →
+`sha256sum -c` (fails fast on mismatch) → stops the service → installs → restarts. This
+avoids a source rebuild.
+
+**c) Upgrade the agent**
+When the controller detects a newer agent release, an **"Upgrade Agent to vX"** button
+appears on the node. It swaps the agent binary and restarts via systemd. The controller
+itself upgrades with `POST /api/upgrade-controller` (or re-run `install-controller.sh`).
+
+> Tip: for zero-surprise upgrades, test the new version on a **Surfpool** node first (instant,
+> disposable), then roll it to real validators.
 
 ---
 
@@ -97,7 +114,44 @@ flags, or cluster.
 
 ---
 
-## 6. Best practices
+## 6. Alerting (Slack / PagerDuty / Telegram)
+
+Pillar exposes per-node metrics at the controller's `/metrics` (scraped by Prometheus), so
+alerting is done in **Grafana's unified alerting** against the `pillar-prometheus` data source.
+
+### Common alert rules
+Create these in **Grafana → Alerting → Alert rules** (or provision them via
+`/etc/grafana/provisioning/alerting/*.yaml`). Useful conditions on the Pillar metrics:
+
+| Alert | Expression | Meaning |
+|---|---|---|
+| Validator unhealthy/offline | `pillar_node_healthy == 0` | agent reports the node not healthy |
+| Lagging behind | `pillar_node_slots_behind > 5000` | falling behind the cluster tip |
+| Agent not reporting | `time() - pillar_node_last_seen_seconds > 60` (or Prometheus `up`/`absent`) | host stopped reporting |
+| Frequent restarts | `increase(pillar_node_restarts_total[15m]) > 3` | crash-looping |
+| Disk filling | `pillar_node_disk_used_bytes / pillar_node_disk_total_bytes > 0.9` | low disk |
+
+Label each rule (e.g. `severity: page` vs `severity: warn`) so notification policies can route
+them differently. A starter set lives in `controller/dashboards/grafana/alert-rules.json`.
+
+### Connect a notification channel (contact points)
+**Grafana → Alerting → Contact points → Add contact point**:
+
+- **Slack** — type *Slack*, paste an [incoming webhook URL]
+  (`https://hooks.slack.com/services/…`), set the channel.
+- **PagerDuty** — type *PagerDuty*, paste the **Integration Key** (Events API v2 routing key)
+  from a PD service.
+- **Telegram** — type *Telegram*, paste the **bot token** (from @BotFather) and the **chat ID**.
+
+Then **Alerting → Notification policies**: route by label (e.g. `severity=page` →
+PagerDuty/Telegram, `severity=warn` → Slack). Use **Test** on the contact point to confirm
+delivery, and a **mute timing** for maintenance windows.
+
+> Provisioning these as code (checked-in YAML under `provisioning/alerting/`) makes them
+> reproducible across controllers; the webhook URL / PD key / bot token are the only secrets
+> to supply per environment.
+
+## 7. Best practices
 
 **Security**
 - Change `admin/admin` before exposing the UI. Keep gRPC on TLS (`https`).
@@ -128,7 +182,7 @@ flags, or cluster.
 
 ---
 
-## 7. Putting the UI behind a domain (optional)
+## 8. Putting the UI behind a domain (optional)
 
 - Reserve a **static IP** for the controller host so DNS doesn't break on reboot.
 - Point an **A record** at it (DNS-only if using Cloudflare and agents hit gRPC directly).
@@ -137,7 +191,7 @@ flags, or cluster.
 
 ---
 
-## 8. Troubleshooting
+## 9. Troubleshooting
 
 | Symptom | Likely cause / fix |
 |---|---|
