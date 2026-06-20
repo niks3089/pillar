@@ -74,7 +74,7 @@ function Overview() {
     <div>
       <div className="summary-cards">
         <div className="summary-card purple">
-          <div className="label">Total Nodes</div>
+          <div className="label">Total Validators</div>
           <div className="value">{overview?.total ?? 0}</div>
         </div>
         <div className="summary-card green">
@@ -148,9 +148,9 @@ function Overview() {
       </table>
 
       <div className="onboard-panel">
-        <h3>Add a Node</h3>
+        <h3>Add a Validator</h3>
         <p style={{ color: 'var(--text-dim)', fontSize: '0.8125rem', marginBottom: '0.75rem' }}>
-          Run this command on any Linux machine to join it to your fleet:
+          Run this command on the validator host to add it to your fleet:
         </p>
         <div className="onboard-command">
           <code>{onboardCmd || 'Loading...'}</code>
