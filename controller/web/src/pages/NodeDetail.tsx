@@ -123,6 +123,8 @@ function NodeDetail() {
   const [logs, setLogs] = useState<LogEntry[]>([])
   const [error, setError] = useState('')
   const [logFilter, setLogFilter] = useState<string>('validator')
+  const [logLevel, setLogLevel] = useState<string>('all')
+  const [logSearch, setLogSearch] = useState<string>('')
   const [sseConnected, setSseConnected] = useState(false)
   const logContainerRef = useRef<HTMLDivElement>(null)
   const eventSourceRef = useRef<EventSource | null>(null)
@@ -435,6 +437,14 @@ function NodeDetail() {
   const s = node.live_status
   const hasConfig = !!(node.client || node.cluster || s?.version)
 
+  // Logs filtered by service tab + level + free-text search
+  const visibleLogs = logs.filter(
+    e =>
+      e.service === logFilter &&
+      (logLevel === 'all' || e.level === logLevel) &&
+      (logSearch.trim() === '' || e.message.toLowerCase().includes(logSearch.toLowerCase()))
+  )
+
   return (
     <div>
       <Link to="/" className="back-link">&larr; Back to Overview</Link>
@@ -448,6 +458,15 @@ function NodeDetail() {
         </span>
         {node.hostname && node.hostname !== node.node_id && <span className="meta">{node.hostname}</span>}
         <span className="meta">Last seen: {formatLastSeen(node.last_seen_at)}</span>
+        <a
+          className="btn"
+          style={{ marginLeft: 'auto', fontSize: '0.75rem' }}
+          href={`/grafana/d/pillar-node-detail/pillar-node-detail?orgId=1&from=now-1h&to=now&timezone=browser&var-datasource=pillar-prometheus&var-node_id=${encodeURIComponent(node.node_id)}&refresh=30s`}
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          Grafana ↗
+        </a>
       </div>
 
       {/* Node Info Cards - versions, client, cluster */}
@@ -512,22 +531,6 @@ function NodeDetail() {
         </div>
       </div>
 
-      {/* Actions */}
-      <div className="actions">
-        <button className="btn primary" onClick={handleRestart}>Restart</button>
-        <button className="btn" onClick={handleRecover}>Recover</button>
-        <button className="btn" onClick={handleStop}>Stop</button>
-        {versionInfo?.agent_update && node.agent_version && node.agent_version !== versionInfo.agent_update.version && (
-          <button className="btn primary" onClick={handleUpgradeAgent}>
-            Upgrade Agent to v{versionInfo.agent_update.version}
-          </button>
-        )}
-        {(node.lifecycle_state === 'provisioning' || node.lifecycle_state === 'starting_up') && (
-          <button className="btn danger" onClick={handleCancel}>Cancel</button>
-        )}
-        <button className="btn danger" onClick={handleDelete}>Delete</button>
-      </div>
-
       {/* Current Config (read-only) */}
       {hasConfig && (
         <div className="config-panel">
@@ -576,9 +579,9 @@ function NodeDetail() {
       {/* Provision - collapsible */}
       <div className="provision-panel">
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <h2 style={{ marginBottom: 0 }}>Setup Validator</h2>
+          <h2 style={{ marginBottom: 0 }}>{hasConfig ? 'Update Validator' : 'Setup Validator'}</h2>
           <button className="btn" onClick={() => setShowProvision(!showProvision)} style={{ fontSize: '0.75rem' }}>
-            {showProvision ? 'Collapse' : 'Configure'}
+            {showProvision ? 'Collapse' : (hasConfig ? 'Update' : 'Configure')}
           </button>
         </div>
 
@@ -762,7 +765,7 @@ function NodeDetail() {
             </div>
 
             <button className="btn primary" onClick={handleProvision} disabled={provSubmitting} style={{ marginTop: '1rem' }}>
-              {provSubmitting ? 'Sending...' : 'Install Validator'}
+              {provSubmitting ? 'Sending...' : (hasConfig ? 'Update Validator' : 'Install Validator')}
             </button>
           </div>
         )}
@@ -772,9 +775,29 @@ function NodeDetail() {
       <div className="logs-section">
         <div className="logs-header">
           <h2>Logs</h2>
-          <span className={`live-indicator ${sseConnected ? 'connected' : ''}`}>
-            {sseConnected ? 'Live' : 'Disconnected'}
-          </span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <input
+              type="text"
+              value={logSearch}
+              onChange={e => setLogSearch(e.target.value)}
+              placeholder="Filter messages..."
+              style={{ background: 'var(--bg-input)', border: '1px solid var(--border)', borderRadius: '6px', padding: '0.3rem 0.6rem', color: 'var(--text)', fontSize: '0.75rem', outline: 'none', width: '200px' }}
+            />
+            <select
+              value={logLevel}
+              onChange={e => setLogLevel(e.target.value)}
+              style={{ background: 'var(--bg-input)', border: '1px solid var(--border)', borderRadius: '6px', padding: '0.3rem 0.5rem', color: 'var(--text)', fontSize: '0.75rem', outline: 'none' }}
+            >
+              <option value="all">All levels</option>
+              <option value="error">Error</option>
+              <option value="warn">Warn</option>
+              <option value="info">Info</option>
+              <option value="debug">Debug</option>
+            </select>
+            <span className={`live-indicator ${sseConnected ? 'connected' : ''}`}>
+              {sseConnected ? 'Live' : 'Disconnected'}
+            </span>
+          </div>
         </div>
         <div className="log-tabs">
           {['controller', 'validator', 'agent'].map(tab => (
@@ -788,14 +811,12 @@ function NodeDetail() {
           ))}
         </div>
         <div className="log-container" ref={logContainerRef}>
-          {logs.filter(e => e.service === logFilter).length === 0 && (
+          {visibleLogs.length === 0 && (
             <div style={{ color: 'var(--text-dim)', padding: '1rem', textAlign: 'center' }}>
-              No logs available
+              {logs.filter(e => e.service === logFilter).length === 0 ? 'No logs available' : 'No logs match the filter'}
             </div>
           )}
-          {logs
-            .filter(e => e.service === logFilter)
-            .map((entry) => (
+          {visibleLogs.map((entry) => (
             <div key={entry.id} className={`log-entry ${entry.level}`}>
               <span className="timestamp">{formatTimestamp(entry.timestamp_ms)}</span>
               <span className="service">{entry.service}</span>
@@ -804,6 +825,23 @@ function NodeDetail() {
             </div>
           ))}
         </div>
+      </div>
+
+      {/* Actions — at the bottom (destructive/lifecycle controls) */}
+      <div className="section-heading" style={{ marginTop: '1.5rem' }}>Actions</div>
+      <div className="actions">
+        <button className="btn primary" onClick={handleRestart}>Restart</button>
+        <button className="btn" onClick={handleRecover}>Recover</button>
+        <button className="btn" onClick={handleStop}>Stop</button>
+        {versionInfo?.agent_update && node.agent_version && node.agent_version !== versionInfo.agent_update.version && (
+          <button className="btn primary" onClick={handleUpgradeAgent}>
+            Upgrade Agent to v{versionInfo.agent_update.version}
+          </button>
+        )}
+        {(node.lifecycle_state === 'provisioning' || node.lifecycle_state === 'starting_up') && (
+          <button className="btn danger" onClick={handleCancel}>Cancel</button>
+        )}
+        <button className="btn danger" onClick={handleDelete}>Delete</button>
       </div>
     </div>
   )

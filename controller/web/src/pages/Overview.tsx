@@ -74,7 +74,7 @@ function Overview() {
     <div>
       <div className="summary-cards">
         <div className="summary-card purple">
-          <div className="label">Total Nodes</div>
+          <div className="label">Total Validators</div>
           <div className="value">{overview?.total ?? 0}</div>
         </div>
         <div className="summary-card green">
@@ -98,7 +98,7 @@ function Overview() {
       <table className="node-table">
         <thead>
           <tr>
-            <th>Host</th>
+            <th>Validator</th>
             <th>IP</th>
             <th>State</th>
             <th>Link</th>
@@ -107,12 +107,18 @@ function Overview() {
             <th>Version</th>
             <th>Slots Behind</th>
             <th>Last Seen</th>
+            <th>Grafana</th>
           </tr>
         </thead>
         <tbody>
           {nodes.map((node) => (
             <tr key={node.node_id} onClick={() => navigate(`/nodes/${node.node_id}`)}>
-              <td>{node.hostname ?? node.live_status?.hostname ?? node.node_id}</td>
+              <td>
+                {node.node_id}
+                {node.hostname && node.hostname !== node.node_id && (
+                  <span style={{ color: 'var(--text-dim)', display: 'block', fontSize: '0.7rem' }}>{node.hostname}</span>
+                )}
+              </td>
               <td>{node.ip_address && !node.ip_address.includes(':') ? node.ip_address : '-'}</td>
               <td>
                 <span className={`badge ${STATE_COLORS[node.lifecycle_state] ? node.lifecycle_state : ''}`}>
@@ -135,12 +141,23 @@ function Overview() {
               <td>{node.live_status?.version ?? '-'}</td>
               <td>{node.live_status?.slots_behind ?? '-'}</td>
               <td>{formatLastSeen(node.last_seen_at)}</td>
+              <td>
+                <a
+                  onClick={e => e.stopPropagation()}
+                  href={`/grafana/d/pillar-node-detail/pillar-node-detail?orgId=1&from=now-1h&to=now&timezone=browser&var-datasource=pillar-prometheus&var-node_id=${encodeURIComponent(node.node_id)}&refresh=30s`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{ color: 'var(--purple)', textDecoration: 'none', fontWeight: 600 }}
+                >
+                  Grafana ↗
+                </a>
+              </td>
             </tr>
           ))}
           {nodes.length === 0 && (
             <tr>
-              <td colSpan={9} style={{ textAlign: 'center', color: 'var(--text-dim)', padding: '2rem' }}>
-                No nodes connected. Use the command below to add one.
+              <td colSpan={10} style={{ textAlign: 'center', color: 'var(--text-dim)', padding: '2rem' }}>
+                No validators connected. Use the command below to add one.
               </td>
             </tr>
           )}
@@ -148,9 +165,9 @@ function Overview() {
       </table>
 
       <div className="onboard-panel">
-        <h3>Add a Node</h3>
+        <h3>Add a Validator</h3>
         <p style={{ color: 'var(--text-dim)', fontSize: '0.8125rem', marginBottom: '0.75rem' }}>
-          Run this command on any Linux machine to join it to your fleet:
+          Run this command on the validator host to add it to your fleet:
         </p>
         <div className="onboard-command">
           <code>{onboardCmd || 'Loading...'}</code>
