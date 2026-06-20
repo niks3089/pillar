@@ -1,0 +1,67 @@
+#!/usr/bin/env bash
+set -euo pipefail
+echo "=== Pillar: Provisioning Surfpool {{version}} on {{cluster}} ==="
+
+# Surfpool is a local Solana test validator / mainnet-fork simulator (drop-in for
+# solana-test-validator). It serves standard Solana JSON-RPC locally and does NOT need
+# gossip/turbine/snapshot sync, so it comes up instantly healthy — ideal for testing/demos.
+
+# Install surfpool if not already at the target path.
+if [ ! -x "{{binary_path}}" ]; then
+  echo "Installing surfpool..."
+  curl -sL https://run.surfpool.run/ | bash
+  SP=$(command -v surfpool 2>/dev/null || true)
+  [ -z "$SP" ] && SP="$HOME/.local/bin/surfpool"
+  if [ ! -x "$SP" ]; then
+    SP=$(find "$HOME/.local" -name surfpool -type f 2>/dev/null | head -1)
+  fi
+  if [ -z "$SP" ] || [ ! -x "$SP" ]; then
+    echo "ERROR: surfpool not found after install" >&2
+    exit 1
+  fi
+  # Promote to the system path used by the systemd unit.
+  sudo install -m 755 "$SP" {{binary_path}}
+fi
+echo "surfpool ready at {{binary_path}}"
+
+# Stop existing service if running
+sudo systemctl stop {{old_service_name}} 2>/dev/null || true
+
+# Working directory for surfpool state
+sudo install -d -o sol -g sol /home/sol/surfpool
+
+# Write systemd unit
+sudo tee /etc/systemd/system/{{service_name}}.service > /dev/null <<'UNIT'
+[Unit]
+Description=Surfpool (local Solana test validator)
+After=network-online.target
+Wants=network-online.target
+{{start_limit_line}}
+
+[Service]
+Type=simple
+User=sol
+WorkingDirectory=/home/sol/surfpool
+ExecStart={{exec_start}}
+Restart=on-failure
+RestartSec={{restart_sec}}
+LimitNOFILE=1000000
+{{log_rate_limit_line}}
+{{environment_lines}}
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+
+sudo systemctl daemon-reload
+sudo systemctl enable --now {{service_name}}
+echo "Service {{service_name}} started"
+
+# Update agent config (client/cluster/service + reference RPC = surfpool's own local RPC)
+CONFIG="${PILLAR_AGENT_CONFIG:-/etc/pillar/agent.yaml}"
+{{agent_config_sed_commands}}
+
+echo "=== Provision complete ==="
+
+# Restart agent for config reload (deferred so script result can be reported)
+(sleep 3 && sudo systemctl restart pillar-agent) &

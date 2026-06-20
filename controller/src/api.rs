@@ -679,8 +679,21 @@ fn build_provision_vars(req: &ProvisionRequest) -> HashMap<String, String> {
         req.restart_sec
     };
 
-    // Build ExecStart for Agave/Jito or fdctl command for Firedancer
-    let exec_start = if req.client == "firedancer" || req.client == "frankendancer" {
+    // Build ExecStart per client: surfpool (local test validator / fork), fdctl (Firedancer),
+    // or the standard agave/jito flag-based command.
+    let exec_start = if req.client == "surfpool" {
+        // Surfpool forks the cluster's state and serves Solana JSON-RPC locally — no
+        // gossip/turbine/snapshot sync, so it's instantly healthy. --no-tui prints logs to
+        // journald; --host 0.0.0.0 exposes the RPC.
+        let network = match req.cluster.as_str() {
+            "devnet" => "devnet",
+            "testnet" => "testnet",
+            _ => "mainnet",
+        };
+        format!(
+            "{binary_path} start --no-tui --no-studio --host 0.0.0.0 --port {rpc_port} --network {network}"
+        )
+    } else if req.client == "firedancer" || req.client == "frankendancer" {
         format!("{binary_path} run --config /etc/pillar/validator.toml")
     } else {
         templates::build_exec_start(
@@ -810,7 +823,14 @@ echo "Wrote /etc/pillar/yellowstone-grpc.json""#
         .join("\n");
 
     // Build sed commands for agent config update
-    let reference_rpc = templates::reference_rpc_for_cluster(&req.cluster);
+    let reference_rpc = if req.client == "surfpool" {
+        // Surfpool is a local chain with no meaningful external reference; compare it to
+        // its own RPC so the agent reports it healthy (caught up to itself) instead of
+        // "behind" a real cluster.
+        format!("http://127.0.0.1:{rpc_port}")
+    } else {
+        templates::reference_rpc_for_cluster(&req.cluster).to_string()
+    };
     let agent_config_sed_commands = format!(
         r#"if [ -f "$CONFIG" ]; then
   sudo sed -i 's/^client:.*/client: {client}/' "$CONFIG"
