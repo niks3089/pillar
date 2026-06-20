@@ -43,8 +43,8 @@ function App() {
         <NavLink to="/" className="nav-logo">Pillar</NavLink>
         <div className="nav-links">
           <NavLink to="/" end>Overview</NavLink>
+          <a href="/grafana/d/pillar-fleet-overview" target="_blank" rel="noopener noreferrer">Metrics</a>
           <NavLink to="/docs">Docs</NavLink>
-          <a href="/grafana/d/pillar-fleet-overview" target="_blank" rel="noopener noreferrer">Grafana</a>
         </div>
         <div className="nav-user">
           <button className="btn nav-user-btn" onClick={() => setShowChangePassword(true)}>

@@ -465,7 +465,7 @@ function NodeDetail() {
           target="_blank"
           rel="noopener noreferrer"
         >
-          Grafana ↗
+          Metrics ↗
         </a>
       </div>
 

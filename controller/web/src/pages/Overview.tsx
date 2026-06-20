@@ -107,7 +107,7 @@ function Overview() {
             <th>Version</th>
             <th>Slots Behind</th>
             <th>Last Seen</th>
-            <th>Grafana</th>
+            <th>Metrics</th>
           </tr>
         </thead>
         <tbody>
@@ -149,7 +149,7 @@ function Overview() {
                   rel="noopener noreferrer"
                   style={{ color: 'var(--purple)', textDecoration: 'none', fontWeight: 600 }}
                 >
-                  Grafana ↗
+                  Metrics ↗
                 </a>
               </td>
             </tr>

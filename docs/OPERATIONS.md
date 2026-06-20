@@ -22,7 +22,7 @@ curl -sSL https://github.com/niks3089/pillar/releases/latest/download/install-co
 This installs the controller, Prometheus, and Grafana (dashboards auto-provisioned), and
 enables TLS on the gRPC port. Then:
 
-- **Open the UI** at `http://<controller-host>:8080` (or put it behind a domain — see §7).
+- **Open the UI** at `http://<controller-host>:8080` (or put it behind a domain — see §10).
 - **Change the default `admin` / `admin` credentials immediately** (avatar menu → change
   credentials). This is the single most important first step.
 - The gRPC server runs with TLS, so agents must connect over `https://…:50051`.
@@ -106,9 +106,9 @@ itself upgrades with `POST /api/upgrade-controller` (or re-run `install-controll
   behind, restarts, uptime).
 - **Logs:** node detail → Logs (Controller / Validator / Agent tabs), with **level + text
   filtering** and live streaming.
-- **Grafana:** each node detail page has a **Grafana** link that opens the node-detail
-  dashboard scoped to that validator (`var-node_id`). Fleet-wide dashboard is the Grafana
-  home / fleet-overview.
+- **Metrics:** the nav's **Metrics** link opens the global fleet dashboard; each node-detail
+  page and Overview row has a **Metrics** link that opens the per-node dashboard scoped to
+  that validator (`var-node_id`). (These are Grafana dashboards under the hood.)
 - **Lifecycle actions** (bottom of node detail): **Restart**, **Recover** (snapshot
   recovery), **Stop**, **Delete**.
 
@@ -182,7 +182,86 @@ delivery, and a **mute timing** for maintenance windows.
 
 ---
 
-## 8. Putting the UI behind a domain (optional)
+## 8. Security & data
+
+**What Pillar stores, and where**
+- **Controller SQLite** (`/var/lib/pillar/controller.db`): node status + history, logs,
+  per-node provision configs, the admin username + **argon2 password hash**, and the gRPC
+  **auth token**. It does **not** hold validator private keys.
+- **Validator hosts**: the **identity / vote / authorized-withdrawer keypairs** live on each
+  host under `/home/sol/*.json` and are never sent to the controller. The
+  authorized-withdrawer key is the crown jewel — back it up offline.
+- **Controller TLS material**: `/etc/pillar/certs/` (CA + server cert/key).
+
+**Encryption**
+- **In transit (agent ↔ controller): TLS.** The gRPC channel uses the controller's CA; agents
+  pull `ca.pem` at install. Always use `https://…:50051`.
+- **The web UI (:8080) is plain HTTP by default** — login + API traffic is unencrypted on the
+  wire. Front it with HTTPS (Caddy / Cloudflare — see §10) before exposing it publicly.
+- **At rest: the SQLite DB is not encrypted.** It's owned by the `pillar` user (restrict file
+  perms); use disk/volume encryption if you need at-rest guarantees. The admin password is
+  argon2-hashed, but the gRPC auth token is stored in clear — treat the DB as a secret.
+
+**Who can read data**
+- **Web UI / JSON API** — gated by admin login (session cookie). Anyone with the admin
+  credentials can read all status, logs, and configs and run lifecycle actions.
+- **`/metrics` is unauthenticated** — it exposes per-node metrics to anyone who can reach it.
+- **Grafana ships with anonymous Admin access** (no login) for convenience — anyone who can
+  reach `:3000` / `/grafana` can view dashboards. Disable anonymous auth + set an admin
+  password for anything beyond a demo.
+
+**Hardening checklist**
+- Change `admin/admin` immediately; use a strong password.
+- Front the UI with HTTPS; don't expose `:8080` / `:3000` / `/metrics` to the public internet
+  unprotected.
+- Keep gRPC on TLS. Today a single shared auth token is used for all agents — consider
+  per-node tokens / mTLS so a leaked token can't impersonate the whole fleet.
+- The `sol` sudoers is a fixed minimal allow-list — keep it that way.
+- Back up the authorized-withdrawer keypair offline.
+
+---
+
+## 9. Backup, recovery & loss of access
+
+**Lost admin password** — on the controller host, clear the stored credential so it re-seeds
+`admin/admin` on restart, then change it again:
+
+```bash
+sqlite3 /var/lib/pillar/controller.db \
+  "DELETE FROM settings WHERE key IN ('admin_username','admin_password_hash');"
+sudo systemctl restart pillar-controller
+```
+
+The gRPC auth token is untouched, so agents stay connected.
+
+**Lost the controller host** — **validators keep running.** The agent is autonomous: its
+reconcile loop keeps supervising the validator (health, restarts, recovery) while the
+controller is down, and it reconnects automatically when the controller returns. You lose the
+dashboard/history until it's back, not the validators. To restore:
+- Stand up a new controller and **restore the backup** (below). If you restore the same
+  SQLite DB **and** `/etc/pillar/certs`, the auth token + CA match and existing agents
+  reconnect with no changes.
+- If you generate a **new** CA instead, redistribute the new `ca.pem` to agents (or re-run
+  `install-node.sh`) — their pinned CA won't match the old one.
+
+**What to back up**
+- `/var/lib/pillar/controller.db` — all fleet state, configs, logs, credentials + auth token.
+- `/etc/pillar/` — controller config + `certs/`. Backing these up makes controller recovery a
+  restore-and-restart.
+- Per validator host: the keypairs under `/home/sol/` (especially authorized-withdrawer) —
+  offline.
+
+**Validator recovery**
+- **Recover** (node detail) triggers snapshot recovery: the agent wipes a stale/corrupt ledger
+  and re-bootstraps from a snapshot — use it when a validator is wedged or far behind.
+- **Restart** for a clean service restart; **Stop** to take it offline.
+
+**Sessions** are in-memory, so a controller restart logs everyone out — just log back in (it
+doesn't affect agents or validators).
+
+---
+
+## 10. Putting the UI behind a domain (optional)
 
 - Reserve a **static IP** for the controller host so DNS doesn't break on reboot.
 - Point an **A record** at it (DNS-only if using Cloudflare and agents hit gRPC directly).
@@ -191,12 +270,12 @@ delivery, and a **mute timing** for maintenance windows.
 
 ---
 
-## 9. Troubleshooting
+## 11. Troubleshooting
 
 | Symptom | Likely cause / fix |
 |---|---|
 | Node shows **offline**, RPC not serving | Validator still bootstrapping (snapshot download/replay) — check Validator logs. |
-| **slots_behind grows** over time | Inbound UDP/turbine not reaching the host, or unstaked node — see §6 Networking. |
+| **slots_behind grows** over time | Inbound UDP/turbine not reaching the host, or unstaked node — see §7 (Networking). |
 | **Genesis hash mismatch** in logs | Stale ledger from a different cluster — clear `ledger/` + `accounts/`. |
 | Agent fails to register, `h2 FRAME_SIZE_ERROR` | TLS scheme mismatch — agent endpoint must be `https://` when the controller has TLS. |
 | Grafana **"Dashboard not found"** | Dashboards not provisioned — ensure the JSONs are in `/var/lib/grafana/dashboards/pillar/`. |
