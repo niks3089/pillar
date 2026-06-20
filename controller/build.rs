@@ -1,0 +1,56 @@
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    tonic_prost_build::configure()
+        .build_server(true)
+        .build_client(false)
+        .extern_path(".pillar.NodeStatus", "::pillar_shared::proto::NodeStatus")
+        .extern_path(
+            ".pillar.ReportStatusRequest",
+            "::pillar_shared::proto::ReportStatusRequest",
+        )
+        .extern_path(
+            ".pillar.ReportStatusResponse",
+            "::pillar_shared::proto::ReportStatusResponse",
+        )
+        .extern_path(
+            ".pillar.CommandStreamRequest",
+            "::pillar_shared::proto::CommandStreamRequest",
+        )
+        .extern_path(
+            ".pillar.ControllerCommand",
+            "::pillar_shared::proto::ControllerCommand",
+        )
+        .extern_path(
+            ".pillar.ExecuteScript",
+            "::pillar_shared::proto::ExecuteScript",
+        )
+        .extern_path(
+            ".pillar.ScriptResult",
+            "::pillar_shared::proto::ScriptResult",
+        )
+        .extern_path(
+            ".pillar.ScriptResultAck",
+            "::pillar_shared::proto::ScriptResultAck",
+        )
+        .extern_path(
+            ".pillar.RegisterNodeRequest",
+            "::pillar_shared::proto::RegisterNodeRequest",
+        )
+        .extern_path(
+            ".pillar.RegisterNodeResponse",
+            "::pillar_shared::proto::RegisterNodeResponse",
+        )
+        .extern_path(
+            ".pillar.LogBatch",
+            "::pillar_shared::proto::LogBatch",
+        )
+        .extern_path(
+            ".pillar.LogEntry",
+            "::pillar_shared::proto::LogEntry",
+        )
+        .extern_path(
+            ".pillar.LogAck",
+            "::pillar_shared::proto::LogAck",
+        )
+        .compile_protos(&["../shared/proto/pillar.proto"], &["../shared/proto/"])?;
+    Ok(())
+}

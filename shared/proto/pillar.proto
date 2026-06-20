@@ -1,0 +1,148 @@
+syntax = "proto3";
+
+package pillar;
+
+// Agent pushes node status to controller on a regular interval.
+service PillarController {
+    rpc ReportStatus(ReportStatusRequest) returns (ReportStatusResponse);
+    rpc CommandStream(CommandStreamRequest) returns (stream ControllerCommand);
+    rpc RegisterNode(RegisterNodeRequest) returns (RegisterNodeResponse);
+    rpc ReportScriptResult(ScriptResult) returns (ScriptResultAck);
+    // Agent streams log batches from validator/agent services.
+    rpc PushLogs(stream LogBatch) returns (LogAck);
+}
+
+message ReportStatusRequest {
+    string node_id = 1;
+    NodeStatus status = 2;
+}
+
+message ReportStatusResponse {}
+
+message CommandStreamRequest {
+    string node_id = 1;
+}
+
+// Flattened agent state + system metrics sent to controller.
+// Agent writes node-health fields and enriches with system/process metrics.
+message NodeStatus {
+    string state = 1;
+    int64  local_slot = 2;
+    int64  reference_slot = 3;
+    int64  slots_behind = 4;
+    bool   healthy = 5;
+    uint64 restart_count = 6;
+    bool   crash_looping = 7;
+    double health_check_duration_secs = 8;
+    string version = 9;
+    string role = 10;
+    string client = 11;
+    string cluster = 12;
+    double cpu_usage_percent = 13;
+    uint64 memory_used_bytes = 14;
+    uint64 memory_total_bytes = 15;
+    uint64 disk_used_bytes = 16;
+    uint64 disk_total_bytes = 17;
+    int64  updated_at_unix_secs = 18;
+    uint64 state_duration_secs = 19;
+    string validator_process = 20;
+    uint64 network_rx_bytes = 21;
+    uint64 network_tx_bytes = 22;
+    double validator_cpu_percent = 23;
+    uint64 validator_memory_bytes = 24;
+    double agent_cpu_percent = 25;
+    uint64 agent_memory_bytes = 26;
+    reserved 27, 28;   // was link_cpu_percent, link_memory_bytes (duplicates of 25, 26)
+    string agent_version = 29;
+    reserved 30;        // was link_version (duplicate of 29)
+    string pending_upgrade = 31;
+    string hostname = 32;
+
+    // --- Agent reconciler health ---
+    uint64 reconcile_count = 33;
+    uint64 health_check_errors = 34;
+    uint32 consecutive_off_count = 35;
+    uint64 recovery_count = 36;
+    reserved 37, 38;    // was operator_state_write_errors, operator_pending_cmd_errors (dead IPC)
+    uint64 agent_uptime_secs = 39;
+    bool   version_mismatch = 40;
+
+    // --- Controller connectivity ---
+    bool   controller_connected = 41;
+    uint64 controller_latency_ms = 42;
+    uint64 status_reports_sent = 43;
+    uint64 status_reports_failed = 44;
+    reserved 45, 46;    // was link_state_file_age_secs, link_state_read_errors (dead IPC)
+    uint64 log_batches_dropped = 47;
+    reserved 48;        // was link_uptime_secs (duplicate of 39)
+    uint64 commands_received = 49;
+
+    // --- Process start time (unix epoch, stable per process lifetime) ---
+    int64  agent_started_at_unix_secs = 50;
+    reserved 51;        // was link_started_at_unix_secs (duplicate of 50)
+
+    // --- Snapshot download progress (zero when no download active) ---
+    uint64 snapshot_download_bytes = 52;
+    uint64 snapshot_download_total_bytes = 53;
+    double snapshot_download_speed_bps = 54;
+}
+
+// Commands pushed from controller to agent.
+message ControllerCommand {
+    oneof command {
+        ExecuteScript execute = 1;
+    }
+}
+
+message ExecuteScript {
+    string script_id = 1;      // unique tracking ID
+    string script = 2;         // rendered bash script content
+    string description = 3;    // human-readable ("Provision Agave v2.1.6")
+    uint32 timeout_secs = 4;   // max execution time, 0 = 3600 default
+}
+
+message ScriptResult {
+    string node_id = 1;
+    string script_id = 2;
+    int32 exit_code = 3;
+    bool timed_out = 4;
+    string error = 5;          // agent-side error (failed to spawn, etc.)
+    string stdout = 6;         // captured stdout
+    string stderr = 7;         // captured stderr
+}
+
+message ScriptResultAck {}
+
+message RegisterNodeRequest {
+    string node_id = 1;
+    string role = 2;
+    string client = 3;
+    string cluster = 4;
+    string agent_version = 5;
+    string hostname = 6;
+    string architecture = 7;
+    string os = 8;
+}
+
+message RegisterNodeResponse {
+    bool accepted = 1;
+    string message = 2;
+}
+
+// Log streaming from agent to controller.
+message LogBatch {
+    string node_id = 1;
+    repeated LogEntry entries = 2;
+}
+
+message LogEntry {
+    string service = 1;          // "validator", "agent"
+    int64 timestamp_unix_ms = 2;
+    string level = 3;            // "info", "warn", "error", "debug"
+    string message = 4;
+    string unit = 5;             // systemd unit name (e.g. "solana-validator.service")
+}
+
+message LogAck {
+    uint64 received_count = 1;
+}

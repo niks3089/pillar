@@ -1,0 +1,119 @@
+#!/usr/bin/env bash
+set -euo pipefail
+echo "=== Pillar: Provisioning Agave {{version}} on {{cluster}} ==="
+
+# Install validator binary
+DOWNLOAD_URL="{{download_url}}"
+STAGING="/tmp/pillar-staging"
+rm -rf "$STAGING"
+
+# Check if the binary already exists at the correct version
+if [ -x "{{binary_path}}" ]; then
+  CURRENT=$("{{binary_path}}" --version 2>/dev/null | grep -oP '\d+\.\d+\.\d+(-[a-zA-Z0-9.]+)?' | head -1 || true)
+  if [ "$CURRENT" = "{{version}}" ]; then
+    echo "Binary {{binary_path}} already at v{{version}}, skipping install"
+  else
+    echo "Binary exists but version $CURRENT != {{version}}, will reinstall"
+    CURRENT=""
+  fi
+fi
+
+if [ -z "${CURRENT:-}" ]; then
+  if [ -n "$DOWNLOAD_URL" ]; then
+    # Direct download: tarball or standalone binary
+    mkdir -p "$STAGING"
+    echo "Downloading from $DOWNLOAD_URL..."
+    curl -sSL -o "$STAGING/download" "$DOWNLOAD_URL"
+
+    # SHA256 verification (skip if empty)
+    SHA="{{sha256}}"
+    if [ -n "$SHA" ]; then
+      echo "$SHA  $STAGING/download" | sha256sum -c
+      echo "SHA256 verified"
+    fi
+
+    # Handle tarball vs standalone binary
+    if file "$STAGING/download" | grep -q "bzip2\|gzip\|tar"; then
+      echo "Extracting tarball..."
+      mkdir -p "$STAGING/extract"
+      tar -xf "$STAGING/download" -C "$STAGING/extract"
+      BINARY=$(find "$STAGING/extract" \( -name "agave-validator" -o -name "solana-validator" \) -type f | head -1)
+      if [ -z "$BINARY" ]; then
+        echo "ERROR: validator binary not found in tarball" >&2
+        exit 1
+      fi
+      sudo install -m 755 "$BINARY" {{binary_path}}
+    else
+      sudo install -m 755 "$STAGING/download" {{binary_path}}
+    fi
+  else
+    # No download URL — build from source for v3.x
+    echo "No download_url provided, building agave-validator v{{version}} from source..."
+    BUILD_DIR="/tmp/agave-build"
+    rm -rf "$BUILD_DIR"
+
+    # Install build deps if missing
+    if ! dpkg -s build-essential clang cmake libudev-dev libssl-dev zlib1g-dev pkg-config libclang-dev protobuf-compiler >/dev/null 2>&1; then
+      echo "Installing build dependencies..."
+      sudo apt-get update -qq && sudo apt-get install -y -qq build-essential clang cmake libudev-dev libssl-dev zlib1g-dev pkg-config libclang-dev protobuf-compiler
+    fi
+
+    # Ensure Rust toolchain
+    if ! command -v cargo >/dev/null 2>&1; then
+      echo "Installing Rust toolchain..."
+      curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+      export PATH="$HOME/.cargo/bin:$PATH"
+    fi
+
+    git clone --depth 1 --branch v{{version}} https://github.com/anza-xyz/agave.git "$BUILD_DIR"
+    cd "$BUILD_DIR"
+    echo "Building agave-validator (this may take 10-30 minutes)..."
+    cargo build --release --bin agave-validator
+    sudo install -m 755 target/release/agave-validator {{binary_path}}
+    cd /
+    rm -rf "$BUILD_DIR"
+    echo "Built and installed agave-validator v{{version}}"
+  fi
+fi
+echo "Binary ready at {{binary_path}}"
+
+# Stop existing service if running
+sudo systemctl stop {{old_service_name}} 2>/dev/null || true
+
+{{yellowstone_section}}
+
+# Write systemd unit
+sudo tee /etc/systemd/system/{{service_name}}.service > /dev/null <<'UNIT'
+[Unit]
+Description=Solana Validator (agave)
+After=network.target
+{{start_limit_line}}
+
+[Service]
+Type=simple
+User=sol
+ExecStart={{exec_start}}
+Restart=on-failure
+RestartSec={{restart_sec}}
+LimitNOFILE=1000000
+LimitMEMLOCK=infinity
+{{log_rate_limit_line}}
+{{environment_lines}}
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+
+sudo systemctl daemon-reload
+sudo systemctl enable --now {{service_name}}
+echo "Service {{service_name}} started"
+
+# Update agent config
+CONFIG="${PILLAR_AGENT_CONFIG:-/etc/pillar/agent.yaml}"
+{{agent_config_sed_commands}}
+
+rm -rf "$STAGING"
+echo "=== Provision complete ==="
+
+# Restart agent for config reload (deferred so script result can be reported)
+(sleep 3 && sudo systemctl restart pillar-agent) &

@@ -1,0 +1,17 @@
+[workspace]
+resolver = "2"
+members = ["agent", "shared", "controller"]
+
+[workspace.package]
+edition = "2021"
+authors = ["Nikhil Acharya"]
+
+[profile.dev-fast]
+inherits = "dev"
+debug = 0
+strip = "debuginfo"
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true

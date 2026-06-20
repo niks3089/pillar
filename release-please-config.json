@@ -1,0 +1,14 @@
+{
+  "packages": {
+    "agent": {
+      "release-type": "rust",
+      "component": "pillar-agent",
+      "bump-minor-pre-major": true
+    },
+    "controller": {
+      "release-type": "rust",
+      "component": "pillar-controller",
+      "bump-minor-pre-major": true
+    }
+  }
+}

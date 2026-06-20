@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+set -euo pipefail
+echo "=== Pillar: Upgrading {{binary_name}} to {{version}} ==="
+
+# Download and verify binary
+STAGING="/tmp/pillar-staging"
+rm -rf "$STAGING" && mkdir -p "$STAGING"
+echo "Downloading binary..."
+curl -sSL -o "$STAGING/binary" "{{download_url}}"
+echo "{{sha256}}  $STAGING/binary" | sha256sum -c
+
+# Stop, swap, restart
+sudo systemctl stop {{service_name}} 2>/dev/null || true
+sudo install -m 755 "$STAGING/binary" {{binary_dest}}
+sudo systemctl restart {{service_name}}
+
+rm -rf "$STAGING"
+echo "=== Upgrade complete: {{binary_name}} {{version}} ==="

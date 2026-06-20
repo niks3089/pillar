@@ -1,0 +1,786 @@
+{
+  "Pillar": [
+    {
+      "name": "pillar-alerts",
+      "interval": "1m",
+      "rules": [
+        {
+          "expr": "",
+          "for": "1m",
+          "keep_firing_for": "0s",
+          "labels": {
+            "severity": "critical"
+          },
+          "annotations": {
+            "description": "Node {{ $labels.node_id }} has been unreachable for more than 1 minute. The node may be down or the agent may have stopped reporting.",
+            "summary": "Node {{ $labels.node_id }} is offline"
+          },
+          "grafana_alert": {
+            "title": "Node Offline",
+            "condition": "C",
+            "data": [
+              {
+                "refId": "A",
+                "queryType": "",
+                "relativeTimeRange": {
+                  "from": 300,
+                  "to": 0
+                },
+                "datasourceUid": "pillar-prometheus",
+                "model": {
+                  "expr": "pillar_node_healthy == 0",
+                  "instant": true,
+                  "intervalMs": 1000,
+                  "maxDataPoints": 43200,
+                  "refId": "A"
+                }
+              },
+              {
+                "refId": "B",
+                "queryType": "",
+                "relativeTimeRange": {
+                  "from": 300,
+                  "to": 0
+                },
+                "datasourceUid": "__expr__",
+                "model": {
+                  "expression": "A",
+                  "intervalMs": 1000,
+                  "maxDataPoints": 43200,
+                  "reducer": "last",
+                  "refId": "B",
+                  "type": "reduce"
+                }
+              },
+              {
+                "refId": "C",
+                "queryType": "",
+                "relativeTimeRange": {
+                  "from": 300,
+                  "to": 0
+                },
+                "datasourceUid": "__expr__",
+                "model": {
+                  "conditions": [
+                    {
+                      "evaluator": {
+                        "params": [
+                          0
+                        ],
+                        "type": "gt"
+                      }
+                    }
+                  ],
+                  "expression": "B",
+                  "intervalMs": 1000,
+                  "maxDataPoints": 43200,
+                  "refId": "C",
+                  "type": "threshold"
+                }
+              }
+            ],
+            "updated": "2026-02-20T16:08:08Z",
+            "updated_by": {
+              "uid": "ffdphotarqrcwc",
+              "name": "admin"
+            },
+            "intervalSeconds": 60,
+            "version": 1,
+            "uid": "afdtrlzfrsem8c",
+            "namespace_uid": "efdphotu9g8hsa",
+            "rule_group": "pillar-alerts",
+            "no_data_state": "OK",
+            "exec_err_state": "Error",
+            "is_paused": false,
+            "metadata": {
+              "editor_settings": {
+                "simplified_query_and_expressions_section": false,
+                "simplified_notifications_section": false
+              }
+            },
+            "guid": "48958a2f-bd9f-4a83-b25b-d4ac7d04fdd2"
+          }
+        },
+        {
+          "expr": "",
+          "for": "1m",
+          "keep_firing_for": "0s",
+          "labels": {
+            "severity": "critical"
+          },
+          "annotations": {
+            "description": "Node {{ $labels.node_id }} has been detected in a crash loop. The validator process is repeatedly crashing and restarting.",
+            "summary": "Node {{ $labels.node_id }} is crash looping"
+          },
+          "grafana_alert": {
+            "title": "Crash Loop Detected",
+            "condition": "C",
+            "data": [
+              {
+                "refId": "A",
+                "queryType": "",
+                "relativeTimeRange": {
+                  "from": 300,
+                  "to": 0
+                },
+                "datasourceUid": "pillar-prometheus",
+                "model": {
+                  "expr": "pillar_node_crash_looping == 1",
+                  "instant": true,
+                  "intervalMs": 1000,
+                  "maxDataPoints": 43200,
+                  "refId": "A"
+                }
+              },
+              {
+                "refId": "B",
+                "queryType": "",
+                "relativeTimeRange": {
+                  "from": 300,
+                  "to": 0
+                },
+                "datasourceUid": "__expr__",
+                "model": {
+                  "expression": "A",
+                  "intervalMs": 1000,
+                  "maxDataPoints": 43200,
+                  "reducer": "last",
+                  "refId": "B",
+                  "type": "reduce"
+                }
+              },
+              {
+                "refId": "C",
+                "queryType": "",
+                "relativeTimeRange": {
+                  "from": 300,
+                  "to": 0
+                },
+                "datasourceUid": "__expr__",
+                "model": {
+                  "conditions": [
+                    {
+                      "evaluator": {
+                        "params": [
+                          0
+                        ],
+                        "type": "gt"
+                      }
+                    }
+                  ],
+                  "expression": "B",
+                  "intervalMs": 1000,
+                  "maxDataPoints": 43200,
+                  "refId": "C",
+                  "type": "threshold"
+                }
+              }
+            ],
+            "updated": "2026-02-20T16:08:08Z",
+            "updated_by": {
+              "uid": "ffdphotarqrcwc",
+              "name": "admin"
+            },
+            "intervalSeconds": 60,
+            "version": 1,
+            "uid": "ffdtrlzfrsem9b",
+            "namespace_uid": "efdphotu9g8hsa",
+            "rule_group": "pillar-alerts",
+            "no_data_state": "OK",
+            "exec_err_state": "Error",
+            "is_paused": false,
+            "metadata": {
+              "editor_settings": {
+                "simplified_query_and_expressions_section": false,
+                "simplified_notifications_section": false
+              }
+            },
+            "guid": "9c7fffe4-6a9d-4a14-b4ef-dc4ffae689f3"
+          }
+        },
+        {
+          "expr": "",
+          "for": "1m",
+          "keep_firing_for": "0s",
+          "labels": {
+            "severity": "warning"
+          },
+          "annotations": {
+            "description": "Node {{ $labels.node_id }} is falling behind the cluster by more than 100 slots. This may indicate performance issues or network problems.",
+            "summary": "Node {{ $labels.node_id }} is {{ $value }} slots behind"
+          },
+          "grafana_alert": {
+            "title": "Node Falling Behind",
+            "condition": "C",
+            "data": [
+              {
+                "refId": "A",
+                "queryType": "",
+                "relativeTimeRange": {
+                  "from": 300,
+                  "to": 0
+                },
+                "datasourceUid": "pillar-prometheus",
+                "model": {
+                  "expr": "pillar_node_slots_behind > 100",
+                  "instant": true,
+                  "intervalMs": 1000,
+                  "maxDataPoints": 43200,
+                  "refId": "A"
+                }
+              },
+              {
+                "refId": "B",
+                "queryType": "",
+                "relativeTimeRange": {
+                  "from": 300,
+                  "to": 0
+                },
+                "datasourceUid": "__expr__",
+                "model": {
+                  "expression": "A",
+                  "intervalMs": 1000,
+                  "maxDataPoints": 43200,
+                  "reducer": "last",
+                  "refId": "B",
+                  "type": "reduce"
+                }
+              },
+              {
+                "refId": "C",
+                "queryType": "",
+                "relativeTimeRange": {
+                  "from": 300,
+                  "to": 0
+                },
+                "datasourceUid": "__expr__",
+                "model": {
+                  "conditions": [
+                    {
+                      "evaluator": {
+                        "params": [
+                          0
+                        ],
+                        "type": "gt"
+                      }
+                    }
+                  ],
+                  "expression": "B",
+                  "intervalMs": 1000,
+                  "maxDataPoints": 43200,
+                  "refId": "C",
+                  "type": "threshold"
+                }
+              }
+            ],
+            "updated": "2026-02-20T16:08:08Z",
+            "updated_by": {
+              "uid": "ffdphotarqrcwc",
+              "name": "admin"
+            },
+            "intervalSeconds": 60,
+            "version": 1,
+            "uid": "afdtrlzfrsemaf",
+            "namespace_uid": "efdphotu9g8hsa",
+            "rule_group": "pillar-alerts",
+            "no_data_state": "OK",
+            "exec_err_state": "Error",
+            "is_paused": false,
+            "metadata": {
+              "editor_settings": {
+                "simplified_query_and_expressions_section": false,
+                "simplified_notifications_section": false
+              }
+            },
+            "guid": "033ea848-00c1-4168-8951-657f2977898d"
+          }
+        },
+        {
+          "expr": "",
+          "for": "1m",
+          "keep_firing_for": "0s",
+          "labels": {
+            "severity": "warning"
+          },
+          "annotations": {
+            "description": "Node {{ $labels.node_id }} has sustained CPU usage above 90%. This may impact validator performance.",
+            "summary": "Node {{ $labels.node_id }} CPU usage is above 90%"
+          },
+          "grafana_alert": {
+            "title": "High CPU Usage",
+            "condition": "C",
+            "data": [
+              {
+                "refId": "A",
+                "queryType": "",
+                "relativeTimeRange": {
+                  "from": 300,
+                  "to": 0
+                },
+                "datasourceUid": "pillar-prometheus",
+                "model": {
+                  "expr": "pillar_system_cpu_usage_percent > 90",
+                  "instant": true,
+                  "intervalMs": 1000,
+                  "maxDataPoints": 43200,
+                  "refId": "A"
+                }
+              },
+              {
+                "refId": "B",
+                "queryType": "",
+                "relativeTimeRange": {
+                  "from": 300,
+                  "to": 0
+                },
+                "datasourceUid": "__expr__",
+                "model": {
+                  "expression": "A",
+                  "intervalMs": 1000,
+                  "maxDataPoints": 43200,
+                  "reducer": "last",
+                  "refId": "B",
+                  "type": "reduce"
+                }
+              },
+              {
+                "refId": "C",
+                "queryType": "",
+                "relativeTimeRange": {
+                  "from": 300,
+                  "to": 0
+                },
+                "datasourceUid": "__expr__",
+                "model": {
+                  "conditions": [
+                    {
+                      "evaluator": {
+                        "params": [
+                          0
+                        ],
+                        "type": "gt"
+                      }
+                    }
+                  ],
+                  "expression": "B",
+                  "intervalMs": 1000,
+                  "maxDataPoints": 43200,
+                  "refId": "C",
+                  "type": "threshold"
+                }
+              }
+            ],
+            "updated": "2026-02-20T16:08:08Z",
+            "updated_by": {
+              "uid": "ffdphotarqrcwc",
+              "name": "admin"
+            },
+            "intervalSeconds": 60,
+            "version": 1,
+            "uid": "dfdtrlzfuaayob",
+            "namespace_uid": "efdphotu9g8hsa",
+            "rule_group": "pillar-alerts",
+            "no_data_state": "OK",
+            "exec_err_state": "Error",
+            "is_paused": false,
+            "metadata": {
+              "editor_settings": {
+                "simplified_query_and_expressions_section": false,
+                "simplified_notifications_section": false
+              }
+            },
+            "guid": "e7e96b23-7624-4b03-aaf3-0bced4069b3a"
+          }
+        },
+        {
+          "expr": "",
+          "for": "1m",
+          "keep_firing_for": "0s",
+          "labels": {
+            "severity": "warning"
+          },
+          "annotations": {
+            "description": "Node {{ $labels.node_id }} has memory usage above 90%. The system may run out of memory, which could crash the validator.",
+            "summary": "Node {{ $labels.node_id }} memory usage is above 90%"
+          },
+          "grafana_alert": {
+            "title": "High Memory Usage",
+            "condition": "C",
+            "data": [
+              {
+                "refId": "A",
+                "queryType": "",
+                "relativeTimeRange": {
+                  "from": 300,
+                  "to": 0
+                },
+                "datasourceUid": "pillar-prometheus",
+                "model": {
+                  "expr": "pillar_system_memory_used_bytes / pillar_system_memory_total_bytes * 100 > 90",
+                  "instant": true,
+                  "intervalMs": 1000,
+                  "maxDataPoints": 43200,
+                  "refId": "A"
+                }
+              },
+              {
+                "refId": "B",
+                "queryType": "",
+                "relativeTimeRange": {
+                  "from": 300,
+                  "to": 0
+                },
+                "datasourceUid": "__expr__",
+                "model": {
+                  "expression": "A",
+                  "intervalMs": 1000,
+                  "maxDataPoints": 43200,
+                  "reducer": "last",
+                  "refId": "B",
+                  "type": "reduce"
+                }
+              },
+              {
+                "refId": "C",
+                "queryType": "",
+                "relativeTimeRange": {
+                  "from": 300,
+                  "to": 0
+                },
+                "datasourceUid": "__expr__",
+                "model": {
+                  "conditions": [
+                    {
+                      "evaluator": {
+                        "params": [
+                          0
+                        ],
+                        "type": "gt"
+                      }
+                    }
+                  ],
+                  "expression": "B",
+                  "intervalMs": 1000,
+                  "maxDataPoints": 43200,
+                  "refId": "C",
+                  "type": "threshold"
+                }
+              }
+            ],
+            "updated": "2026-02-20T16:08:08Z",
+            "updated_by": {
+              "uid": "ffdphotarqrcwc",
+              "name": "admin"
+            },
+            "intervalSeconds": 60,
+            "version": 1,
+            "uid": "afdtrlzfuaaypf",
+            "namespace_uid": "efdphotu9g8hsa",
+            "rule_group": "pillar-alerts",
+            "no_data_state": "OK",
+            "exec_err_state": "Error",
+            "is_paused": false,
+            "metadata": {
+              "editor_settings": {
+                "simplified_query_and_expressions_section": false,
+                "simplified_notifications_section": false
+              }
+            },
+            "guid": "3aef6ae8-6f35-407e-a551-fb798a346d5e"
+          }
+        },
+        {
+          "expr": "",
+          "for": "1m",
+          "keep_firing_for": "0s",
+          "labels": {
+            "severity": "warning"
+          },
+          "annotations": {
+            "description": "Node {{ $labels.node_id }} has disk usage above 85%. Running out of disk space will cause the validator to stop.",
+            "summary": "Node {{ $labels.node_id }} disk usage is above 85%"
+          },
+          "grafana_alert": {
+            "title": "High Disk Usage",
+            "condition": "C",
+            "data": [
+              {
+                "refId": "A",
+                "queryType": "",
+                "relativeTimeRange": {
+                  "from": 300,
+                  "to": 0
+                },
+                "datasourceUid": "pillar-prometheus",
+                "model": {
+                  "expr": "pillar_system_disk_used_bytes / pillar_system_disk_total_bytes * 100 > 85",
+                  "instant": true,
+                  "intervalMs": 1000,
+                  "maxDataPoints": 43200,
+                  "refId": "A"
+                }
+              },
+              {
+                "refId": "B",
+                "queryType": "",
+                "relativeTimeRange": {
+                  "from": 300,
+                  "to": 0
+                },
+                "datasourceUid": "__expr__",
+                "model": {
+                  "expression": "A",
+                  "intervalMs": 1000,
+                  "maxDataPoints": 43200,
+                  "reducer": "last",
+                  "refId": "B",
+                  "type": "reduce"
+                }
+              },
+              {
+                "refId": "C",
+                "queryType": "",
+                "relativeTimeRange": {
+                  "from": 300,
+                  "to": 0
+                },
+                "datasourceUid": "__expr__",
+                "model": {
+                  "conditions": [
+                    {
+                      "evaluator": {
+                        "params": [
+                          0
+                        ],
+                        "type": "gt"
+                      }
+                    }
+                  ],
+                  "expression": "B",
+                  "intervalMs": 1000,
+                  "maxDataPoints": 43200,
+                  "refId": "C",
+                  "type": "threshold"
+                }
+              }
+            ],
+            "updated": "2026-02-20T16:08:08Z",
+            "updated_by": {
+              "uid": "ffdphotarqrcwc",
+              "name": "admin"
+            },
+            "intervalSeconds": 60,
+            "version": 1,
+            "uid": "ffdtrlzfuaayqe",
+            "namespace_uid": "efdphotu9g8hsa",
+            "rule_group": "pillar-alerts",
+            "no_data_state": "OK",
+            "exec_err_state": "Error",
+            "is_paused": false,
+            "metadata": {
+              "editor_settings": {
+                "simplified_query_and_expressions_section": false,
+                "simplified_notifications_section": false
+              }
+            },
+            "guid": "ebc639ca-8d3d-4439-934d-6b9a4bb6cdf3"
+          }
+        },
+        {
+          "expr": "",
+          "for": "1m",
+          "keep_firing_for": "0s",
+          "labels": {
+            "severity": "info"
+          },
+          "annotations": {
+            "description": "Node {{ $labels.node_id }} is running a different version than expected. Consider upgrading to maintain consistency across the fleet.",
+            "summary": "Node {{ $labels.node_id }} has a version mismatch"
+          },
+          "grafana_alert": {
+            "title": "Version Mismatch",
+            "condition": "C",
+            "data": [
+              {
+                "refId": "A",
+                "queryType": "",
+                "relativeTimeRange": {
+                  "from": 300,
+                  "to": 0
+                },
+                "datasourceUid": "pillar-prometheus",
+                "model": {
+                  "expr": "pillar_version_mismatch == 1",
+                  "instant": true,
+                  "intervalMs": 1000,
+                  "maxDataPoints": 43200,
+                  "refId": "A"
+                }
+              },
+              {
+                "refId": "B",
+                "queryType": "",
+                "relativeTimeRange": {
+                  "from": 300,
+                  "to": 0
+                },
+                "datasourceUid": "__expr__",
+                "model": {
+                  "expression": "A",
+                  "intervalMs": 1000,
+                  "maxDataPoints": 43200,
+                  "reducer": "last",
+                  "refId": "B",
+                  "type": "reduce"
+                }
+              },
+              {
+                "refId": "C",
+                "queryType": "",
+                "relativeTimeRange": {
+                  "from": 300,
+                  "to": 0
+                },
+                "datasourceUid": "__expr__",
+                "model": {
+                  "conditions": [
+                    {
+                      "evaluator": {
+                        "params": [
+                          0
+                        ],
+                        "type": "gt"
+                      }
+                    }
+                  ],
+                  "expression": "B",
+                  "intervalMs": 1000,
+                  "maxDataPoints": 43200,
+                  "refId": "C",
+                  "type": "threshold"
+                }
+              }
+            ],
+            "updated": "2026-02-20T16:08:08Z",
+            "updated_by": {
+              "uid": "ffdphotarqrcwc",
+              "name": "admin"
+            },
+            "intervalSeconds": 60,
+            "version": 1,
+            "uid": "bfdtrlzfuaayrc",
+            "namespace_uid": "efdphotu9g8hsa",
+            "rule_group": "pillar-alerts",
+            "no_data_state": "OK",
+            "exec_err_state": "Error",
+            "is_paused": false,
+            "metadata": {
+              "editor_settings": {
+                "simplified_query_and_expressions_section": false,
+                "simplified_notifications_section": false
+              }
+            },
+            "guid": "2e5e56d9-8fb1-423c-ab47-27dd893acc35"
+          }
+        },
+        {
+          "expr": "",
+          "for": "2m",
+          "keep_firing_for": "0s",
+          "labels": {
+            "severity": "info"
+          },
+          "annotations": {
+            "description": "The pillar agent on node {{ $labels.node_id }} has been running for less than 60 seconds, indicating a recent restart. This could be due to an upgrade, crash, or manual restart.",
+            "summary": "Agent on node {{ $labels.node_id }} was recently restarted"
+          },
+          "grafana_alert": {
+            "title": "Agent Restarted",
+            "condition": "C",
+            "data": [
+              {
+                "refId": "A",
+                "queryType": "",
+                "relativeTimeRange": {
+                  "from": 300,
+                  "to": 0
+                },
+                "datasourceUid": "pillar-prometheus",
+                "model": {
+                  "expr": "pillar_agent_uptime_secs < 60",
+                  "instant": true,
+                  "intervalMs": 1000,
+                  "maxDataPoints": 43200,
+                  "refId": "A"
+                }
+              },
+              {
+                "refId": "B",
+                "queryType": "",
+                "relativeTimeRange": {
+                  "from": 300,
+                  "to": 0
+                },
+                "datasourceUid": "__expr__",
+                "model": {
+                  "expression": "A",
+                  "intervalMs": 1000,
+                  "maxDataPoints": 43200,
+                  "reducer": "last",
+                  "refId": "B",
+                  "type": "reduce"
+                }
+              },
+              {
+                "refId": "C",
+                "queryType": "",
+                "relativeTimeRange": {
+                  "from": 300,
+                  "to": 0
+                },
+                "datasourceUid": "__expr__",
+                "model": {
+                  "conditions": [
+                    {
+                      "evaluator": {
+                        "params": [
+                          0
+                        ],
+                        "type": "gt"
+                      }
+                    }
+                  ],
+                  "expression": "B",
+                  "intervalMs": 1000,
+                  "maxDataPoints": 43200,
+                  "refId": "C",
+                  "type": "threshold"
+                }
+              }
+            ],
+            "updated": "2026-02-20T16:08:08Z",
+            "updated_by": {
+              "uid": "ffdphotarqrcwc",
+              "name": "admin"
+            },
+            "intervalSeconds": 60,
+            "version": 1,
+            "uid": "dfdtrlzfuaaysb",
+            "namespace_uid": "efdphotu9g8hsa",
+            "rule_group": "pillar-alerts",
+            "no_data_state": "OK",
+            "exec_err_state": "Error",
+            "is_paused": false,
+            "metadata": {
+              "editor_settings": {
+                "simplified_query_and_expressions_section": false,
+                "simplified_notifications_section": false
+              }
+            },
+            "guid": "0c2a4ea4-0ab1-4968-9738-c2660957ed76"
+          }
+        }
+      ]
+    }
+  ]
+}
