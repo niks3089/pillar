@@ -5,13 +5,15 @@
 }
 
 :root {
-  --bg: #0c0b12;
-  --bg-card: #16141f;
-  --bg-hover: #1e1b2a;
-  --bg-input: #110f19;
-  --border: #2a2640;
-  --text: #e4e0f0;
-  --text-dim: #8b86a0;
+  --bg: #0a0911;
+  --bg-card: #15131f;
+  --bg-card-2: #1a1726;
+  --bg-hover: #211d30;
+  --bg-input: #100e18;
+  --border: #272340;
+  --border-soft: #1f1b30;
+  --text: #ece9f6;
+  --text-dim: #918ca6;
   --green: #14f195;
   --yellow: #ffc107;
   --red: #f44336;
@@ -22,13 +24,27 @@
   --accent: #9945ff;
   --accent-glow: rgba(153, 69, 255, 0.25);
   --gradient: linear-gradient(135deg, #9945ff, #14f195);
+  /* modern design tokens */
+  --radius: 12px;
+  --radius-sm: 8px;
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow: 0 4px 20px -6px rgba(0, 0, 0, 0.5);
+  --shadow-lg: 0 12px 40px -8px rgba(0, 0, 0, 0.6);
+  --ease: cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 body {
-  background: var(--bg);
+  background:
+    radial-gradient(1200px 600px at 85% -10%, rgba(153, 69, 255, 0.08), transparent 60%),
+    radial-gradient(900px 500px at 5% 0%, rgba(20, 241, 149, 0.05), transparent 55%),
+    var(--bg);
+  background-attachment: fixed;
   color: var(--text);
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  letter-spacing: -0.01em;
 }
 
 .app {
@@ -40,9 +56,18 @@ body {
   display: flex;
   align-items: center;
   gap: 2rem;
-  padding: 0.75rem 1.5rem;
-  background: var(--bg-card);
-  border-bottom: 1px solid var(--border);
+  padding: 0.875rem 1.75rem;
+  background: rgba(18, 16, 27, 0.72);
+  backdrop-filter: saturate(160%) blur(14px);
+  -webkit-backdrop-filter: saturate(160%) blur(14px);
+  border-bottom: 1px solid var(--border-soft);
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+
+.navbar .nav-links a.active {
+  position: relative;
 }
 
 .nav-logo {
@@ -965,4 +990,131 @@ body {
   .node-table {
     font-size: 0.75rem;
   }
+}
+
+/* ============================================================
+   Modern polish — depth, motion, refined surfaces
+   (overrides above; same class names, no markup changes)
+   ============================================================ */
+
+/* Elevated card surfaces with soft shadow + larger radius */
+.summary-card,
+.info-card,
+.metric-card,
+.onboard-panel,
+.config-panel,
+.logs-section,
+.provision-panel,
+.grafana-iframe-container,
+.grafana-not-configured,
+.login-card,
+.modal-card {
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  background: linear-gradient(180deg, var(--bg-card-2), var(--bg-card));
+  transition: border-color 0.18s var(--ease), box-shadow 0.18s var(--ease),
+    transform 0.18s var(--ease);
+}
+
+/* Interactive stat cards lift on hover */
+.summary-card:hover,
+.metric-card:hover {
+  transform: translateY(-2px);
+  border-color: var(--purple);
+  box-shadow: var(--shadow-lg);
+}
+
+/* Section panels: a subtle gradient accent bar on the heading */
+.config-panel h2,
+.provision-panel h2,
+.logs-section h2 {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.config-panel h2::before,
+.provision-panel h2::before,
+.logs-section h2::before {
+  content: '';
+  width: 3px;
+  height: 0.9em;
+  border-radius: 2px;
+  background: var(--gradient);
+}
+
+/* Page / node headers: bigger, tighter, modern */
+.node-header h1 {
+  font-size: 1.45rem;
+  letter-spacing: -0.02em;
+}
+
+/* Table: rounded, breathing rows with smooth hover */
+.node-table {
+  border-spacing: 0;
+}
+.node-table tbody tr {
+  transition: background 0.15s var(--ease);
+}
+.node-table tbody tr:hover td {
+  background: var(--bg-hover);
+}
+.node-table td {
+  border-bottom: 1px solid var(--border-soft);
+}
+
+/* Badges: pill-shaped with a soft ring */
+.badge {
+  border-radius: 999px;
+  padding: 0.18rem 0.6rem;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+}
+
+/* Buttons: subtle depth + press feedback */
+.btn {
+  box-shadow: var(--shadow-sm);
+}
+.btn:active {
+  transform: translateY(1px);
+}
+.btn.primary {
+  background: linear-gradient(180deg, rgba(153, 69, 255, 0.18), rgba(153, 69, 255, 0.08));
+}
+
+/* Live/connection dots: gentle pulse when active */
+.link-status.connected::before,
+.live-indicator.connected::before {
+  animation: pillar-pulse 2s var(--ease) infinite;
+}
+@keyframes pillar-pulse {
+  0%, 100% { box-shadow: 0 0 6px rgba(20, 241, 149, 0.5); }
+  50% { box-shadow: 0 0 12px rgba(20, 241, 149, 0.85); }
+}
+
+/* Inputs: smoother focus */
+.form-group select:focus,
+.form-group input[type='text']:focus,
+.form-group textarea:focus,
+.login-input:focus {
+  box-shadow: 0 0 0 3px var(--accent-glow);
+}
+
+/* Nav links: animated active underline for clearer navigation */
+.nav-links a {
+  padding: 0.35rem 0;
+  position: relative;
+}
+.nav-links a.active::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -0.55rem;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--gradient);
+}
+
+/* Content: a touch more breathing room */
+.content {
+  padding: 2rem 1.5rem;
 }
