@@ -2,6 +2,7 @@ import { useState, useEffect, FormEvent } from 'react'
 import { Routes, Route, NavLink } from 'react-router-dom'
 import Overview from './pages/Overview'
 import NodeDetail from './pages/NodeDetail'
+import Docs from './pages/Docs'
 import Login from './pages/Login'
 import UpdateBanner from './components/UpdateBanner'
 import { checkAuth, logout, changeCredentials } from './auth'
@@ -42,6 +43,7 @@ function App() {
         <NavLink to="/" className="nav-logo">Pillar</NavLink>
         <div className="nav-links">
           <NavLink to="/" end>Overview</NavLink>
+          <NavLink to="/docs">Docs</NavLink>
           <a href="/grafana/d/pillar-fleet-overview" target="_blank" rel="noopener noreferrer">Grafana</a>
         </div>
         <div className="nav-user">
@@ -55,6 +57,7 @@ function App() {
       <main className="content">
         <Routes>
           <Route path="/" element={<Overview />} />
+          <Route path="/docs" element={<Docs />} />
           <Route path="/nodes/:id" element={<NodeDetail />} />
         </Routes>
       </main>
