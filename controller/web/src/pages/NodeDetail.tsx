@@ -592,6 +592,7 @@ function NodeDetail() {
                   <option value="jito">Jito</option>
                   <option value="firedancer">Firedancer</option>
                   <option value="frankendancer">Frankendancer</option>
+                  <option value="surfpool">Surfpool (test validator)</option>
                 </select>
               </div>
               <div className="form-group">

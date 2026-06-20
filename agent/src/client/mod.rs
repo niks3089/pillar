@@ -15,6 +15,9 @@ pub enum ClientKind {
     Jito,
     Firedancer,
     Frankendancer,
+    /// Surfpool — local Solana test validator / mainnet-fork simulator
+    /// (drop-in for solana-test-validator). Used for testing and demos.
+    Surfpool,
     Dummy,
 }
 
@@ -42,6 +45,10 @@ impl ValidatorClient {
             ClientKind::Frankendancer => Self {
                 service_name: "frankendancer",
                 binary_path: PathBuf::from("/usr/local/bin/fdctl"),
+            },
+            ClientKind::Surfpool => Self {
+                service_name: "surfpool",
+                binary_path: PathBuf::from("/usr/local/bin/surfpool"),
             },
             ClientKind::Dummy => Self {
                 service_name: "dummy-validator",

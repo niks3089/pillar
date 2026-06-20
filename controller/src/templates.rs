@@ -17,6 +17,7 @@ pub mod scripts {
     pub const PROVISION_FIREDANCER: &str = include_str!("../scripts/provision-firedancer.sh.tmpl");
     pub const PROVISION_FRANKENDANCER: &str =
         include_str!("../scripts/provision-frankendancer.sh.tmpl");
+    pub const PROVISION_SURFPOOL: &str = include_str!("../scripts/provision-surfpool.sh.tmpl");
     pub const UPGRADE_VALIDATOR: &str = include_str!("../scripts/upgrade-validator.sh.tmpl");
     pub const UPGRADE_AGENT: &str = include_str!("../scripts/upgrade-agent.sh.tmpl");
     pub const RECOVER: &str = include_str!("../scripts/recover.sh.tmpl");
@@ -30,6 +31,7 @@ pub fn provision_template(client: &str) -> Result<&'static str, String> {
         "jito" => Ok(scripts::PROVISION_JITO),
         "firedancer" => Ok(scripts::PROVISION_FIREDANCER),
         "frankendancer" => Ok(scripts::PROVISION_FRANKENDANCER),
+        "surfpool" => Ok(scripts::PROVISION_SURFPOOL),
         other => Err(format!("unknown client: {other}")),
     }
 }
@@ -41,6 +43,7 @@ pub fn service_name_for_client(client: &str) -> &'static str {
         "jito" => "jito-validator",
         "firedancer" => "firedancer",
         "frankendancer" => "frankendancer",
+        "surfpool" => "surfpool",
         _ => "solana-validator",
     }
 }
@@ -52,6 +55,7 @@ pub fn binary_path_for_client(client: &str) -> &'static str {
         "jito" => "/usr/local/bin/jito-validator",
         "firedancer" => "/usr/local/bin/fdctl",
         "frankendancer" => "/usr/local/bin/fdctl",
+        "surfpool" => "/usr/local/bin/surfpool",
         _ => "/usr/local/bin/agave-validator",
     }
 }
