@@ -4,7 +4,7 @@
 # Provisions dashboards and data sources so metrics work out of the box.
 #
 # Usage:
-#   curl -sSL https://janus-meter.s3.eu-north-1.amazonaws.com/pillar/latest/install-controller.sh | sudo bash
+#   curl -sSL https://github.com/niks3089/pillar/releases/latest/download/install-controller.sh | sudo bash
 #   sudo ./install-controller.sh --version 0.1.0
 #   sudo ./install-controller.sh --external-url http://1.2.3.4:50051
 #
@@ -33,7 +33,7 @@ VERSION="latest"
 GRAFANA_PORT=3000
 PROMETHEUS_PORT=9091
 
-S3_BASE="https://janus-meter.s3.eu-north-1.amazonaws.com/pillar"
+GH_RELEASES="https://github.com/niks3089/pillar/releases"
 
 # Colors
 RED='\033[0;31m'
@@ -85,14 +85,15 @@ HTTP_PORT="${HTTP_LISTEN##*:}"
 
 section "Downloading controller binary"
 
-S3_PATH="${S3_BASE}/${VERSION}/pillar-controller-linux-amd64"
-if [[ "$VERSION" != "latest" ]]; then
-    S3_PATH="${S3_BASE}/v${VERSION}/pillar-controller-linux-amd64"
+if [[ "$VERSION" == "latest" ]]; then
+    DL_URL="${GH_RELEASES}/latest/download/pillar-controller-linux-amd64"
+else
+    DL_URL="${GH_RELEASES}/download/pillar-controller-v${VERSION}/pillar-controller-linux-amd64"
 fi
 DOWNLOAD_DIR=$(mktemp -d)
-info "downloading from $S3_PATH ..."
-if ! curl -sSfL "$S3_PATH" -o "$DOWNLOAD_DIR/controller"; then
-    die "failed to download controller binary from $S3_PATH"
+info "downloading from $DL_URL ..."
+if ! curl -sSfL "$DL_URL" -o "$DOWNLOAD_DIR/controller"; then
+    die "failed to download controller binary from $DL_URL"
 fi
 chmod +x "$DOWNLOAD_DIR/controller"
 ok "downloaded controller binary"
@@ -591,9 +592,9 @@ echo "    Dashboards provisioned automatically"
 echo ""
 echo "  Add nodes:"
 if [[ -n "$EXTERNAL_URL" ]]; then
-echo "    curl -sSL ${S3_BASE}/latest/install-node.sh | sudo bash -s -- --controller $EXTERNAL_URL"
+echo "    curl -sSL ${GH_RELEASES}/latest/download/install-node.sh | sudo bash -s -- --controller $EXTERNAL_URL"
 else
-echo "    curl -sSL ${S3_BASE}/latest/install-node.sh | sudo bash -s -- --controller https://<this-ip>:50051"
+echo "    curl -sSL ${GH_RELEASES}/latest/download/install-node.sh | sudo bash -s -- --controller https://<this-ip>:50051"
 fi
 echo ""
 echo "  Logs:"

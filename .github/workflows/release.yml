@@ -4,11 +4,6 @@ on:
   push:
     branches: [main]
 
-env:
-  S3_BUCKET: janus-meter
-  S3_REGION: eu-north-1
-  S3_PREFIX: pillar
-
 permissions:
   contents: write
   pull-requests: write
@@ -89,16 +84,16 @@ jobs:
         env:
           AGENT_VERSION: ${{ steps.versions.outputs.agent }}
           CTRL_VERSION: ${{ steps.versions.outputs.controller }}
-          S3_URL: https://${{ env.S3_BUCKET }}.s3.${{ env.S3_REGION }}.amazonaws.com/${{ env.S3_PREFIX }}
+          GH_BASE: https://github.com/${{ github.repository }}/releases/latest/download
         run: |
           CTRL_SHA=$(sha256sum artifacts/pillar-controller-linux-amd64 | awk '{print $1}')
           AGENT_SHA=$(sha256sum artifacts/pillar-agent-linux-amd64 | awk '{print $1}')
           jq -n \
             --arg cv "$CTRL_VERSION" \
-            --arg cu "$S3_URL/latest/pillar-controller-linux-amd64" \
+            --arg cu "$GH_BASE/pillar-controller-linux-amd64" \
             --arg cs "$CTRL_SHA" \
             --arg av "$AGENT_VERSION" \
-            --arg au "$S3_URL/latest/pillar-agent-linux-amd64" \
+            --arg au "$GH_BASE/pillar-agent-linux-amd64" \
             --arg ash "$AGENT_SHA" \
             '{controller:{version:$cv,download_url:$cu,sha256:$cs,release_notes:""},agent:{version:$av,download_url:$au,sha256:$ash,release_notes:""}}' \
             > artifacts/manifest.json
@@ -111,10 +106,13 @@ jobs:
           name: release-binaries
           path: artifacts/
 
-  upload:
-    name: Upload to S3
+  publish:
+    name: Publish to GitHub Releases
     needs: [release-please, build]
+    if: needs.release-please.outputs.agent_release_created == 'true' || needs.release-please.outputs.controller_release_created == 'true'
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: Download build artifacts
         uses: actions/download-artifact@v4
@@ -122,32 +120,18 @@ jobs:
           name: release-binaries
           path: artifacts/
 
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.S3_REGION }}
-
-      - name: Upload to S3 (latest)
+      # Attach binaries + install scripts + manifest to the release(s) release-please
+      # created this run, so `releases/latest/download/<asset>` resolves for installers.
+      - name: Upload assets to release(s)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         run: |
-          aws s3 cp artifacts/ "s3://${S3_BUCKET}/${S3_PREFIX}/latest/" --recursive
-
-      - name: Upload to S3 (versioned - agent)
-        if: needs.release-please.outputs.agent_release_created == 'true'
-        run: |
-          VERSION="${{ needs.release-please.outputs.agent_version }}"
-          aws s3 cp artifacts/pillar-agent-linux-amd64 "s3://${S3_BUCKET}/${S3_PREFIX}/agent/v${VERSION}/pillar-agent-linux-amd64"
-          echo "Uploaded agent v${VERSION}"
-
-      - name: Upload to S3 (versioned - controller)
-        if: needs.release-please.outputs.controller_release_created == 'true'
-        run: |
-          VERSION="${{ needs.release-please.outputs.controller_version }}"
-          aws s3 cp artifacts/pillar-controller-linux-amd64 "s3://${S3_BUCKET}/${S3_PREFIX}/controller/v${VERSION}/pillar-controller-linux-amd64"
-          echo "Uploaded controller v${VERSION}"
-
-      - name: Verify uploads
-        run: |
-          echo "Latest:"
-          aws s3 ls "s3://${S3_BUCKET}/${S3_PREFIX}/latest/"
+          if [ "${{ needs.release-please.outputs.agent_release_created }}" = "true" ]; then
+            gh release upload "pillar-agent-v${{ needs.release-please.outputs.agent_version }}" artifacts/* --clobber
+            echo "Uploaded assets to pillar-agent-v${{ needs.release-please.outputs.agent_version }}"
+          fi
+          if [ "${{ needs.release-please.outputs.controller_release_created }}" = "true" ]; then
+            gh release upload "pillar-controller-v${{ needs.release-please.outputs.controller_version }}" artifacts/* --clobber
+            echo "Uploaded assets to pillar-controller-v${{ needs.release-please.outputs.controller_version }}"
+          fi

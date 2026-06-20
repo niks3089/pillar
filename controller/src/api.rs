@@ -1149,7 +1149,7 @@ async fn onboard_command(State(state): State<ApiState>) -> impl IntoResponse {
     };
 
     let mut cmd = format!(
-        "curl -sSL https://janus-meter.s3.eu-north-1.amazonaws.com/pillar/latest/install-node.sh | sudo bash -s -- --controller {endpoint}"
+        "curl -sSL https://github.com/niks3089/pillar/releases/latest/download/install-node.sh | sudo bash -s -- --controller {endpoint}"
     );
 
     if !state.auth_token.is_empty() {

@@ -4,7 +4,7 @@
 # creates the sol user, applies sysctl tuning, and generates validator keypairs.
 #
 # Usage:
-#   curl -sSL https://janus-meter.s3.eu-north-1.amazonaws.com/pillar/latest/install-node.sh | sudo bash -s -- --controller http://10.0.0.1:50051
+#   curl -sSL https://github.com/niks3089/pillar/releases/latest/download/install-node.sh | sudo bash -s -- --controller https://10.0.0.1:50051
 #   sudo ./install-node.sh --controller http://10.0.0.1:50051 --version 0.1.0
 #   sudo ./install-node.sh --controller http://10.0.0.1:50051 --cluster testnet
 #
@@ -33,7 +33,7 @@ NODE_ID=""
 VERSION="latest"
 SOLANA_VERSION="stable"
 
-S3_BASE="https://janus-meter.s3.eu-north-1.amazonaws.com/pillar"
+GH_RELEASES="https://github.com/niks3089/pillar/releases"
 
 # Colors
 RED='\033[0;31m'
@@ -102,14 +102,15 @@ fi
 
 section "Downloading agent binary"
 
-S3_PATH="${S3_BASE}/${VERSION}/pillar-agent-linux-amd64"
-if [[ "$VERSION" != "latest" ]]; then
-    S3_PATH="${S3_BASE}/v${VERSION}/pillar-agent-linux-amd64"
+if [[ "$VERSION" == "latest" ]]; then
+    DL_URL="${GH_RELEASES}/latest/download/pillar-agent-linux-amd64"
+else
+    DL_URL="${GH_RELEASES}/download/pillar-agent-v${VERSION}/pillar-agent-linux-amd64"
 fi
 DOWNLOAD_DIR=$(mktemp -d)
-info "downloading from $S3_PATH ..."
-if ! curl -sSfL "$S3_PATH" -o "$DOWNLOAD_DIR/pillar-agent"; then
-    die "failed to download pillar-agent binary from $S3_PATH"
+info "downloading from $DL_URL ..."
+if ! curl -sSfL "$DL_URL" -o "$DOWNLOAD_DIR/pillar-agent"; then
+    die "failed to download pillar-agent binary from $DL_URL"
 fi
 chmod +x "$DOWNLOAD_DIR/pillar-agent"
 ok "downloaded pillar-agent binary"

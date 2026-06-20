@@ -4,10 +4,10 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 
 const MANIFEST_URL: &str =
-    "https://janus-meter.s3.eu-north-1.amazonaws.com/pillar/latest/manifest.json";
+    "https://github.com/niks3089/pillar/releases/latest/download/manifest.json";
 const STALE_AFTER_MS: i64 = 3_600_000; // 1 hour
 
-/// S3 release manifest shape.
+/// GitHub Releases manifest shape.
 #[derive(Debug, Deserialize)]
 pub struct ReleaseManifest {
     pub controller: Option<ComponentRelease>,

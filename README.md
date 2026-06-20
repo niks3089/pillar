@@ -65,7 +65,7 @@ The controller binary requires GLIBC 2.39 — install on **Ubuntu 24.04 (Noble) 
 ### Controller
 
 ```bash
-curl -sSL https://janus-meter.s3.eu-north-1.amazonaws.com/pillar/latest/install-controller.sh \
+curl -sSL https://github.com/niks3089/pillar/releases/latest/download/install-controller.sh \
   | sudo bash -s -- --external-url https://<controller-ip>:50051
 ```
 
@@ -77,7 +77,7 @@ Default login is `admin` / `admin` — change it before any real use.
 The controller issues the exact command (with token) at `GET /api/onboard-command`:
 
 ```bash
-curl -sSL https://janus-meter.s3.eu-north-1.amazonaws.com/pillar/latest/install-node.sh \
+curl -sSL https://github.com/niks3089/pillar/releases/latest/download/install-node.sh \
   | sudo bash -s -- --controller https://<controller-ip>:50051 --token <token> --http-url http://<controller-ip>:8080
 ```
 

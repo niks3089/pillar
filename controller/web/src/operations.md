@@ -15,7 +15,7 @@ learned the hard way.
 Run on an **Ubuntu 24.04+** host (the binary needs GLIBC 2.39):
 
 ```bash
-curl -sSL https://janus-meter.s3.eu-north-1.amazonaws.com/pillar/latest/install-controller.sh \
+curl -sSL https://github.com/niks3089/pillar/releases/latest/download/install-controller.sh \
   | sudo bash -s -- --external-url https://<controller-host>:50051
 ```
 
@@ -35,7 +35,7 @@ enables TLS on the gRPC port. Then:
 URL + auth token). Run it on the validator host:
 
 ```bash
-curl -sSL https://janus-meter.s3.eu-north-1.amazonaws.com/pillar/latest/install-node.sh \
+curl -sSL https://github.com/niks3089/pillar/releases/latest/download/install-node.sh \
   | sudo bash -s -- --controller https://<controller-host>:50051 \
       --token <token> --http-url http://<controller-host>:8080
 ```
