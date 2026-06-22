@@ -576,17 +576,30 @@ function NodeDetail() {
         </div>
       )}
 
-      {/* Provision - collapsible */}
+      {/* Provision - opens in modal */}
       <div className="provision-panel">
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <h2 style={{ marginBottom: 0 }}>{hasConfig ? 'Update Validator' : 'Setup Validator'}</h2>
-          <button className="btn" onClick={() => setShowProvision(!showProvision)} style={{ fontSize: '0.75rem' }}>
-            {showProvision ? 'Collapse' : (hasConfig ? 'Update' : 'Configure')}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem' }}>
+          <div>
+            <h2 style={{ marginBottom: '0.25rem' }}>{hasConfig ? 'Update Validator' : 'Setup Validator'}</h2>
+            <p style={{ margin: 0, color: 'var(--gray)', fontSize: '0.8125rem' }}>
+              {hasConfig
+                ? 'Change the client, version, cluster, ports, or flags and re-deploy this validator.'
+                : 'Install and configure a validator on this host — pick a client, cluster, version, and ports.'}
+            </p>
+          </div>
+          <button className="btn primary" onClick={() => setShowProvision(true)} style={{ whiteSpace: 'nowrap' }}>
+            {hasConfig ? 'Update Validator' : 'Configure Validator'}
           </button>
         </div>
+      </div>
 
-        {showProvision && (
-          <div style={{ marginTop: '1rem' }}>
+      {showProvision && (
+        <div className="modal-overlay" onClick={() => setShowProvision(false)}>
+          <div className="modal-card wide" onClick={e => e.stopPropagation()}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
+              <h2 className="modal-title" style={{ margin: 0 }}>{hasConfig ? 'Update Validator' : 'Setup Validator'}</h2>
+              <button className="btn" onClick={() => setShowProvision(false)} style={{ fontSize: '0.75rem' }}>Close</button>
+            </div>
             <div className="form-grid">
               <div className="form-group">
                 <label>Client</label>
@@ -764,12 +777,15 @@ function NodeDetail() {
               )}
             </div>
 
-            <button className="btn primary" onClick={handleProvision} disabled={provSubmitting} style={{ marginTop: '1rem' }}>
-              {provSubmitting ? 'Sending...' : (hasConfig ? 'Update Validator' : 'Install Validator')}
-            </button>
+            <div className="modal-actions" style={{ marginTop: '1.25rem' }}>
+              <button className="btn" onClick={() => setShowProvision(false)} disabled={provSubmitting}>Cancel</button>
+              <button className="btn primary" onClick={handleProvision} disabled={provSubmitting}>
+                {provSubmitting ? 'Sending...' : (hasConfig ? 'Update Validator' : 'Install Validator')}
+              </button>
+            </div>
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* Logs */}
       <div className="logs-section">

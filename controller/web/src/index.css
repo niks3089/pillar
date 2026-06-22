@@ -976,6 +976,14 @@ body {
   margin-top: 0.5rem;
 }
 
+/* Wide modal — used for the provision/Update Validator form */
+.modal-card.wide {
+  max-width: 760px;
+  max-height: 88vh;
+  overflow-y: auto;
+  gap: 0;
+}
+
 /* Responsive */
 @media (max-width: 768px) {
   .summary-cards {
