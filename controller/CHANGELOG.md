@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.0](https://github.com/niks3089/pillar/compare/pillar-controller-v0.3.1...pillar-controller-v0.4.0) (2026-06-23)
+
+
+### Features
+
+* **ui:** open Update Validator form in a modal instead of inline collapse ([682782a](https://github.com/niks3089/pillar/commit/682782ad0c8d9a85d6bf3c6a0b1aafbc44bf05ae))
+
 ## [0.3.1](https://github.com/niks3089/pillar/compare/pillar-controller-v0.3.1...pillar-controller-v0.3.1) (2026-06-20)
 
 
