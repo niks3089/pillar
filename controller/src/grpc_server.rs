@@ -30,7 +30,7 @@ pub fn check_auth_token(
         Some(val) => {
             let val = val.to_str().unwrap_or("");
             let provided = val.strip_prefix("Bearer ").unwrap_or(val);
-            if provided == expected_token {
+            if crate::auth::constant_time_eq(provided, expected_token) {
                 Ok(req)
             } else {
                 Err(Status::unauthenticated("invalid auth token"))
@@ -40,11 +40,20 @@ pub fn check_auth_token(
     }
 }
 
+/// Extract the Common Name from a DER-encoded leaf certificate.
+pub fn leaf_common_name(der: &[u8]) -> Option<String> {
+    let (_, cert) = x509_parser::parse_x509_certificate(der).ok()?;
+    let cn = cert.subject().iter_common_name().next()?.as_str().ok()?.to_string();
+    Some(cn)
+}
+
 pub struct GrpcServer {
     db: Db,
     registry: NodeRegistry,
     /// IP extracted from external_url, used as fallback for local connections.
     self_ip: String,
+    /// When true, every RPC's claimed node_id must match the client cert CN (mTLS).
+    require_client_certs: bool,
 }
 
 impl GrpcServer {
@@ -52,6 +61,7 @@ impl GrpcServer {
         db: Db,
         registry: NodeRegistry,
         external_url: &str,
+        require_client_certs: bool,
     ) -> Self {
         let host = external_url
             .trim_start_matches("http://")
@@ -68,6 +78,29 @@ impl GrpcServer {
             db,
             registry,
             self_ip,
+            require_client_certs,
+        }
+    }
+
+    /// Enforce that the connecting client's cert CN matches the claimed `node_id`.
+    /// No-op when mTLS is disabled.
+    fn verify_node_identity<T>(&self, req: &Request<T>, node_id: &str) -> Result<(), Status> {
+        if !self.require_client_certs {
+            return Ok(());
+        }
+        let certs = req
+            .peer_certs()
+            .ok_or_else(|| Status::unauthenticated("client certificate required"))?;
+        let cn = certs
+            .first()
+            .and_then(|c| leaf_common_name(c.as_ref()))
+            .ok_or_else(|| Status::unauthenticated("client certificate has no CN"))?;
+        if cn == node_id {
+            Ok(())
+        } else {
+            Err(Status::permission_denied(format!(
+                "client cert CN {cn:?} does not match node_id {node_id:?}"
+            )))
         }
     }
 
@@ -104,6 +137,7 @@ impl PillarController for GrpcServer {
             .filter(|ip| !ip.is_loopback())
             .map(|ip| ip.to_string())
             .unwrap_or_else(|| self.self_ip.clone());
+        self.verify_node_identity(&request, &request.get_ref().node_id)?;
         let req = request.into_inner();
         tracing::info!(node_id = %req.node_id, role = %req.role, client = %req.client, ip = %peer_ip, "RegisterNode");
 
@@ -127,6 +161,7 @@ impl PillarController for GrpcServer {
         &self,
         request: Request<ReportStatusRequest>,
     ) -> Result<Response<ReportStatusResponse>, Status> {
+        self.verify_node_identity(&request, &request.get_ref().node_id)?;
         let req = request.into_inner();
         let status = req
             .status
@@ -159,6 +194,7 @@ impl PillarController for GrpcServer {
         &self,
         request: Request<CommandStreamRequest>,
     ) -> Result<Response<Self::CommandStreamStream>, Status> {
+        self.verify_node_identity(&request, &request.get_ref().node_id)?;
         let node_id = request.into_inner().node_id;
         tracing::info!(node_id = %node_id, "CommandStream opened");
 
@@ -183,6 +219,7 @@ impl PillarController for GrpcServer {
         &self,
         request: Request<ScriptResult>,
     ) -> Result<Response<ScriptResultAck>, Status> {
+        self.verify_node_identity(&request, &request.get_ref().node_id)?;
         let result = request.into_inner();
 
         if result.exit_code == 0 {
@@ -271,6 +308,20 @@ impl PillarController for GrpcServer {
         &self,
         request: Request<Streaming<LogBatch>>,
     ) -> Result<Response<LogAck>, Status> {
+        let allowed_cn = if self.require_client_certs {
+            let certs = request
+                .peer_certs()
+                .ok_or_else(|| Status::unauthenticated("client certificate required"))?;
+            Some(
+                certs
+                    .first()
+                    .and_then(|c| leaf_common_name(c.as_ref()))
+                    .ok_or_else(|| Status::unauthenticated("client certificate has no CN"))?,
+            )
+        } else {
+            None
+        };
+
         let mut stream = request.into_inner();
         let mut total_count = 0u64;
 
@@ -279,6 +330,11 @@ impl PillarController for GrpcServer {
             .await
             .map_err(|e| Status::internal(format!("stream error: {e}")))?
         {
+            if let Some(ref cn) = allowed_cn {
+                if cn != &batch.node_id {
+                    return Err(Status::permission_denied("node_id does not match client cert"));
+                }
+            }
             let node_id = &batch.node_id;
             let entries = &batch.entries;
 

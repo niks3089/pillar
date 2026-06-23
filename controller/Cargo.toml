@@ -26,8 +26,9 @@ tokio = { version = "1.21", default-features = false, features = ["full", "traci
 tokio-stream = { version = "0.1", features = ["sync"] }
 tokio-util = "0.7.10"
 tonic = { version = "0.14.3", features = ["tls-ring"] }
-rcgen = "0.13"
+rcgen = { version = "0.13", features = ["x509-parser"] }
 rustls = { version = "0.23", default-features = false, features = ["ring"] }
+x509-parser = "0.16"
 tonic-prost = "0.14"
 tower-http = { version = "0.6", features = ["cors"] }
 tracing = "0.1"

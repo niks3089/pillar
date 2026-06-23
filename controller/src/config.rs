@@ -27,6 +27,10 @@ pub struct ControllerConfig {
     /// Auto-generated on first startup and persisted to the DB `settings` table.
     #[serde(default)]
     pub auth_token: String,
+    /// Require and verify client certificates (mTLS): every RPC's node_id must match
+    /// the client cert CN. Needs `certs_dir` set and per-node certs issued to agents.
+    #[serde(default)]
+    pub require_client_certs: bool,
 }
 
 impl ControllerConfig {
@@ -44,6 +48,9 @@ impl ControllerConfig {
         }
         if self.retention_days == 0 {
             errors.push("retention_days must be > 0".to_string());
+        }
+        if self.require_client_certs && self.certs_dir.is_empty() {
+            errors.push("require_client_certs needs certs_dir to be set".to_string());
         }
 
         if errors.is_empty() {
@@ -94,6 +101,7 @@ mod tests {
             grafana_url: String::new(),
             certs_dir: String::new(),
             auth_token: String::new(),
+            require_client_certs: false,
         };
         let err = config.validate().unwrap_err();
         assert!(err.contains("grpc_listen"));
@@ -110,6 +118,7 @@ mod tests {
             grafana_url: String::new(),
             certs_dir: String::new(),
             auth_token: String::new(),
+            require_client_certs: false,
         };
         let err = config.validate().unwrap_err();
         assert!(err.contains("retention_days"));

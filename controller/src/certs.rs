@@ -82,6 +82,31 @@ pub fn ensure_certs(certs_dir: &str, external_url: &str) -> Result<CertPaths> {
     Ok(paths)
 }
 
+/// Issue a client certificate (CN = node_id) signed by the CA in `certs_dir`, for
+/// mTLS node authentication. Returns (cert_pem, key_pem).
+pub fn issue_client_cert(certs_dir: &str, node_id: &str) -> Result<(String, String)> {
+    let dir = Path::new(certs_dir);
+    let ca_cert_pem = fs::read_to_string(dir.join("ca.pem")).context("reading ca.pem")?;
+    let ca_key_pem = fs::read_to_string(dir.join("ca-key.pem")).context("reading ca-key.pem")?;
+
+    let ca_key = KeyPair::from_pem(&ca_key_pem).context("loading CA key")?;
+    let ca_cert = CertificateParams::from_ca_cert_pem(&ca_cert_pem)
+        .context("loading CA cert")?
+        .self_signed(&ca_key)
+        .context("reconstructing CA cert")?;
+
+    let client_key = KeyPair::generate().context("generating client key")?;
+    let mut params =
+        CertificateParams::new(Vec::<String>::new()).context("creating client params")?;
+    params.distinguished_name.push(DnType::CommonName, node_id);
+    params.extended_key_usages = vec![ExtendedKeyUsagePurpose::ClientAuth];
+    let cert = params
+        .signed_by(&client_key, &ca_cert, &ca_key)
+        .context("signing client certificate")?;
+
+    Ok((cert.pem(), client_key.serialize_pem()))
+}
+
 /// Generate a random 32-byte hex token for agent authentication.
 pub fn generate_token() -> String {
     use std::fmt::Write;
@@ -177,6 +202,22 @@ mod tests {
         let paths2 =
             ensure_certs(dir.path().to_str().unwrap(), "http://10.0.0.1:50051").unwrap();
         assert!(paths2.ca_cert.exists());
+    }
+
+    #[test]
+    fn issued_client_cert_has_node_id_cn() {
+        let dir = tempfile::tempdir().unwrap();
+        let d = dir.path().to_str().unwrap();
+        ensure_certs(d, "http://10.0.0.1:50051").unwrap();
+
+        let (cert_pem, key_pem) = issue_client_cert(d, "mainnet-validator-1").unwrap();
+        assert!(key_pem.contains("BEGIN PRIVATE KEY"));
+
+        let (_, pem) = x509_parser::pem::parse_x509_pem(cert_pem.as_bytes()).unwrap();
+        assert_eq!(
+            crate::grpc_server::leaf_common_name(&pem.contents).as_deref(),
+            Some("mainnet-validator-1")
+        );
     }
 
     #[test]

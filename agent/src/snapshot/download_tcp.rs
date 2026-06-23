@@ -182,7 +182,7 @@ async fn receive_file(
 
     // Read header: file_size (u64 LE) + filename_len (u32 LE) + filename
     let file_size = read_u64_le(&mut stream).await?;
-    let filename = read_length_prefixed_string(&mut stream).await?;
+    let filename = sanitize_snapshot_filename(&read_length_prefixed_string(&mut stream).await?)?;
 
     tracing::info!(filename = %filename, file_size, kind = label, "receiving snapshot");
 
@@ -275,6 +275,22 @@ async fn read_u64_le(stream: &mut TcpStream) -> PillarResult<u64> {
     Ok(u64::from_le_bytes(buf))
 }
 
+/// Accept only a bare snapshot file name so a crafted value can't traverse out of
+/// the destination directory (absolute paths / `..`).
+fn sanitize_snapshot_filename(raw: &str) -> PillarResult<String> {
+    let name = std::path::Path::new(raw)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .filter(|n| *n == raw)
+        .filter(|n| n.starts_with("snapshot-") || n.starts_with("incremental-snapshot-"));
+    match name {
+        Some(n) => Ok(n.to_string()),
+        None => Err(PillarError::Snapshot(format!(
+            "rejected snapshot filename: {raw:?}"
+        ))),
+    }
+}
+
 async fn read_length_prefixed_string(stream: &mut TcpStream) -> PillarResult<String> {
     let mut len_buf = [0u8; 4];
     stream
@@ -297,4 +313,26 @@ async fn read_length_prefixed_string(stream: &mut TcpStream) -> PillarResult<Str
         .map_err(|e| PillarError::Snapshot(format!("read string data: {e}")))?;
 
     String::from_utf8(buf).map_err(|e| PillarError::Snapshot(format!("invalid utf-8: {e}")))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::sanitize_snapshot_filename;
+
+    #[test]
+    fn accepts_plain_snapshot_names() {
+        assert_eq!(
+            sanitize_snapshot_filename("snapshot-100-abc.tar.zst").unwrap(),
+            "snapshot-100-abc.tar.zst"
+        );
+        assert!(sanitize_snapshot_filename("incremental-snapshot-1-2-x.tar.zst").is_ok());
+    }
+
+    #[test]
+    fn rejects_traversal_and_absolute_paths() {
+        assert!(sanitize_snapshot_filename("../../etc/cron.d/x").is_err());
+        assert!(sanitize_snapshot_filename("/etc/passwd").is_err());
+        assert!(sanitize_snapshot_filename("snap/snapshot-1.tar.zst").is_err());
+        assert!(sanitize_snapshot_filename("evil.tar.zst").is_err());
+    }
 }

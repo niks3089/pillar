@@ -268,18 +268,34 @@ fn is_authenticated(state: &ApiState, req: &Request) -> bool {
         }
     }
 
-    // 2. Check Authorization: Bearer <token>
-    if let Some(auth_header) = req.headers().get(header::AUTHORIZATION) {
-        if let Ok(value) = auth_header.to_str() {
-            if let Some(token) = value.strip_prefix("Bearer ") {
-                if token == state.auth_token {
-                    return true;
+    // 2. Bearer <token> against the admin API token — a separate secret from the
+    //    agent enrollment token. Empty api_token fails closed.
+    if !state.api_token.is_empty() {
+        if let Some(auth_header) = req.headers().get(header::AUTHORIZATION) {
+            if let Ok(value) = auth_header.to_str() {
+                if let Some(token) = value.strip_prefix("Bearer ") {
+                    if constant_time_eq(token, &state.api_token) {
+                        return true;
+                    }
                 }
             }
         }
     }
 
     false
+}
+
+/// Constant-time comparison so token checks don't leak via timing.
+pub(crate) fn constant_time_eq(a: &str, b: &str) -> bool {
+    let (a, b) = (a.as_bytes(), b.as_bytes());
+    if a.len() != b.len() {
+        return false;
+    }
+    let mut diff = 0u8;
+    for (x, y) in a.iter().zip(b.iter()) {
+        diff |= x ^ y;
+    }
+    diff == 0
 }
 
 fn extract_session_cookie(req: &Request) -> Option<String> {

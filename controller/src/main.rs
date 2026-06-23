@@ -107,7 +107,12 @@ async fn main() -> anyhow::Result<()> {
             .context("reading server key")?;
 
         let identity = tonic::transport::Identity::from_pem(&server_cert, &server_key);
-        let tls = tonic::transport::ServerTlsConfig::new().identity(identity);
+        let mut tls = tonic::transport::ServerTlsConfig::new().identity(identity);
+        if config.require_client_certs {
+            let ca = std::fs::read_to_string(&cert_paths.ca_cert).context("reading CA cert")?;
+            tls = tls.client_ca_root(tonic::transport::Certificate::from_pem(ca));
+            tracing::info!("mTLS enabled: client certificates required");
+        }
         tracing::info!(certs_dir = %config.certs_dir, "TLS enabled on gRPC server");
         Some(tls)
     } else {
@@ -115,13 +120,19 @@ async fn main() -> anyhow::Result<()> {
         None
     };
 
-    // Seed default admin credentials if not present.
+    // Seed admin credentials if not present. We generate a random password instead of a
+    // guessable default (`admin/admin`) and print it ONCE; the operator changes it via the UI.
     if db::get_setting(&database, "admin_username").await?.is_none() {
         db::set_setting(&database, "admin_username", "admin").await?;
-        let hash = auth::hash_password("admin")
-            .map_err(|e| anyhow::anyhow!("failed to hash default password: {e}"))?;
+        let password = certs::generate_token();
+        let hash = auth::hash_password(&password)
+            .map_err(|e| anyhow::anyhow!("failed to hash admin password: {e}"))?;
         db::set_setting(&database, "admin_password_hash", &hash).await?;
-        tracing::info!("default admin credentials created (admin/admin)");
+        tracing::warn!(
+            username = "admin",
+            password = %password,
+            "generated initial admin credentials — log in and change the password; shown only once"
+        );
     }
 
     // Ensure auth token exists: use config value, else load from DB, else generate + persist.
@@ -137,6 +148,20 @@ async fn main() -> anyhow::Result<()> {
         token
     };
 
+    // Admin API token — a SEPARATE secret from the agent enrollment token above.
+    // Used as `Authorization: Bearer <token>` for programmatic API access.
+    let api_token = if let Some(stored) = db::get_setting(&database, "api_token").await? {
+        stored
+    } else {
+        let token = certs::generate_token();
+        db::set_setting(&database, "api_token", &token).await?;
+        tracing::warn!(
+            api_token = %token,
+            "generated admin API token — use as 'Authorization: Bearer <token>'; shown only once"
+        );
+        token
+    };
+
     // Spawn gRPC server
     let grpc_addr = config
         .grpc_listen
@@ -146,10 +171,11 @@ async fn main() -> anyhow::Result<()> {
         database.clone(),
         registry.clone(),
         &config.external_url,
+        config.require_client_certs,
     );
     let grpc_cancel = cancel.clone();
     let grpc_token = auth_token.clone();
-    tokio::spawn(async move {
+    let grpc_handle = tokio::spawn(async move {
         tracing::info!(addr = %grpc_addr, "gRPC server starting");
         let mut builder = tonic::transport::Server::builder();
         if let Some(tls) = tls_config {
@@ -171,7 +197,7 @@ async fn main() -> anyhow::Result<()> {
     let prune_db = database.clone();
     let retention_days = config.retention_days;
     let prune_cancel = cancel.clone();
-    tokio::spawn(async move {
+    let prune_handle = tokio::spawn(async move {
         let mut interval = tokio::time::interval(Duration::from_secs(3600));
         loop {
             tokio::select! {
@@ -204,6 +230,7 @@ async fn main() -> anyhow::Result<()> {
         registry: registry.clone(),
         config: config.clone(),
         auth_token: auth_token.clone(),
+        api_token: api_token.clone(),
         update_info: update_info.clone(),
         sessions,
     };
@@ -226,10 +253,27 @@ async fn main() -> anyhow::Result<()> {
         .context(format!("binding to {}", config.http_listen))?;
     tracing::info!(listen = %config.http_listen, "HTTP server starting");
 
-    axum::serve(listener, app)
-        .with_graceful_shutdown(async move { cancel.cancelled().await })
-        .await
-        .context("HTTP server error")?;
+    let http_cancel = cancel.clone();
+    let http = axum::serve(listener, app)
+        .with_graceful_shutdown(async move { http_cancel.cancelled().await });
+
+    // Supervise: if a background task dies while we're not shutting down, treat it as fatal
+    // rather than serving HTTP over a dead gRPC server / pruner.
+    tokio::select! {
+        res = http => res.context("HTTP server error")?,
+        res = grpc_handle => {
+            if !cancel.is_cancelled() {
+                cancel.cancel();
+                anyhow::bail!("gRPC server task exited unexpectedly: {res:?}");
+            }
+        }
+        res = prune_handle => {
+            if !cancel.is_cancelled() {
+                cancel.cancel();
+                anyhow::bail!("retention pruner task exited unexpectedly: {res:?}");
+            }
+        }
+    }
 
     tracing::info!("{SERVICE_NAME} stopped");
     Ok(())
