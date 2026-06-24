@@ -38,7 +38,7 @@ export default function Login({ onLogin }: LoginProps) {
   return (
     <div className="login-page">
       <form className="login-card" onSubmit={handleSubmit}>
-        <div className="login-logo">Pillar</div>
+        <img src="/pillar-logo.png" alt="Pillar" className="login-logo" />
         <p className="login-subtitle">Sign in to continue</p>
         {error && <div className="login-error">{error}</div>}
         <input

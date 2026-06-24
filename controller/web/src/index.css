@@ -71,14 +71,15 @@ body {
 }
 
 .nav-logo {
-  font-size: 1.25rem;
-  font-weight: 700;
-  background: var(--gradient);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
+  display: flex;
+  align-items: center;
   text-decoration: none;
-  font-family: 'SF Mono', 'Fira Code', 'Fira Mono', monospace;
+}
+
+.nav-logo img {
+  height: 36px;
+  width: auto;
+  display: block;
 }
 
 .nav-links {
@@ -856,14 +857,10 @@ body {
 }
 
 .login-logo {
-  font-size: 1.5rem;
-  font-weight: 700;
-  background: var(--gradient);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-  font-family: 'SF Mono', 'Fira Code', 'Fira Mono', monospace;
-  text-align: center;
+  display: block;
+  width: 150px;
+  height: auto;
+  margin: 0 auto;
 }
 
 .login-subtitle {

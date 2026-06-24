@@ -40,7 +40,7 @@ function App() {
   return (
     <div className="app">
       <nav className="navbar">
-        <NavLink to="/" className="nav-logo">Pillar</NavLink>
+        <NavLink to="/" className="nav-logo"><img src="/pillar-logo.png" alt="Pillar" /></NavLink>
         <div className="nav-links">
           <NavLink to="/" end>Overview</NavLink>
           <a href="/grafana/d/pillar-fleet-overview" target="_blank" rel="noopener noreferrer">Metrics</a>
