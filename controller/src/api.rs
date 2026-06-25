@@ -1585,22 +1585,14 @@ async fn dashboard_node_detail() -> impl IntoResponse {
 // Grafana reverse proxy
 // ---------------------------------------------------------------------------
 
-/// True if `ip` is a loopback/private/link-local/unspecified address — i.e. an
-/// internal SSRF target (cloud metadata at 169.254.169.254 is link-local).
+/// True if `ip` is a cloud-metadata / link-local target — the dangerous SSRF
+/// destination (e.g. 169.254.169.254). Loopback and private ranges are allowed:
+/// the Grafana proxy legitimately points at a same-host or internal Grafana.
 fn ip_is_disallowed(ip: std::net::IpAddr) -> bool {
     match ip {
-        std::net::IpAddr::V4(v4) => {
-            v4.is_loopback()
-                || v4.is_private()
-                || v4.is_link_local()
-                || v4.is_unspecified()
-                || v4.is_broadcast()
-        }
+        std::net::IpAddr::V4(v4) => v4.is_link_local() || v4.is_unspecified() || v4.is_broadcast(),
         std::net::IpAddr::V6(v6) => {
-            v6.is_loopback()
-                || v6.is_unspecified()
-                || (v6.segments()[0] & 0xfe00) == 0xfc00 // unique-local fc00::/7
-                || (v6.segments()[0] & 0xffc0) == 0xfe80 // link-local fe80::/10
+            v6.is_unspecified() || (v6.segments()[0] & 0xffc0) == 0xfe80 // link-local fe80::/10
         }
     }
 }
@@ -1771,6 +1763,17 @@ mod tests {
             r#"{"client":"agave","version":"1","cluster":"evil"}"#
         ))
         .is_err());
+    }
+
+    #[test]
+    fn ssrf_blocks_metadata_allows_internal() {
+        use std::net::IpAddr;
+        let blocked = |s: &str| ip_is_disallowed(s.parse::<IpAddr>().unwrap());
+        assert!(blocked("169.254.169.254")); // cloud metadata
+        assert!(blocked("0.0.0.0"));
+        assert!(!blocked("127.0.0.1")); // same-host grafana
+        assert!(!blocked("10.0.0.5")); // internal grafana
+        assert!(!blocked("34.107.8.212")); // public
     }
 
     #[test]
