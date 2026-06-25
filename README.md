@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/pillar-logo.png" alt="Pillar" width="200" />
+</p>
+
 # Pillar
 
 **Open-source operations platform for running Solana validators — at one node or fleet scale.**
