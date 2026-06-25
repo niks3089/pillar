@@ -15,6 +15,8 @@ pub enum ClientKind {
     Jito,
     Firedancer,
     Frankendancer,
+    /// Mithril — fourth Solana validator client (live on mainnet).
+    Mithril,
     /// Surfpool — local Solana test validator / mainnet-fork simulator
     /// (drop-in for solana-test-validator). Used for testing and demos.
     Surfpool,
@@ -45,6 +47,10 @@ impl ValidatorClient {
             ClientKind::Frankendancer => Self {
                 service_name: "frankendancer",
                 binary_path: PathBuf::from("/usr/local/bin/fdctl"),
+            },
+            ClientKind::Mithril => Self {
+                service_name: "mithril-validator",
+                binary_path: PathBuf::from("/usr/local/bin/mithril-validator"),
             },
             ClientKind::Surfpool => Self {
                 service_name: "surfpool",

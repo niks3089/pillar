@@ -662,7 +662,8 @@ struct ProvisionRequest {
     net_interface: String,
 }
 
-const ALLOWED_CLIENTS: &[&str] = &["agave", "jito", "firedancer", "frankendancer", "surfpool"];
+const ALLOWED_CLIENTS: &[&str] =
+    &["agave", "jito", "firedancer", "frankendancer", "surfpool", "mithril"];
 const ALLOWED_CLUSTERS: &[&str] = &["mainnet", "mainnet-beta", "testnet", "devnet"];
 
 /// Rejects characters that allow shell injection or extra-line injection once the
