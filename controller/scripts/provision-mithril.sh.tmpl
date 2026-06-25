@@ -1,0 +1,94 @@
+#!/usr/bin/env bash
+set -euo pipefail
+echo "=== Pillar: Provisioning Mithril {{version}} on {{cluster}} ==="
+
+# NOTE: Mithril is a new Solana validator client (in test). Its public release
+# packaging is not yet finalised, so this script installs from a prebuilt
+# download_url (tarball or standalone binary). Building from source is not yet
+# supported here — provide download_url + sha256 in the provision request.
+
+DOWNLOAD_URL="{{download_url}}"
+STAGING="/tmp/pillar-staging"
+rm -rf "$STAGING"
+
+if [ -x "{{binary_path}}" ]; then
+  CURRENT=$("{{binary_path}}" --version 2>/dev/null | grep -oP '\d+\.\d+\.\d+(-[a-zA-Z0-9.]+)?' | head -1 || true)
+  if [ "$CURRENT" = "{{version}}" ]; then
+    echo "Binary {{binary_path}} already at v{{version}}, skipping install"
+  else
+    echo "Binary exists but version $CURRENT != {{version}}, will reinstall"
+    CURRENT=""
+  fi
+fi
+
+if [ -z "${CURRENT:-}" ]; then
+  if [ -z "$DOWNLOAD_URL" ]; then
+    echo "ERROR: Mithril requires a download_url (prebuilt binary or tarball)." >&2
+    exit 1
+  fi
+  mkdir -p "$STAGING"
+  echo "Downloading from $DOWNLOAD_URL..."
+  curl -sSL -o "$STAGING/download" "$DOWNLOAD_URL"
+
+  SHA="{{sha256}}"
+  if [ -n "$SHA" ]; then
+    echo "$SHA  $STAGING/download" | sha256sum -c
+    echo "SHA256 verified"
+  fi
+
+  if file "$STAGING/download" | grep -q "bzip2\|gzip\|tar"; then
+    echo "Extracting tarball..."
+    mkdir -p "$STAGING/extract"
+    tar -xf "$STAGING/download" -C "$STAGING/extract"
+    BINARY=$(find "$STAGING/extract" -name "mithril-validator" -type f | head -1)
+    if [ -z "$BINARY" ]; then
+      echo "ERROR: mithril-validator binary not found in tarball" >&2
+      exit 1
+    fi
+    sudo install -m 755 "$BINARY" {{binary_path}}
+  else
+    sudo install -m 755 "$STAGING/download" {{binary_path}}
+  fi
+fi
+echo "Binary ready at {{binary_path}}"
+
+# Stop existing service if running
+sudo systemctl stop {{old_service_name}} 2>/dev/null || true
+
+{{yellowstone_section}}
+
+# Write systemd unit
+sudo tee /etc/systemd/system/{{service_name}}.service > /dev/null <<'UNIT'
+[Unit]
+Description=Solana Validator (mithril)
+After=network.target
+{{start_limit_line}}
+
+[Service]
+Type=simple
+User=sol
+ExecStart={{exec_start}}
+Restart=on-failure
+RestartSec={{restart_sec}}
+LimitNOFILE=1000000
+LimitMEMLOCK=infinity
+{{log_rate_limit_line}}
+{{environment_lines}}
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+
+sudo systemctl daemon-reload
+sudo systemctl enable --now {{service_name}}
+echo "Service {{service_name}} started"
+
+# Update agent config
+CONFIG="${PILLAR_AGENT_CONFIG:-/etc/pillar/agent.yaml}"
+{{agent_config_sed_commands}}
+
+rm -rf "$STAGING"
+echo "=== Provision complete ==="
+
+# Restart agent for config reload (deferred so script result can be reported)
+(sleep 3 && sudo systemctl restart pillar-agent) &
