@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.0](https://github.com/niks3089/pillar/compare/pillar-agent-v0.3.1...pillar-agent-v0.4.0) (2026-06-25)
+
+
+### Features
+
+* **security:** harden control plane (template injection, auth, mTLS) ([265897d](https://github.com/niks3089/pillar/commit/265897d1721b0e67db2f313e26c7e614459344c3))
+
 ## [0.3.1](https://github.com/niks3089/pillar/compare/pillar-agent-v0.3.1...pillar-agent-v0.3.1) (2026-06-20)
 
 

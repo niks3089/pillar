@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.5.0](https://github.com/niks3089/pillar/compare/pillar-controller-v0.4.0...pillar-controller-v0.5.0) (2026-06-25)
+
+
+### Features
+
+* **branding:** add Pillar logo to README and web UI ([68b007a](https://github.com/niks3089/pillar/commit/68b007af186ed76557d13979b5e682c220a26d1e))
+
+
+### Bug Fixes
+
+* **controller:** allow loopback/private Grafana targets in SSRF guard ([6a7b72b](https://github.com/niks3089/pillar/commit/6a7b72b3026ae403929eb943b311854e8fa6449d))
+
 ## [0.4.0](https://github.com/niks3089/pillar/compare/pillar-controller-v0.3.1...pillar-controller-v0.4.0) (2026-06-23)
 
 
