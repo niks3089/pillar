@@ -132,7 +132,7 @@ async fn main() -> anyhow::Result<()> {
     let snapshot_dir = PathBuf::from(&config.paths.snapshot_path);
     let reconcile_shared = shared_status.clone();
     let reconcile_cancel = cancel.clone();
-    tokio::spawn(async move {
+    let reconcile_handle = tokio::spawn(async move {
         let mut reconciler = reconcile::Reconciler::new(
             reconcile_config,
             health_checker,
@@ -193,10 +193,21 @@ async fn main() -> anyhow::Result<()> {
         .context(format!("binding to {}", config.http_listen))?;
     tracing::info!(listen = %config.http_listen, "HTTP server starting");
 
-    axum::serve(listener, app)
-        .with_graceful_shutdown(async move { cancel.cancelled().await })
-        .await
-        .context("HTTP server error")?;
+    let http_cancel = cancel.clone();
+    let http = axum::serve(listener, app)
+        .with_graceful_shutdown(async move { http_cancel.cancelled().await });
+
+    // If the reconciler dies while we're not shutting down, exit instead of leaving the
+    // validator unmanaged behind a still-healthy /health endpoint.
+    tokio::select! {
+        res = http => res.context("HTTP server error")?,
+        res = reconcile_handle => {
+            if !cancel.is_cancelled() {
+                cancel.cancel();
+                anyhow::bail!("reconciler task exited unexpectedly: {res:?}");
+            }
+        }
+    }
 
     tracing::info!("{SERVICE_NAME} stopped");
     Ok(())

@@ -234,6 +234,11 @@ pub struct ControllerConfig {
     /// Path to CA certificate PEM for server TLS verification. Empty = plaintext.
     #[serde(default)]
     pub ca_cert_path: String,
+    /// Client certificate + key PEM paths for mTLS. Both empty = no client cert.
+    #[serde(default)]
+    pub client_cert_path: String,
+    #[serde(default)]
+    pub client_key_path: String,
     /// Bearer token for authenticating with the controller. Empty = no auth.
     #[serde(default)]
     pub auth_token: String,

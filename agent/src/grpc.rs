@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use tokio::sync::mpsc;
-use tonic::transport::{Certificate, Channel, ClientTlsConfig};
+use tonic::transport::{Certificate, Channel, ClientTlsConfig, Identity};
 use tokio_util::sync::CancellationToken;
 
 use crate::agent_health::AgentHealth;
@@ -233,15 +233,22 @@ async fn run_report_loop(
             _ = tokio::time::sleep(interval) => {}
         }
 
-        let state = shared_status.read().await;
-        let Some(ref status) = *state else {
-            tracing::debug!("no status yet, skipping report");
-            continue;
+        // Clone out and drop the guard before the RPC: holding the read lock across
+        // the await would block publish_status / metrics writers on a slow controller.
+        let status = {
+            let guard = shared_status.read().await;
+            match guard.as_ref() {
+                Some(s) => s.clone(),
+                None => {
+                    tracing::debug!("no status yet, skipping report");
+                    continue;
+                }
+            }
         };
 
         let request = tonic::Request::new(ReportStatusRequest {
             node_id: node_id.to_string(),
-            status: Some(status.clone()),
+            status: Some(status),
         });
 
         let start = Instant::now();
@@ -360,7 +367,13 @@ pub async fn build_channel(config: &ControllerConfig) -> Result<Channel, tonic::
     let endpoint = if !config.ca_cert_path.is_empty() {
         let ca =
             std::fs::read_to_string(&config.ca_cert_path).expect("reading CA cert");
-        let tls = ClientTlsConfig::new().ca_certificate(Certificate::from_pem(&ca));
+        let mut tls = ClientTlsConfig::new().ca_certificate(Certificate::from_pem(&ca));
+        if !config.client_cert_path.is_empty() && !config.client_key_path.is_empty() {
+            let cert = std::fs::read_to_string(&config.client_cert_path).expect("reading client cert");
+            let key = std::fs::read_to_string(&config.client_key_path).expect("reading client key");
+            tls = tls.identity(Identity::from_pem(cert, key));
+            tracing::info!("mTLS client certificate loaded");
+        }
         tracing::info!("TLS enabled for controller connection");
         endpoint.tls_config(tls)?
     } else {

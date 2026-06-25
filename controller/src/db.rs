@@ -10,6 +10,10 @@ use pillar_shared::proto::{LogEntry, NodeStatus, RegisterNodeRequest};
 
 pub type Db = Arc<Mutex<Connection>>;
 
+/// Upper bound on rows returned by `get_logs`, so a caller-supplied `limit` can't
+/// force an unbounded result set.
+const MAX_LOG_LIMIT: u32 = 10_000;
+
 pub fn open_db(path: &str) -> Result<Db> {
     let conn = Connection::open(path).context("opening SQLite database")?;
     conn.execute_batch("PRAGMA journal_mode=WAL;")
@@ -160,11 +164,22 @@ pub async fn upsert_node(db: &Db, req: &RegisterNodeRequest, ip_address: &str) -
     tokio::task::spawn_blocking(move || {
         let conn = db.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
         let now = now_epoch_secs();
+        // ON CONFLICT updates only registration columns — last_seen_at, last_raw_state,
+        // provision_config_json and lifecycle_state are left intact across re-registration.
         conn.execute(
-            "INSERT OR REPLACE INTO nodes
+            "INSERT INTO nodes
                 (node_id, role, client, cluster, hostname, architecture, os,
                  agent_version, ip_address, registered_at, lifecycle_state)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, 'registered')",
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, 'registered')
+             ON CONFLICT(node_id) DO UPDATE SET
+                 role=excluded.role,
+                 client=excluded.client,
+                 cluster=excluded.cluster,
+                 hostname=excluded.hostname,
+                 architecture=excluded.architecture,
+                 os=excluded.os,
+                 agent_version=excluded.agent_version,
+                 ip_address=excluded.ip_address",
             params![
                 req.node_id,
                 optional_str(&req.role),
@@ -439,6 +454,7 @@ pub async fn get_logs(
     let node_id = node_id.to_owned();
     let service = service.map(|s| s.to_owned());
     let level = level.map(|l| l.to_owned());
+    let limit = limit.min(MAX_LOG_LIMIT);
     tokio::task::spawn_blocking(move || {
         let conn = db.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
 
