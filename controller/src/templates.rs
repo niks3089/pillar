@@ -18,6 +18,7 @@ pub mod scripts {
     pub const PROVISION_FRANKENDANCER: &str =
         include_str!("../scripts/provision-frankendancer.sh.tmpl");
     pub const PROVISION_SURFPOOL: &str = include_str!("../scripts/provision-surfpool.sh.tmpl");
+    pub const PROVISION_MITHRIL: &str = include_str!("../scripts/provision-mithril.sh.tmpl");
     pub const UPGRADE_VALIDATOR: &str = include_str!("../scripts/upgrade-validator.sh.tmpl");
     pub const UPGRADE_AGENT: &str = include_str!("../scripts/upgrade-agent.sh.tmpl");
     pub const RECOVER: &str = include_str!("../scripts/recover.sh.tmpl");
@@ -32,6 +33,7 @@ pub fn provision_template(client: &str) -> Result<&'static str, String> {
         "firedancer" => Ok(scripts::PROVISION_FIREDANCER),
         "frankendancer" => Ok(scripts::PROVISION_FRANKENDANCER),
         "surfpool" => Ok(scripts::PROVISION_SURFPOOL),
+        "mithril" => Ok(scripts::PROVISION_MITHRIL),
         other => Err(format!("unknown client: {other}")),
     }
 }
@@ -44,6 +46,7 @@ pub fn service_name_for_client(client: &str) -> &'static str {
         "firedancer" => "firedancer",
         "frankendancer" => "frankendancer",
         "surfpool" => "surfpool",
+        "mithril" => "mithril-validator",
         _ => "solana-validator",
     }
 }
@@ -56,6 +59,7 @@ pub fn binary_path_for_client(client: &str) -> &'static str {
         "firedancer" => "/usr/local/bin/fdctl",
         "frankendancer" => "/usr/local/bin/fdctl",
         "surfpool" => "/usr/local/bin/surfpool",
+        "mithril" => "/usr/local/bin/mithril-validator",
         _ => "/usr/local/bin/agave-validator",
     }
 }
