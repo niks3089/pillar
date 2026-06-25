@@ -15,7 +15,7 @@ pub enum ClientKind {
     Jito,
     Firedancer,
     Frankendancer,
-    /// Mithril — fourth Solana validator client (testnet, in development).
+    /// Mithril — fourth Solana validator client (live on mainnet).
     Mithril,
     /// Surfpool — local Solana test validator / mainnet-fork simulator
     /// (drop-in for solana-test-validator). Used for testing and demos.
