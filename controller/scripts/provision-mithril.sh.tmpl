@@ -2,10 +2,10 @@
 set -euo pipefail
 echo "=== Pillar: Provisioning Mithril {{version}} on {{cluster}} ==="
 
-# NOTE: Mithril is a new Solana validator client (in test). Its public release
-# packaging is not yet finalised, so this script installs from a prebuilt
-# download_url (tarball or standalone binary). Building from source is not yet
-# supported here — provide download_url + sha256 in the provision request.
+# Mithril is the fourth Solana validator client (live on mainnet). This installs
+# from a prebuilt download_url (tarball or standalone binary) — provide
+# download_url + sha256 in the provision request. Source build is not wired up
+# here yet; add it once the repo layout is confirmed.
 
 DOWNLOAD_URL="{{download_url}}"
 STAGING="/tmp/pillar-staging"
