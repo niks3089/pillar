@@ -38,23 +38,27 @@ function App() {
   }
 
   return (
-    <div className="app">
-      <nav className="navbar">
-        <NavLink to="/" className="nav-logo"><img src="/pillar-logo.png" alt="Pillar" /></NavLink>
-        <div className="nav-links">
-          <NavLink to="/" end>Overview</NavLink>
-          <a href="/grafana/d/pillar-fleet-overview" target="_blank" rel="noopener noreferrer">Metrics</a>
-          <NavLink to="/docs">Docs</NavLink>
+    <div className="min-h-screen bg-[#0a0911] text-zinc-100 font-sans selection:bg-purple-500/30">
+      <nav className="sticky top-0 z-50 flex items-center justify-between px-6 py-4 bg-[#0a0911]/80 backdrop-blur-md border-b border-white/5">
+        <div className="flex items-center gap-8">
+          <NavLink to="/" className="flex items-center gap-2 hover:opacity-80 transition-opacity">
+            <img src="/pillar-logo.png" alt="Pillar" className="h-6 w-auto" />
+          </NavLink>
+          <div className="flex items-center gap-6 text-sm font-medium text-zinc-400">
+            <NavLink to="/" end className={({isActive}) => isActive ? "text-zinc-100" : "hover:text-zinc-100 transition-colors"}>Overview</NavLink>
+            <a href="/grafana/d/pillar-fleet-overview" target="_blank" rel="noopener noreferrer" className="hover:text-zinc-100 transition-colors">Metrics</a>
+            <NavLink to="/docs" className={({isActive}) => isActive ? "text-zinc-100" : "hover:text-zinc-100 transition-colors"}>Docs</NavLink>
+          </div>
         </div>
-        <div className="nav-user">
-          <button className="btn nav-user-btn" onClick={() => setShowChangePassword(true)}>
+        <div className="flex items-center gap-3">
+          <button className="px-3 py-1.5 text-sm font-medium rounded-md bg-white/5 border border-white/10 hover:bg-white/10 transition-colors text-zinc-300 hover:text-white" onClick={() => setShowChangePassword(true)}>
             {username || 'admin'}
           </button>
-          <button className="btn logout-btn" onClick={handleLogout}>Logout</button>
+          <button className="px-3 py-1.5 text-sm font-medium rounded-md bg-transparent border border-transparent hover:bg-white/5 transition-colors text-zinc-400 hover:text-zinc-300" onClick={handleLogout}>Logout</button>
         </div>
       </nav>
       <UpdateBanner />
-      <main className="content">
+      <main className="max-w-7xl mx-auto px-6 py-8">
         <Routes>
           <Route path="/" element={<Overview />} />
           <Route path="/docs" element={<Docs />} />
@@ -108,52 +112,65 @@ function ChangePasswordModal({ onClose, onChanged }: { onClose: () => void; onCh
   }
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <form className="modal-card" onClick={e => e.stopPropagation()} onSubmit={handleSubmit}>
-        <h2 className="modal-title">Change Credentials</h2>
-        {error && <div className="login-error">{error}</div>}
-        <label className="modal-label">Current Password</label>
-        <input
-          type="password"
-          className="login-input"
-          placeholder="Current password"
-          value={currentPassword}
-          onChange={e => setCurrentPassword(e.target.value)}
-          autoComplete="current-password"
-          autoFocus
-          required
-        />
-        <label className="modal-label">New Username (optional)</label>
-        <input
-          type="text"
-          className="login-input"
-          placeholder="Leave blank to keep current"
-          value={newUsername}
-          onChange={e => setNewUsername(e.target.value)}
-          autoComplete="username"
-        />
-        <label className="modal-label">New Password (optional)</label>
-        <input
-          type="password"
-          className="login-input"
-          placeholder="Leave blank to keep current"
-          value={newPassword}
-          onChange={e => setNewPassword(e.target.value)}
-          autoComplete="new-password"
-        />
-        <label className="modal-label">Confirm New Password</label>
-        <input
-          type="password"
-          className="login-input"
-          placeholder="Confirm new password"
-          value={confirmPassword}
-          onChange={e => setConfirmPassword(e.target.value)}
-          autoComplete="new-password"
-          disabled={!newPassword}
-        />
-        <div className="modal-actions">
-          <button type="button" className="btn" onClick={onClose}>Cancel</button>
-          <button type="submit" className="btn primary" disabled={loading || !currentPassword}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
+      <form className="w-full max-w-md p-6 bg-[#15131f] border border-white/10 rounded-xl shadow-2xl flex flex-col gap-4" onClick={e => e.stopPropagation()} onSubmit={handleSubmit}>
+        <h2 className="text-xl font-semibold text-zinc-100 mb-2">Change Credentials</h2>
+        {error && <div className="p-3 text-sm text-red-400 bg-red-950/30 border border-red-900/50 rounded-md">{error}</div>}
+        
+        <div className="flex flex-col gap-1.5">
+          <label className="text-sm font-medium text-zinc-400">Current Password</label>
+          <input
+            type="password"
+            className="w-full px-3 py-2 bg-black/40 border border-white/10 rounded-md text-zinc-100 text-sm focus:outline-none focus:border-purple-500/50 focus:ring-1 focus:ring-purple-500/50 transition-all placeholder:text-zinc-600"
+            placeholder="Current password"
+            value={currentPassword}
+            onChange={e => setCurrentPassword(e.target.value)}
+            autoComplete="current-password"
+            autoFocus
+            required
+          />
+        </div>
+
+        <div className="flex flex-col gap-1.5">
+          <label className="text-sm font-medium text-zinc-400">New Username (optional)</label>
+          <input
+            type="text"
+            className="w-full px-3 py-2 bg-black/40 border border-white/10 rounded-md text-zinc-100 text-sm focus:outline-none focus:border-purple-500/50 focus:ring-1 focus:ring-purple-500/50 transition-all placeholder:text-zinc-600"
+            placeholder="Leave blank to keep current"
+            value={newUsername}
+            onChange={e => setNewUsername(e.target.value)}
+            autoComplete="username"
+          />
+        </div>
+
+        <div className="flex flex-col gap-1.5">
+          <label className="text-sm font-medium text-zinc-400">New Password (optional)</label>
+          <input
+            type="password"
+            className="w-full px-3 py-2 bg-black/40 border border-white/10 rounded-md text-zinc-100 text-sm focus:outline-none focus:border-purple-500/50 focus:ring-1 focus:ring-purple-500/50 transition-all placeholder:text-zinc-600"
+            placeholder="Leave blank to keep current"
+            value={newPassword}
+            onChange={e => setNewPassword(e.target.value)}
+            autoComplete="new-password"
+          />
+        </div>
+
+        <div className="flex flex-col gap-1.5">
+          <label className="text-sm font-medium text-zinc-400">Confirm New Password</label>
+          <input
+            type="password"
+            className="w-full px-3 py-2 bg-black/40 border border-white/10 rounded-md text-zinc-100 text-sm focus:outline-none focus:border-purple-500/50 focus:ring-1 focus:ring-purple-500/50 transition-all placeholder:text-zinc-600"
+            placeholder="Confirm new password"
+            value={confirmPassword}
+            onChange={e => setConfirmPassword(e.target.value)}
+            autoComplete="new-password"
+            disabled={!newPassword}
+          />
+        </div>
+
+        <div className="flex items-center justify-end gap-3 mt-4">
+          <button type="button" className="px-4 py-2 text-sm font-medium text-zinc-400 hover:text-zinc-200 transition-colors" onClick={onClose}>Cancel</button>
+          <button type="submit" className="px-4 py-2 text-sm font-medium text-white bg-purple-600 hover:bg-purple-500 rounded-md border border-purple-500/50 shadow-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed" disabled={loading || !currentPassword}>
             {loading ? 'Saving...' : 'Save'}
           </button>
         </div>

@@ -1,0 +1,9 @@
+grpc_listen: "0.0.0.0:50051"
+http_listen: "0.0.0.0:8080"
+db_path: "./.local/controller.db"
+retention_days: 30
+external_url: "http://localhost:50051"
+grafana_url: ""
+certs_dir: ""
+auth_token: ""
+require_client_certs: false
