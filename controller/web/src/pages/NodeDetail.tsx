@@ -3,6 +3,15 @@ import { useParams, Link } from 'react-router-dom'
 import { fetchNode, fetchNodeLogs, restartNode, recoverNode, deleteNode, stopNode, cancelDeployment, provisionNode, fetchVersionInfo, upgradeAgent } from '../api'
 import type { Node, LogEntry, ProvisionRequest, VersionInfo } from '../api'
 
+const STATE_BADGE_CLASSES: Record<string, string> = {
+  unprovisioned: 'bg-zinc-500/10 text-zinc-400 border-zinc-500/20',
+  provisioning: 'bg-yellow-500/10 text-yellow-500 border-yellow-500/20',
+  starting_up: 'bg-blue-500/10 text-blue-400 border-blue-500/20',
+  healthy: 'bg-green-500/10 text-green-400 border-green-500/20',
+  unhealthy: 'bg-red-500/10 text-red-400 border-red-500/20',
+  shutting_down: 'bg-orange-500/10 text-orange-400 border-orange-500/20',
+  terminated: 'bg-zinc-800 text-zinc-500 border-zinc-700'
+}
 function formatBytes(bytes: number): string {
   if (bytes === 0) return '0 B'
   const units = ['B', 'KB', 'MB', 'GB', 'TB']
@@ -418,18 +427,18 @@ function NodeDetail() {
 
   if (error && !node) {
     return (
-      <div>
-        <Link to="/" className="back-link">&larr; Back to Overview</Link>
-        <p style={{ color: 'var(--red)' }}>Error loading node: {error}</p>
+      <div className="flex flex-col gap-4">
+        <Link to="/" className="inline-flex items-center text-sm font-medium text-zinc-400 hover:text-zinc-200 transition-colors mb-2">&larr; Back to Overview</Link>
+        <div className="p-4 bg-red-950/30 border border-red-900/50 rounded-md text-red-400">Error loading node: {error}</div>
       </div>
     )
   }
 
   if (!node) {
     return (
-      <div>
-        <Link to="/" className="back-link">&larr; Back to Overview</Link>
-        <p style={{ color: 'var(--text-dim)' }}>Loading...</p>
+      <div className="flex flex-col gap-4">
+        <Link to="/" className="inline-flex items-center text-sm font-medium text-zinc-400 hover:text-zinc-200 transition-colors mb-2">&larr; Back to Overview</Link>
+        <p className="text-zinc-500">Loading...</p>
       </div>
     )
   }
@@ -446,130 +455,140 @@ function NodeDetail() {
   )
 
   return (
-    <div>
-      <Link to="/" className="back-link">&larr; Back to Overview</Link>
+    <div className="flex flex-col gap-8 max-w-6xl mx-auto">
+      <Link to="/" className="inline-flex items-center text-sm font-medium text-zinc-400 hover:text-zinc-200 transition-colors w-max">&larr; Back to Overview</Link>
 
       {/* Header */}
-      <div className="node-header">
-        <h1>{node.node_id}</h1>
-        <span className={`badge ${node.lifecycle_state}`}>{node.lifecycle_state}</span>
-        <span className={`link-status ${node.live_status ? 'connected' : 'disconnected'}`}>
-          {node.live_status ? 'Connected' : 'Disconnected'}
-        </span>
-        {node.hostname && node.hostname !== node.node_id && <span className="meta">{node.hostname}</span>}
-        <span className="meta">Last seen: {formatLastSeen(node.last_seen_at)}</span>
-        <a
-          className="btn"
-          style={{ marginLeft: 'auto', fontSize: '0.75rem' }}
-          href={`/grafana/d/pillar-node-detail/pillar-node-detail?orgId=1&from=now-1h&to=now&timezone=browser&var-datasource=pillar-prometheus&var-node_id=${encodeURIComponent(node.node_id)}&refresh=30s`}
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          Metrics ↗
-        </a>
+      <div className="flex flex-wrap items-center gap-4 bg-[#15131f] border border-white/10 rounded-xl p-6 shadow-sm">
+        <h1 className="text-2xl font-semibold text-zinc-100 m-0 leading-none">{node.node_id}</h1>
+        <div className="flex items-center gap-2">
+          <span className={`inline-flex items-center px-2 py-0.5 text-[11px] font-medium uppercase tracking-wider rounded border ${STATE_BADGE_CLASSES[node.lifecycle_state] || 'bg-zinc-500/10 text-zinc-400 border-zinc-500/20'}`}>
+            {node.lifecycle_state}
+          </span>
+          <span className="flex items-center gap-1.5 px-2 py-0.5 text-[11px] font-medium uppercase tracking-wider rounded border bg-zinc-800/50 border-zinc-700/50 text-zinc-400">
+            <div className={`w-1.5 h-1.5 rounded-full ${node.live_status ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.4)]' : 'bg-red-500'}`}></div>
+            {node.live_status ? 'Connected' : 'Disconnected'}
+          </span>
+        </div>
+        
+        {node.hostname && node.hostname !== node.node_id && (
+          <span className="text-sm font-mono text-zinc-500">{node.hostname}</span>
+        )}
+        <span className="text-sm text-zinc-500">Last seen: {formatLastSeen(node.last_seen_at)}</span>
+        
+        <div className="ml-auto">
+          <a
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-purple-400 bg-purple-500/10 border border-purple-500/20 rounded-md hover:bg-purple-500/20 transition-colors"
+            href={`/grafana/d/pillar-node-detail/pillar-node-detail?orgId=1&from=now-1h&to=now&timezone=browser&var-datasource=pillar-prometheus&var-node_id=${encodeURIComponent(node.node_id)}&refresh=30s`}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Metrics ↗
+          </a>
+        </div>
       </div>
 
       {/* Node Info Cards - versions, client, cluster */}
-      <div className="info-grid">
-        <div className="info-card accent">
-          <div className="label">Validator Version</div>
-          <div className="value highlight">{s?.version || '-'}</div>
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+        <div className="flex flex-col bg-purple-900/10 border border-purple-500/20 rounded-xl p-5 shadow-sm">
+          <div className="text-xs font-medium text-purple-400/80 uppercase tracking-wider mb-2">Validator Version</div>
+          <div className="text-lg font-mono font-medium text-purple-100">{s?.version || '-'}</div>
         </div>
-        <div className="info-card">
-          <div className="label">Agent Version</div>
-          <div className="value small">{node.agent_version || '-'}</div>
+        <div className="flex flex-col bg-[#15131f] border border-white/10 rounded-xl p-5 shadow-sm">
+          <div className="text-xs font-medium text-zinc-400 uppercase tracking-wider mb-2">Agent Version</div>
+          <div className="text-lg font-mono text-zinc-300">{node.agent_version || '-'}</div>
         </div>
-        <div className="info-card">
-          <div className="label">Client</div>
-          <div className="value small">{node.client ?? s?.client ?? '-'}</div>
+        <div className="flex flex-col bg-[#15131f] border border-white/10 rounded-xl p-5 shadow-sm">
+          <div className="text-xs font-medium text-zinc-400 uppercase tracking-wider mb-2">Client</div>
+          <div className="text-lg text-zinc-300 capitalize">{node.client ?? s?.client ?? '-'}</div>
         </div>
-        <div className="info-card">
-          <div className="label">Cluster</div>
-          <div className="value small">
+        <div className="flex flex-col bg-[#15131f] border border-white/10 rounded-xl p-5 shadow-sm">
+          <div className="text-xs font-medium text-zinc-400 uppercase tracking-wider mb-2">Cluster</div>
+          <div className="text-lg text-zinc-300">
             {(node.cluster || s?.cluster) ? (
-              <span className={`cluster-badge ${node.cluster ?? s?.cluster ?? ''}`}>
+              <span className="inline-flex items-center px-2 py-0.5 text-xs font-medium bg-zinc-800 text-zinc-300 rounded border border-zinc-700">
                 {clusterLabel(node.cluster ?? s?.cluster)}
               </span>
             ) : '-'}
           </div>
         </div>
-        <div className="info-card">
-          <div className="label">Role</div>
-          <div className="value small">{node.role ?? s?.role ?? '-'}</div>
+        <div className="flex flex-col bg-[#15131f] border border-white/10 rounded-xl p-5 shadow-sm">
+          <div className="text-xs font-medium text-zinc-400 uppercase tracking-wider mb-2">Role</div>
+          <div className="text-lg text-zinc-300 capitalize">{node.role ?? s?.role ?? '-'}</div>
         </div>
       </div>
 
       {/* Metrics */}
-      <div className="metrics-grid">
-        <div className="metric-card">
-          <div className="label">Slots Behind</div>
-          <div className="value">{s?.slots_behind ?? '-'}</div>
+      <div className="grid grid-cols-2 md:grid-cols-6 gap-4">
+        <div className="flex flex-col bg-[#15131f] border border-white/10 rounded-xl p-5 shadow-sm">
+          <div className="text-xs font-medium text-zinc-400 uppercase tracking-wider mb-2">Slots Behind</div>
+          <div className="text-xl font-mono text-zinc-200">{s?.slots_behind ?? '-'}</div>
         </div>
-        <div className="metric-card">
-          <div className="label">CPU</div>
-          <div className="value">{s ? `${s.cpu_usage_percent.toFixed(1)}%` : '-'}</div>
+        <div className="flex flex-col bg-[#15131f] border border-white/10 rounded-xl p-5 shadow-sm">
+          <div className="text-xs font-medium text-zinc-400 uppercase tracking-wider mb-2">CPU</div>
+          <div className="text-xl font-mono text-zinc-200">{s ? `${s.cpu_usage_percent.toFixed(1)}%` : '-'}</div>
         </div>
-        <div className="metric-card">
-          <div className="label">Memory</div>
-          <div className="value" style={{ fontSize: '1rem' }}>
+        <div className="flex flex-col bg-[#15131f] border border-white/10 rounded-xl p-5 shadow-sm">
+          <div className="text-xs font-medium text-zinc-400 uppercase tracking-wider mb-2">Memory</div>
+          <div className="text-base font-mono text-zinc-300">
             {s ? `${formatBytes(s.memory_used_bytes)} / ${formatBytes(s.memory_total_bytes)}` : '-'}
           </div>
         </div>
-        <div className="metric-card">
-          <div className="label">Disk</div>
-          <div className="value" style={{ fontSize: '1rem' }}>
+        <div className="flex flex-col bg-[#15131f] border border-white/10 rounded-xl p-5 shadow-sm">
+          <div className="text-xs font-medium text-zinc-400 uppercase tracking-wider mb-2">Disk</div>
+          <div className="text-base font-mono text-zinc-300">
             {s ? `${formatBytes(s.disk_used_bytes)} / ${formatBytes(s.disk_total_bytes)}` : '-'}
           </div>
         </div>
-        <div className="metric-card">
-          <div className="label">Restarts</div>
-          <div className="value">{s?.restart_count ?? '-'}</div>
+        <div className="flex flex-col bg-[#15131f] border border-white/10 rounded-xl p-5 shadow-sm">
+          <div className="text-xs font-medium text-zinc-400 uppercase tracking-wider mb-2">Restarts</div>
+          <div className="text-xl font-mono text-zinc-200">{s?.restart_count ?? '-'}</div>
         </div>
-        <div className="metric-card">
-          <div className="label">Running Since</div>
-          <div className="value" style={{ fontSize: '1rem' }}>{s?.state_duration_secs != null ? formatDuration(s.state_duration_secs) : '-'}</div>
+        <div className="flex flex-col bg-[#15131f] border border-white/10 rounded-xl p-5 shadow-sm">
+          <div className="text-xs font-medium text-zinc-400 uppercase tracking-wider mb-2">Running Since</div>
+          <div className="text-base font-mono text-zinc-300">{s?.state_duration_secs != null ? formatDuration(s.state_duration_secs) : '-'}</div>
         </div>
       </div>
 
       {/* Current Config (read-only) */}
       {hasConfig && (
-        <div className="config-panel">
-          <h2>Current Configuration</h2>
-          <div className="config-grid">
+        <div className="bg-[#15131f] border border-white/10 rounded-xl p-6 shadow-sm">
+          <h2 className="text-lg font-semibold text-zinc-100 mb-4">Current Configuration</h2>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-6 p-4 bg-black/20 rounded-lg border border-white/5">
             {node.client && (
-              <div className="config-item">
-                <span className="config-label">Client</span>
-                <span className="config-value">{node.client}</span>
+              <div className="flex flex-col gap-1">
+                <span className="text-[11px] font-medium text-zinc-500 uppercase tracking-wider">Client</span>
+                <span className="text-sm font-mono text-zinc-300">{node.client}</span>
               </div>
             )}
             {(node.cluster || s?.cluster) && (
-              <div className="config-item">
-                <span className="config-label">Cluster</span>
-                <span className="config-value">{node.cluster ?? s?.cluster}</span>
+              <div className="flex flex-col gap-1">
+                <span className="text-[11px] font-medium text-zinc-500 uppercase tracking-wider">Cluster</span>
+                <span className="text-sm font-mono text-zinc-300">{node.cluster ?? s?.cluster}</span>
               </div>
             )}
             {s?.version && (
-              <div className="config-item">
-                <span className="config-label">Validator Version</span>
-                <span className="config-value">{s.version}</span>
+              <div className="flex flex-col gap-1">
+                <span className="text-[11px] font-medium text-zinc-500 uppercase tracking-wider">Validator Version</span>
+                <span className="text-sm font-mono text-zinc-300">{s.version}</span>
               </div>
             )}
             {node.agent_version && (
-              <div className="config-item">
-                <span className="config-label">Agent Version</span>
-                <span className="config-value">{node.agent_version}</span>
+              <div className="flex flex-col gap-1">
+                <span className="text-[11px] font-medium text-zinc-500 uppercase tracking-wider">Agent Version</span>
+                <span className="text-sm font-mono text-zinc-300">{node.agent_version}</span>
               </div>
             )}
             {(node.role || s?.role) && (
-              <div className="config-item">
-                <span className="config-label">Role</span>
-                <span className="config-value">{node.role ?? s?.role}</span>
+              <div className="flex flex-col gap-1">
+                <span className="text-[11px] font-medium text-zinc-500 uppercase tracking-wider">Role</span>
+                <span className="text-sm font-mono text-zinc-300">{node.role ?? s?.role}</span>
               </div>
             )}
             {node.ip_address && (
-              <div className="config-item">
-                <span className="config-label">IP Address</span>
-                <span className="config-value">{node.ip_address}</span>
+              <div className="flex flex-col gap-1">
+                <span className="text-[11px] font-medium text-zinc-500 uppercase tracking-wider">IP Address</span>
+                <span className="text-sm font-mono text-zinc-300">{node.ip_address}</span>
               </div>
             )}
           </div>
@@ -577,33 +596,37 @@ function NodeDetail() {
       )}
 
       {/* Provision - opens in modal */}
-      <div className="provision-panel">
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem' }}>
+      <div className="bg-[#15131f] border border-purple-500/20 rounded-xl p-6 shadow-[0_0_20px_rgba(153,69,255,0.05)]">
+        <div className="flex items-center justify-between gap-4">
           <div>
-            <h2 style={{ marginBottom: '0.25rem' }}>{hasConfig ? 'Update Validator' : 'Setup Validator'}</h2>
-            <p style={{ margin: 0, color: 'var(--gray)', fontSize: '0.8125rem' }}>
+            <h2 className="text-lg font-semibold text-zinc-100 mb-1">{hasConfig ? 'Update Validator' : 'Setup Validator'}</h2>
+            <p className="m-0 text-sm text-zinc-400">
               {hasConfig
                 ? 'Change the client, version, cluster, ports, or flags and re-deploy this validator.'
                 : 'Install and configure a validator on this host — pick a client, cluster, version, and ports.'}
             </p>
           </div>
-          <button className="btn primary" onClick={() => setShowProvision(true)} style={{ whiteSpace: 'nowrap' }}>
+          <button 
+            className="px-4 py-2 text-sm font-medium text-white bg-purple-600 hover:bg-purple-500 rounded-md border border-purple-500/50 shadow-sm transition-all whitespace-nowrap" 
+            onClick={() => setShowProvision(true)}
+          >
             {hasConfig ? 'Update Validator' : 'Configure Validator'}
           </button>
         </div>
       </div>
 
       {showProvision && (
-        <div className="modal-overlay" onClick={() => setShowProvision(false)}>
-          <div className="modal-card wide" onClick={e => e.stopPropagation()}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
-              <h2 className="modal-title" style={{ margin: 0 }}>{hasConfig ? 'Update Validator' : 'Setup Validator'}</h2>
-              <button className="btn" onClick={() => setShowProvision(false)} style={{ fontSize: '0.75rem' }}>Close</button>
+        <div className="fixed inset-0 z-50 flex justify-center py-10 px-4 bg-black/60 backdrop-blur-sm overflow-y-auto" onClick={() => setShowProvision(false)}>
+          <div className="w-full max-w-4xl p-6 bg-[#15131f] border border-white/10 rounded-xl shadow-2xl flex flex-col gap-5 m-auto h-max" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between border-b border-white/5 pb-4">
+              <h2 className="text-xl font-semibold text-zinc-100 m-0">{hasConfig ? 'Update Validator' : 'Setup Validator'}</h2>
+              <button className="px-3 py-1.5 text-xs font-medium text-zinc-400 hover:text-zinc-200 transition-colors bg-white/5 hover:bg-white/10 rounded-md border border-white/10" onClick={() => setShowProvision(false)}>Close</button>
             </div>
-            <div className="form-grid">
-              <div className="form-group">
-                <label>Client</label>
-                <select value={provClient} onChange={e => setProvClient(e.target.value)}>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-medium text-zinc-400 uppercase tracking-wider">Client</label>
+                <select className="w-full px-3 py-2 bg-black/40 border border-white/10 rounded-md text-zinc-100 text-sm focus:outline-none focus:border-purple-500/50 transition-all appearance-none" value={provClient} onChange={e => setProvClient(e.target.value)}>
                   <option value="agave">Agave</option>
                   <option value="jito">Jito</option>
                   <option value="firedancer">Firedancer</option>
@@ -611,175 +634,175 @@ function NodeDetail() {
                   <option value="surfpool">Surfpool (test validator)</option>
                 </select>
               </div>
-              <div className="form-group">
-                <label>Cluster</label>
-                <select value={provCluster} onChange={e => handleClusterChange(e.target.value)}>
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-medium text-zinc-400 uppercase tracking-wider">Cluster</label>
+                <select className="w-full px-3 py-2 bg-black/40 border border-white/10 rounded-md text-zinc-100 text-sm focus:outline-none focus:border-purple-500/50 transition-all appearance-none" value={provCluster} onChange={e => handleClusterChange(e.target.value)}>
                   <option value="mainnet-beta">mainnet-beta</option>
                   <option value="testnet">testnet</option>
                   <option value="devnet">devnet</option>
                 </select>
               </div>
-              <div className="form-group">
-                <label>Node Type</label>
-                <select value={provNodeType} onChange={e => handleNodeTypeChange(e.target.value)}>
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-medium text-zinc-400 uppercase tracking-wider">Node Type</label>
+                <select className="w-full px-3 py-2 bg-black/40 border border-white/10 rounded-md text-zinc-100 text-sm focus:outline-none focus:border-purple-500/50 transition-all appearance-none" value={provNodeType} onChange={e => handleNodeTypeChange(e.target.value)}>
                   <option value="validator">Validator</option>
                   <option value="rpc">RPC Node</option>
                   <option value="archival">Archival RPC</option>
                 </select>
               </div>
-              <div className="form-group">
-                <label>Version</label>
-                <input type="text" value={provVersion} onChange={e => setProvVersion(e.target.value)} placeholder="e.g. 2.1.6" />
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-medium text-zinc-400 uppercase tracking-wider">Version</label>
+                <input className="w-full px-3 py-2 bg-black/40 border border-white/10 rounded-md text-zinc-100 text-sm focus:outline-none focus:border-purple-500/50 transition-all placeholder:text-zinc-600" type="text" value={provVersion} onChange={e => setProvVersion(e.target.value)} placeholder="e.g. 2.1.6" />
               </div>
             </div>
 
-            <div className="form-grid" style={{ marginTop: '0.75rem' }}>
-              <div className="form-group">
-                <label>Ledger Path</label>
-                <input type="text" value={provLedgerPath} onChange={e => setProvLedgerPath(e.target.value)} />
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mt-2">
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-medium text-zinc-400 uppercase tracking-wider">Ledger Path</label>
+                <input className="w-full px-3 py-2 bg-black/40 border border-white/10 rounded-md text-zinc-100 text-sm focus:outline-none focus:border-purple-500/50 transition-all placeholder:text-zinc-600" type="text" value={provLedgerPath} onChange={e => setProvLedgerPath(e.target.value)} />
               </div>
-              <div className="form-group">
-                <label>Snapshot Path</label>
-                <input type="text" value={provSnapshotPath} onChange={e => setProvSnapshotPath(e.target.value)} />
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-medium text-zinc-400 uppercase tracking-wider">Snapshot Path</label>
+                <input className="w-full px-3 py-2 bg-black/40 border border-white/10 rounded-md text-zinc-100 text-sm focus:outline-none focus:border-purple-500/50 transition-all placeholder:text-zinc-600" type="text" value={provSnapshotPath} onChange={e => setProvSnapshotPath(e.target.value)} />
               </div>
-              <div className="form-group">
-                <label>Accounts Path</label>
-                <input type="text" value={provAccountsPath} onChange={e => setProvAccountsPath(e.target.value)} />
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-medium text-zinc-400 uppercase tracking-wider">Accounts Path</label>
+                <input className="w-full px-3 py-2 bg-black/40 border border-white/10 rounded-md text-zinc-100 text-sm focus:outline-none focus:border-purple-500/50 transition-all placeholder:text-zinc-600" type="text" value={provAccountsPath} onChange={e => setProvAccountsPath(e.target.value)} />
               </div>
-              <div className="form-group">
-                <label>Identity Keypair</label>
-                <input type="text" value={provIdentityPath} onChange={e => setProvIdentityPath(e.target.value)} />
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-medium text-zinc-400 uppercase tracking-wider">Identity Keypair</label>
+                <input className="w-full px-3 py-2 bg-black/40 border border-white/10 rounded-md text-zinc-100 text-sm focus:outline-none focus:border-purple-500/50 transition-all placeholder:text-zinc-600" type="text" value={provIdentityPath} onChange={e => setProvIdentityPath(e.target.value)} />
               </div>
               {!noVotingActive && (
-                <div className="form-group">
-                  <label>Vote Keypair</label>
-                  <input type="text" value={provVotePath} onChange={e => setProvVotePath(e.target.value)} placeholder="/home/sol/vote-account-keypair.json" />
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-xs font-medium text-zinc-400 uppercase tracking-wider">Vote Keypair</label>
+                  <input className="w-full px-3 py-2 bg-black/40 border border-white/10 rounded-md text-zinc-100 text-sm focus:outline-none focus:border-purple-500/50 transition-all placeholder:text-zinc-600" type="text" value={provVotePath} onChange={e => setProvVotePath(e.target.value)} placeholder="/home/sol/vote-account-keypair.json" />
                 </div>
               )}
-              <div className="form-group">
-                <label>RPC Port</label>
-                <input type="text" value={provRpcPort} onChange={e => setProvRpcPort(e.target.value)} />
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-medium text-zinc-400 uppercase tracking-wider">RPC Port</label>
+                <input className="w-full px-3 py-2 bg-black/40 border border-white/10 rounded-md text-zinc-100 text-sm focus:outline-none focus:border-purple-500/50 transition-all placeholder:text-zinc-600" type="text" value={provRpcPort} onChange={e => setProvRpcPort(e.target.value)} />
               </div>
-              <div className="form-group">
-                <label>Gossip Port</label>
-                <input type="text" value={provGossipPort} onChange={e => setProvGossipPort(e.target.value)} />
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-medium text-zinc-400 uppercase tracking-wider">Gossip Port</label>
+                <input className="w-full px-3 py-2 bg-black/40 border border-white/10 rounded-md text-zinc-100 text-sm focus:outline-none focus:border-purple-500/50 transition-all placeholder:text-zinc-600" type="text" value={provGossipPort} onChange={e => setProvGossipPort(e.target.value)} />
               </div>
-              <div className="form-group">
-                <label>Dynamic Port Range</label>
-                <input type="text" value={provDynamicPortRange} onChange={e => setProvDynamicPortRange(e.target.value)} />
-              </div>
-            </div>
-
-            <div className="form-group" style={{ marginTop: '0.75rem' }}>
-              <label>Entrypoints</label>
-              <textarea rows={4} value={provEntrypoints} onChange={e => setProvEntrypoints(e.target.value)} placeholder="One per line" />
-            </div>
-            <div className="form-group" style={{ marginTop: '0.5rem' }}>
-              <label>Known Validators</label>
-              <textarea rows={3} value={provKnownValidators} onChange={e => setProvKnownValidators(e.target.value)} placeholder="One pubkey per line" />
-            </div>
-
-            <div className="form-grid" style={{ marginTop: '0.75rem' }}>
-              <div className="form-group">
-                <label>Download URL</label>
-                <input type="text" value={provDownloadUrl} onChange={e => setProvDownloadUrl(e.target.value)} placeholder="https://..." />
-              </div>
-              <div className="form-group">
-                <label>SHA256</label>
-                <input type="text" value={provSha256} onChange={e => setProvSha256(e.target.value)} placeholder="Expected hash" />
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-medium text-zinc-400 uppercase tracking-wider">Dynamic Port Range</label>
+                <input className="w-full px-3 py-2 bg-black/40 border border-white/10 rounded-md text-zinc-100 text-sm focus:outline-none focus:border-purple-500/50 transition-all placeholder:text-zinc-600" type="text" value={provDynamicPortRange} onChange={e => setProvDynamicPortRange(e.target.value)} />
               </div>
             </div>
 
-            <div style={{ display: 'flex', gap: '1.5rem', marginTop: '0.75rem' }}>
-              <div className="form-group">
-                <label className="checkbox-label">
-                  <input type="checkbox" checked={provJitoMev} onChange={e => setProvJitoMev(e.target.checked)} />
+            <div className="flex flex-col gap-1.5 mt-2">
+              <label className="text-xs font-medium text-zinc-400 uppercase tracking-wider">Entrypoints</label>
+              <textarea className="w-full px-3 py-2 bg-black/40 border border-white/10 rounded-md text-zinc-100 text-sm focus:outline-none focus:border-purple-500/50 transition-all placeholder:text-zinc-600 resize-y" rows={4} value={provEntrypoints} onChange={e => setProvEntrypoints(e.target.value)} placeholder="One per line" />
+            </div>
+            <div className="flex flex-col gap-1.5 mt-2">
+              <label className="text-xs font-medium text-zinc-400 uppercase tracking-wider">Known Validators</label>
+              <textarea className="w-full px-3 py-2 bg-black/40 border border-white/10 rounded-md text-zinc-100 text-sm focus:outline-none focus:border-purple-500/50 transition-all placeholder:text-zinc-600 resize-y" rows={3} value={provKnownValidators} onChange={e => setProvKnownValidators(e.target.value)} placeholder="One pubkey per line" />
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2">
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-medium text-zinc-400 uppercase tracking-wider">Download URL</label>
+                <input className="w-full px-3 py-2 bg-black/40 border border-white/10 rounded-md text-zinc-100 text-sm focus:outline-none focus:border-purple-500/50 transition-all placeholder:text-zinc-600" type="text" value={provDownloadUrl} onChange={e => setProvDownloadUrl(e.target.value)} placeholder="https://..." />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-medium text-zinc-400 uppercase tracking-wider">SHA256</label>
+                <input className="w-full px-3 py-2 bg-black/40 border border-white/10 rounded-md text-zinc-100 text-sm focus:outline-none focus:border-purple-500/50 transition-all placeholder:text-zinc-600" type="text" value={provSha256} onChange={e => setProvSha256(e.target.value)} placeholder="Expected hash" />
+              </div>
+            </div>
+
+            <div className="flex flex-wrap gap-6 mt-2 p-4 bg-white/[0.02] border border-white/5 rounded-lg">
+              <div className="flex flex-col gap-2 w-full md:w-auto">
+                <label className="flex items-center gap-2 text-sm text-zinc-300 cursor-pointer">
+                  <input className="rounded border-white/20 bg-black/40 text-purple-500 focus:ring-purple-500/50" type="checkbox" checked={provJitoMev} onChange={e => setProvJitoMev(e.target.checked)} />
                   Jito MEV
                 </label>
                 {provJitoMev && (
-                  <div style={{ marginTop: '0.375rem', display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
-                    <input type="text" value={provJitoBlockEngineUrl} onChange={e => setProvJitoBlockEngineUrl(e.target.value)} placeholder="Block Engine URL (blank = cluster default)" style={{ background: 'var(--bg-input)', border: '1px solid var(--border)', borderRadius: '6px', padding: '0.5rem 0.75rem', color: 'var(--text)', fontSize: '0.8125rem', fontFamily: "'SF Mono', 'Fira Code', monospace", outline: 'none', width: '100%' }} />
-                    <input type="text" value={provJitoRelayerUrl} onChange={e => setProvJitoRelayerUrl(e.target.value)} placeholder="Relayer URL (optional)" style={{ background: 'var(--bg-input)', border: '1px solid var(--border)', borderRadius: '6px', padding: '0.5rem 0.75rem', color: 'var(--text)', fontSize: '0.8125rem', fontFamily: "'SF Mono', 'Fira Code', monospace", outline: 'none', width: '100%' }} />
-                    <input type="text" value={provJitoShredReceiverAddr} onChange={e => setProvJitoShredReceiverAddr(e.target.value)} placeholder="Shred Receiver host:port (optional)" style={{ background: 'var(--bg-input)', border: '1px solid var(--border)', borderRadius: '6px', padding: '0.5rem 0.75rem', color: 'var(--text)', fontSize: '0.8125rem', fontFamily: "'SF Mono', 'Fira Code', monospace", outline: 'none', width: '100%' }} />
+                  <div className="flex flex-col gap-2 mt-2 w-full max-w-sm">
+                    <input className="w-full px-3 py-2 bg-black/40 border border-white/10 rounded-md text-zinc-100 text-sm font-mono focus:outline-none focus:border-purple-500/50 transition-all placeholder:text-zinc-600" type="text" value={provJitoBlockEngineUrl} onChange={e => setProvJitoBlockEngineUrl(e.target.value)} placeholder="Block Engine URL" />
+                    <input className="w-full px-3 py-2 bg-black/40 border border-white/10 rounded-md text-zinc-100 text-sm font-mono focus:outline-none focus:border-purple-500/50 transition-all placeholder:text-zinc-600" type="text" value={provJitoRelayerUrl} onChange={e => setProvJitoRelayerUrl(e.target.value)} placeholder="Relayer URL (optional)" />
+                    <input className="w-full px-3 py-2 bg-black/40 border border-white/10 rounded-md text-zinc-100 text-sm font-mono focus:outline-none focus:border-purple-500/50 transition-all placeholder:text-zinc-600" type="text" value={provJitoShredReceiverAddr} onChange={e => setProvJitoShredReceiverAddr(e.target.value)} placeholder="Shred Receiver host:port (optional)" />
                   </div>
                 )}
               </div>
-              <div className="form-group">
-                <label className="checkbox-label">
-                  <input type="checkbox" checked={provYellowstoneGrpc} onChange={e => setProvYellowstoneGrpc(e.target.checked)} />
+              <div className="flex flex-col gap-1.5">
+                <label className="flex items-center gap-2 text-sm text-zinc-300 cursor-pointer">
+                  <input className="rounded border-white/20 bg-black/40 text-purple-500 focus:ring-purple-500/50" type="checkbox" checked={provYellowstoneGrpc} onChange={e => setProvYellowstoneGrpc(e.target.checked)} />
                   Yellowstone gRPC
                 </label>
               </div>
-              <div className="form-group">
-                <label className="checkbox-label">
-                  <input type="checkbox" checked={provNoPortCheck} onChange={e => setProvNoPortCheck(e.target.checked)} />
+              <div className="flex flex-col gap-1.5">
+                <label className="flex items-center gap-2 text-sm text-zinc-300 cursor-pointer">
+                  <input className="rounded border-white/20 bg-black/40 text-purple-500 focus:ring-purple-500/50" type="checkbox" checked={provNoPortCheck} onChange={e => setProvNoPortCheck(e.target.checked)} />
                   Skip port check (NAT/firewall)
                 </label>
               </div>
             </div>
 
             {/* Advanced Settings */}
-            <div style={{ marginTop: '1rem', borderTop: '1px solid var(--border)', paddingTop: '0.75rem' }}>
+            <div className="mt-2 border-t border-white/5 pt-4">
               <button
-                className="btn"
+                className="px-3 py-1.5 text-xs font-medium text-zinc-400 bg-white/5 hover:bg-white/10 border border-white/10 rounded-md transition-colors"
                 onClick={() => setShowAdvanced(!showAdvanced)}
-                style={{ fontSize: '0.75rem' }}
               >
                 {showAdvanced ? 'Hide' : 'Show'} Advanced
               </button>
 
               {showAdvanced && (
-                <div style={{ marginTop: '0.75rem' }}>
-                  <div className="form-group">
-                    <label>Validator Flags <span style={{ textTransform: 'none', fontWeight: 400, color: 'var(--gray)' }}>(one per line: flag-name or flag-name=value)</span></label>
+                <div className="mt-4 flex flex-col gap-4">
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-xs font-medium text-zinc-400 uppercase tracking-wider">Validator Flags <span className="lowercase text-zinc-500 font-normal">(one per line)</span></label>
                     <textarea
-                      rows={10}
+                      className="w-full px-3 py-2 bg-black/40 border border-white/10 rounded-md text-zinc-100 text-sm font-mono focus:outline-none focus:border-purple-500/50 transition-all placeholder:text-zinc-600 resize-y"
+                      rows={6}
                       value={provValidatorFlags}
                       onChange={e => setProvValidatorFlags(e.target.value)}
                       placeholder="no-port-check&#10;limit-ledger-size&#10;rpc-bind-address=0.0.0.0"
                     />
                   </div>
 
-                  <div className="form-group" style={{ marginTop: '0.5rem' }}>
-                    <label>Geyser Plugin Configs</label>
-                    <textarea rows={2} value={provGeyserPluginConfigs} onChange={e => setProvGeyserPluginConfigs(e.target.value)} placeholder="/etc/pillar/custom-geyser.json" />
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-xs font-medium text-zinc-400 uppercase tracking-wider">Geyser Plugin Configs</label>
+                    <textarea className="w-full px-3 py-2 bg-black/40 border border-white/10 rounded-md text-zinc-100 text-sm font-mono focus:outline-none focus:border-purple-500/50 transition-all placeholder:text-zinc-600 resize-y" rows={2} value={provGeyserPluginConfigs} onChange={e => setProvGeyserPluginConfigs(e.target.value)} placeholder="/etc/pillar/custom-geyser.json" />
                   </div>
 
-                  <div className="form-grid" style={{ marginTop: '0.5rem' }}>
-                    <div className="form-group">
-                      <label>RestartSec</label>
-                      <input type="text" value={provRestartSec} onChange={e => setProvRestartSec(e.target.value)} />
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-xs font-medium text-zinc-400 uppercase tracking-wider">RestartSec</label>
+                      <input className="w-full px-3 py-2 bg-black/40 border border-white/10 rounded-md text-zinc-100 text-sm focus:outline-none focus:border-purple-500/50 transition-all placeholder:text-zinc-600" type="text" value={provRestartSec} onChange={e => setProvRestartSec(e.target.value)} />
                     </div>
-                    <div className="form-group">
-                      <label className="checkbox-label">
-                        <input type="checkbox" checked={provLogRateLimitDisable} onChange={e => setProvLogRateLimitDisable(e.target.checked)} />
+                    <div className="flex flex-col gap-1.5 justify-center">
+                      <label className="flex items-center gap-2 text-sm text-zinc-300 cursor-pointer">
+                        <input className="rounded border-white/20 bg-black/40 text-purple-500 focus:ring-purple-500/50" type="checkbox" checked={provLogRateLimitDisable} onChange={e => setProvLogRateLimitDisable(e.target.checked)} />
                         Disable Log Rate Limit
                       </label>
                     </div>
-                    <div className="form-group">
-                      <label className="checkbox-label">
-                        <input type="checkbox" checked={provStartLimitDisable} onChange={e => setProvStartLimitDisable(e.target.checked)} />
+                    <div className="flex flex-col gap-1.5 justify-center">
+                      <label className="flex items-center gap-2 text-sm text-zinc-300 cursor-pointer">
+                        <input className="rounded border-white/20 bg-black/40 text-purple-500 focus:ring-purple-500/50" type="checkbox" checked={provStartLimitDisable} onChange={e => setProvStartLimitDisable(e.target.checked)} />
                         Disable Start Limit
                       </label>
                     </div>
                   </div>
 
-                  <div className="form-group" style={{ marginTop: '0.5rem' }}>
-                    <label>Environment Variables <span style={{ textTransform: 'none', fontWeight: 400, color: 'var(--gray)' }}>(KEY=VALUE, one per line)</span></label>
-                    <textarea rows={2} value={provEnvironmentVars} onChange={e => setProvEnvironmentVars(e.target.value)} placeholder="SOLANA_METRICS_CONFIG=host=https://metrics.solana.com:8086,db=mainnet-beta" />
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-xs font-medium text-zinc-400 uppercase tracking-wider">Environment Variables <span className="lowercase text-zinc-500 font-normal">(KEY=VALUE)</span></label>
+                    <textarea className="w-full px-3 py-2 bg-black/40 border border-white/10 rounded-md text-zinc-100 text-sm font-mono focus:outline-none focus:border-purple-500/50 transition-all placeholder:text-zinc-600 resize-y" rows={2} value={provEnvironmentVars} onChange={e => setProvEnvironmentVars(e.target.value)} placeholder="SOLANA_METRICS_CONFIG=host=https://metrics.solana.com:8086,db=mainnet-beta" />
                   </div>
 
-                  <div className="form-group" style={{ marginTop: '0.5rem' }}>
-                    <label>Extra CLI Arguments</label>
-                    <textarea rows={2} value={provExtraArgs} onChange={e => setProvExtraArgs(e.target.value)} placeholder="--custom-flag value" />
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-xs font-medium text-zinc-400 uppercase tracking-wider">Extra CLI Arguments</label>
+                    <textarea className="w-full px-3 py-2 bg-black/40 border border-white/10 rounded-md text-zinc-100 text-sm font-mono focus:outline-none focus:border-purple-500/50 transition-all placeholder:text-zinc-600 resize-y" rows={2} value={provExtraArgs} onChange={e => setProvExtraArgs(e.target.value)} placeholder="--custom-flag value" />
                   </div>
                 </div>
               )}
             </div>
 
-            <div className="modal-actions" style={{ marginTop: '1.25rem' }}>
-              <button className="btn" onClick={() => setShowProvision(false)} disabled={provSubmitting}>Cancel</button>
-              <button className="btn primary" onClick={handleProvision} disabled={provSubmitting}>
+            <div className="flex items-center justify-end gap-3 mt-4 border-t border-white/5 pt-6">
+              <button className="px-4 py-2 text-sm font-medium text-zinc-400 hover:text-zinc-200 transition-colors" onClick={() => setShowProvision(false)} disabled={provSubmitting}>Cancel</button>
+              <button className="px-5 py-2 text-sm font-medium text-white bg-purple-600 hover:bg-purple-500 rounded-md border border-purple-500/50 shadow-sm transition-all disabled:opacity-50" onClick={handleProvision} disabled={provSubmitting}>
                 {provSubmitting ? 'Sending...' : (hasConfig ? 'Update Validator' : 'Install Validator')}
               </button>
             </div>
@@ -788,21 +811,21 @@ function NodeDetail() {
       )}
 
       {/* Logs */}
-      <div className="logs-section">
-        <div className="logs-header">
-          <h2>Logs</h2>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+      <div className="bg-[#15131f] border border-white/10 rounded-xl overflow-hidden flex flex-col h-[500px] shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-4 p-4 bg-white/[0.02] border-b border-white/10">
+          <h2 className="text-lg font-semibold text-zinc-100 m-0">Logs</h2>
+          <div className="flex items-center gap-3">
             <input
               type="text"
               value={logSearch}
               onChange={e => setLogSearch(e.target.value)}
               placeholder="Filter messages..."
-              style={{ background: 'var(--bg-input)', border: '1px solid var(--border)', borderRadius: '6px', padding: '0.3rem 0.6rem', color: 'var(--text)', fontSize: '0.75rem', outline: 'none', width: '200px' }}
+              className="w-48 px-3 py-1.5 bg-black/40 border border-white/10 rounded-md text-zinc-100 text-sm focus:outline-none focus:border-purple-500/50 transition-all placeholder:text-zinc-600"
             />
             <select
               value={logLevel}
               onChange={e => setLogLevel(e.target.value)}
-              style={{ background: 'var(--bg-input)', border: '1px solid var(--border)', borderRadius: '6px', padding: '0.3rem 0.5rem', color: 'var(--text)', fontSize: '0.75rem', outline: 'none' }}
+              className="px-3 py-1.5 bg-black/40 border border-white/10 rounded-md text-zinc-100 text-sm focus:outline-none focus:border-purple-500/50 transition-all appearance-none pr-8 cursor-pointer"
             >
               <option value="all">All levels</option>
               <option value="error">Error</option>
@@ -810,54 +833,57 @@ function NodeDetail() {
               <option value="info">Info</option>
               <option value="debug">Debug</option>
             </select>
-            <span className={`live-indicator ${sseConnected ? 'connected' : ''}`}>
+            <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-full border ${sseConnected ? 'bg-green-500/10 text-green-400 border-green-500/20' : 'bg-zinc-500/10 text-zinc-400 border-zinc-500/20'}`}>
+              <div className={`w-1.5 h-1.5 rounded-full ${sseConnected ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.4)]' : 'bg-zinc-500'}`}></div>
               {sseConnected ? 'Live' : 'Disconnected'}
             </span>
           </div>
         </div>
-        <div className="log-tabs">
+        <div className="flex bg-black/20 border-b border-white/10 px-4">
           {['controller', 'validator', 'agent'].map(tab => (
             <button
               key={tab}
-              className={`log-tab ${logFilter === tab ? 'active' : ''}`}
+              className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${logFilter === tab ? 'text-purple-400 border-purple-500' : 'text-zinc-400 hover:text-zinc-200 border-transparent'}`}
               onClick={() => setLogFilter(tab)}
             >
               {tab.charAt(0).toUpperCase() + tab.slice(1)}
             </button>
           ))}
         </div>
-        <div className="log-container" ref={logContainerRef}>
+        <div className="flex-1 overflow-y-auto p-4 bg-black/40 font-mono text-[13px] leading-relaxed" ref={logContainerRef}>
           {visibleLogs.length === 0 && (
-            <div style={{ color: 'var(--text-dim)', padding: '1rem', textAlign: 'center' }}>
+            <div className="text-zinc-500 text-center py-8">
               {logs.filter(e => e.service === logFilter).length === 0 ? 'No logs available' : 'No logs match the filter'}
             </div>
           )}
           {visibleLogs.map((entry) => (
-            <div key={entry.id} className={`log-entry ${entry.level}`}>
-              <span className="timestamp">{formatTimestamp(entry.timestamp_ms)}</span>
-              <span className="service">{entry.service}</span>
-              <span className={`level ${entry.level}`}>{entry.level.toUpperCase().padEnd(5)}</span>
-              <span className="message">{entry.message}</span>
+            <div key={entry.id} className="flex gap-4 py-1 hover:bg-white/[0.02] border-b border-white/5 last:border-0 transition-colors">
+              <span className="text-zinc-500 shrink-0 select-none">{formatTimestamp(entry.timestamp_ms)}</span>
+              <span className="text-purple-400/80 shrink-0 w-20 truncate">{entry.service}</span>
+              <span className={`shrink-0 w-12 font-semibold ${entry.level === 'error' ? 'text-red-400' : entry.level === 'warn' ? 'text-yellow-400' : entry.level === 'info' ? 'text-green-400' : 'text-zinc-400'}`}>{entry.level.toUpperCase().padEnd(5)}</span>
+              <span className="text-zinc-300 break-words flex-1 whitespace-pre-wrap">{entry.message}</span>
             </div>
           ))}
         </div>
       </div>
 
       {/* Actions — at the bottom (destructive/lifecycle controls) */}
-      <div className="section-heading" style={{ marginTop: '1.5rem' }}>Actions</div>
-      <div className="actions">
-        <button className="btn primary" onClick={handleRestart}>Restart</button>
-        <button className="btn" onClick={handleRecover}>Recover</button>
-        <button className="btn" onClick={handleStop}>Stop</button>
-        {versionInfo?.agent_update && node.agent_version && node.agent_version !== versionInfo.agent_update.version && (
-          <button className="btn primary" onClick={handleUpgradeAgent}>
-            Upgrade Agent to v{versionInfo.agent_update.version}
-          </button>
-        )}
-        {(node.lifecycle_state === 'provisioning' || node.lifecycle_state === 'starting_up') && (
-          <button className="btn danger" onClick={handleCancel}>Cancel</button>
-        )}
-        <button className="btn danger" onClick={handleDelete}>Delete</button>
+      <div className="mt-4 pt-6 border-t border-white/5">
+        <h3 className="text-sm font-medium text-zinc-400 uppercase tracking-wider mb-4">Actions</h3>
+        <div className="flex flex-wrap gap-3">
+          <button className="px-4 py-2 text-sm font-medium text-white bg-purple-600 hover:bg-purple-500 rounded-md border border-purple-500/50 shadow-sm transition-all" onClick={handleRestart}>Restart</button>
+          <button className="px-4 py-2 text-sm font-medium text-zinc-300 bg-white/5 hover:bg-white/10 rounded-md border border-white/10 shadow-sm transition-all" onClick={handleRecover}>Recover</button>
+          <button className="px-4 py-2 text-sm font-medium text-zinc-300 bg-white/5 hover:bg-white/10 rounded-md border border-white/10 shadow-sm transition-all" onClick={handleStop}>Stop</button>
+          {versionInfo?.agent_update && node.agent_version && node.agent_version !== versionInfo.agent_update.version && (
+            <button className="px-4 py-2 text-sm font-medium text-white bg-green-600 hover:bg-green-500 rounded-md border border-green-500/50 shadow-sm transition-all" onClick={handleUpgradeAgent}>
+              Upgrade Agent to v{versionInfo.agent_update.version}
+            </button>
+          )}
+          {(node.lifecycle_state === 'provisioning' || node.lifecycle_state === 'starting_up') && (
+            <button className="px-4 py-2 text-sm font-medium text-red-400 bg-red-950/30 border border-red-900/50 rounded-md hover:bg-red-900/30 transition-all ml-auto" onClick={handleCancel}>Cancel</button>
+          )}
+          <button className={`px-4 py-2 text-sm font-medium text-red-400 bg-red-950/30 border border-red-900/50 rounded-md hover:bg-red-900/30 transition-all ${!((node.lifecycle_state === 'provisioning' || node.lifecycle_state === 'starting_up')) ? 'ml-auto' : ''}`} onClick={handleDelete}>Delete</button>
+        </div>
       </div>
     </div>
   )

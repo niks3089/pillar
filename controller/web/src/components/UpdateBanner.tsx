@@ -32,13 +32,13 @@ function UpdateBanner() {
   }
 
   return (
-    <div className="update-banner">
-      <div className="update-banner-content">
-        <span className="update-banner-text">
+    <div className="bg-purple-900/40 border-b border-purple-500/30 w-full">
+      <div className="max-w-7xl mx-auto px-4 py-3 flex flex-col md:flex-row items-center justify-between gap-4">
+        <span className="text-sm text-purple-200">
           Pillar <strong>v{update.version}</strong> is available
           {update.release_notes && <> &mdash; {update.release_notes}</>}
         </span>
-        <button className="btn primary" onClick={handleUpgrade} disabled={upgrading}>
+        <button className="px-4 py-1.5 text-sm font-medium text-white bg-purple-600 hover:bg-purple-500 rounded-md border border-purple-500/50 shadow-sm transition-all whitespace-nowrap" onClick={handleUpgrade} disabled={upgrading}>
           {upgrading ? 'Upgrading...' : 'Upgrade Controller'}
         </button>
       </div>

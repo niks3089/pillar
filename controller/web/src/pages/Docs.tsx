@@ -39,10 +39,10 @@ export default function Docs() {
     : sections
 
   return (
-    <div>
-      <div className="node-header">
-        <h1>Operations Guide</h1>
-        <span className="meta">How to add, provision, upgrade, monitor &amp; alert</span>
+    <div className="flex flex-col gap-6 max-w-5xl mx-auto pb-12">
+      <div className="flex flex-col md:flex-row md:items-center gap-4 bg-[#15131f] border border-white/10 rounded-xl p-6 shadow-sm">
+        <h1 className="text-2xl font-semibold text-zinc-100 m-0 leading-none">Operations Guide</h1>
+        <span className="text-sm font-medium text-zinc-500">How to add, provision, upgrade, monitor &amp; alert</span>
       </div>
 
       <input
@@ -51,18 +51,14 @@ export default function Docs() {
         onChange={e => setQuery(e.target.value)}
         placeholder="Search the docs — e.g. upgrade, onboard, alert, firedancer, lagging..."
         autoFocus
-        style={{
-          width: '100%', background: 'var(--bg-input)', border: '1px solid var(--border)',
-          borderRadius: 'var(--radius-sm)', padding: '0.7rem 1rem', color: 'var(--text)',
-          fontSize: '0.9rem', outline: 'none', marginBottom: '1rem',
-        }}
+        className="w-full px-4 py-3 bg-black/40 border border-white/10 rounded-lg text-zinc-100 text-[15px] focus:outline-none focus:border-purple-500/50 focus:ring-1 focus:ring-purple-500/50 transition-all placeholder:text-zinc-600 shadow-sm"
       />
 
       {/* Quick jump chips */}
       {!q && (
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem', marginBottom: '1.25rem' }}>
+        <div className="flex flex-wrap gap-2 mb-2">
           {sections.map(s => (
-            <a key={s.id} href={`#${s.id}`} className="badge registered" style={{ textDecoration: 'none' }}>
+            <a key={s.id} href={`#${s.id}`} className="px-3 py-1.5 text-xs font-medium bg-zinc-800 text-zinc-300 hover:bg-zinc-700 hover:text-zinc-100 rounded-full border border-zinc-700 transition-colors">
               {s.title}
             </a>
           ))}
@@ -70,16 +66,18 @@ export default function Docs() {
       )}
 
       {filtered.length === 0 && (
-        <div className="config-panel" style={{ color: 'var(--text-dim)', textAlign: 'center' }}>
+        <div className="bg-[#15131f] border border-white/10 rounded-xl p-8 text-center text-zinc-500 shadow-sm">
           No sections match “{query}”.
         </div>
       )}
 
-      {filtered.map(s => (
-        <div key={s.id} id={s.id} className="config-panel docs" style={{ marginBottom: '1rem' }}>
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>{s.body}</ReactMarkdown>
-        </div>
-      ))}
+      <div className="flex flex-col gap-6">
+        {filtered.map(s => (
+          <div key={s.id} id={s.id} className="prose prose-invert prose-zinc max-w-none bg-[#15131f] border border-white/10 rounded-xl p-8 shadow-sm prose-headings:text-zinc-100 prose-a:text-purple-400 hover:prose-a:text-purple-300 prose-pre:bg-black/60 prose-pre:border prose-pre:border-white/5 scroll-mt-24">
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>{s.body}</ReactMarkdown>
+          </div>
+        ))}
+      </div>
     </div>
   )
 }
