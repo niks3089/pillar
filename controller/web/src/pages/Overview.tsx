@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { fetchOverview, fetchNodes, fetchOnboardCommand } from '../api'
+import { useNavigate, Link } from 'react-router-dom'
+import { fetchOverview, fetchNodes, fetchOnboardCommand, USE_MOCK } from '../api'
 import type { FleetOverview, Node } from '../api'
 
 const STATE_BADGE_CLASSES: Record<string, string> = {
@@ -101,72 +101,105 @@ function Overview() {
         <table className="w-full text-left border-collapse whitespace-nowrap">
           <thead>
             <tr className="bg-white/[0.02] border-b border-white/10">
-              <th className="px-6 py-4 text-xs font-semibold text-zinc-400 uppercase tracking-wider">Validator</th>
-              <th className="px-6 py-4 text-xs font-semibold text-zinc-400 uppercase tracking-wider">IP</th>
-              <th className="px-6 py-4 text-xs font-semibold text-zinc-400 uppercase tracking-wider">State</th>
-              <th className="px-6 py-4 text-xs font-semibold text-zinc-400 uppercase tracking-wider">Link</th>
-              <th className="px-6 py-4 text-xs font-semibold text-zinc-400 uppercase tracking-wider">Client</th>
-              <th className="px-6 py-4 text-xs font-semibold text-zinc-400 uppercase tracking-wider">Cluster</th>
-              <th className="px-6 py-4 text-xs font-semibold text-zinc-400 uppercase tracking-wider">Version</th>
+              <th className="px-6 py-4 text-xs font-semibold text-zinc-400 uppercase tracking-wider">Node</th>
+              <th className="px-6 py-4 text-xs font-semibold text-zinc-400 uppercase tracking-wider">Status</th>
+              <th className="px-6 py-4 text-xs font-semibold text-zinc-400 uppercase tracking-wider">Software</th>
               <th className="px-6 py-4 text-xs font-semibold text-zinc-400 uppercase tracking-wider text-right">Slots Behind</th>
               <th className="px-6 py-4 text-xs font-semibold text-zinc-400 uppercase tracking-wider text-right">Last Seen</th>
-              <th className="px-6 py-4 text-xs font-semibold text-zinc-400 uppercase tracking-wider text-right">Metrics</th>
+              <th className="px-6 py-4 text-xs font-semibold text-zinc-400 uppercase tracking-wider text-right">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-white/5">
-            {nodes.map((node) => (
+            {nodes.map((node) => {
+              const client = node.client ?? node.live_status?.client ?? '-';
+              const version = node.live_status?.version ?? '-';
+              const cluster = node.cluster ?? node.live_status?.cluster;
+              
+              return (
               <tr 
                 key={node.node_id} 
                 onClick={() => navigate(`/nodes/${node.node_id}`)}
                 className="hover:bg-white/[0.03] transition-colors cursor-pointer group"
               >
+                {/* Node Identity & Connection */}
                 <td className="px-6 py-4">
-                  <div className="text-sm font-medium text-zinc-200">{node.node_id}</div>
-                  {node.hostname && node.hostname !== node.node_id && (
-                    <div className="text-xs text-zinc-500 mt-0.5">{node.hostname}</div>
-                  )}
+                  <div className="flex items-center gap-2 mb-1">
+                    <div className={`w-2 h-2 rounded-full shrink-0 ${node.live_status ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.4)]' : 'bg-red-500'}`} title={node.live_status ? 'Connected' : 'Disconnected'}></div>
+                    <div className="text-sm font-medium text-zinc-200">{node.node_id}</div>
+                  </div>
+                  <div className="text-xs text-zinc-500 font-mono ml-4 flex gap-2 items-center">
+                    {node.hostname && node.hostname !== node.node_id ? <span>{node.hostname}</span> : null}
+                    {node.ip_address && !node.ip_address.includes(':') && (
+                      <>
+                        {node.hostname && node.hostname !== node.node_id && <span className="text-zinc-700">•</span>}
+                        <span>{node.ip_address}</span>
+                      </>
+                    )}
+                  </div>
                 </td>
-                <td className="px-6 py-4 text-sm text-zinc-400 font-mono">
-                  {node.ip_address && !node.ip_address.includes(':') ? node.ip_address : '-'}
-                </td>
+                
+                {/* Status (Lifecycle) */}
                 <td className="px-6 py-4">
                   <span className={`inline-flex items-center px-2 py-0.5 text-[11px] font-medium uppercase tracking-wider rounded border ${STATE_BADGE_CLASSES[node.lifecycle_state] || 'bg-zinc-500/10 text-zinc-400 border-zinc-500/20'}`}>
                     {node.lifecycle_state}
                   </span>
                 </td>
+                
+                {/* Software & Cluster */}
                 <td className="px-6 py-4">
-                  <div className="flex items-center gap-2">
-                    <div className={`w-2 h-2 rounded-full ${node.live_status ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.4)]' : 'bg-red-500'}`}></div>
-                    <span className="text-sm text-zinc-400">{node.live_status ? 'Connected' : 'Disconnected'}</span>
+                  <div className="text-sm font-medium text-zinc-300 capitalize flex items-center gap-2 mb-1">
+                    {client} <span className="text-zinc-500 font-mono text-xs lowercase">v{version}</span>
                   </div>
-                </td>
-                <td className="px-6 py-4 text-sm text-zinc-400">{node.client ?? node.live_status?.client ?? '-'}</td>
-                <td className="px-6 py-4 text-sm">
-                  {(node.cluster || node.live_status?.cluster) ? (
-                    <span className="inline-flex items-center px-2 py-0.5 text-xs font-medium bg-zinc-800 text-zinc-300 rounded border border-zinc-700">
-                      {clusterLabel(node.cluster ?? node.live_status?.cluster)}
+                  {cluster ? (
+                    <span className="inline-flex items-center px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider bg-zinc-800 text-zinc-400 rounded border border-zinc-700">
+                      {clusterLabel(cluster)}
                     </span>
-                  ) : <span className="text-zinc-500">-</span>}
+                  ) : <span className="text-zinc-600 text-xs">-</span>}
                 </td>
-                <td className="px-6 py-4 text-sm text-zinc-400 font-mono">{node.live_status?.version ?? '-'}</td>
-                <td className="px-6 py-4 text-sm text-zinc-400 text-right font-mono">{node.live_status?.slots_behind ?? '-'}</td>
-                <td className="px-6 py-4 text-sm text-zinc-400 text-right">{formatLastSeen(node.last_seen_at)}</td>
+                
+                {/* Slots Behind */}
+                <td className="px-6 py-4 text-sm text-zinc-300 text-right font-mono">
+                  {node.live_status?.slots_behind !== undefined ? (
+                    <span className={node.live_status.slots_behind > 10 ? "text-yellow-400" : ""}>
+                      {node.live_status.slots_behind.toLocaleString()}
+                    </span>
+                  ) : (
+                    <span className="text-zinc-600">-</span>
+                  )}
+                </td>
+                
+                {/* Last Seen */}
+                <td className="px-6 py-4 text-sm text-zinc-400 text-right">
+                  {formatLastSeen(node.last_seen_at)}
+                </td>
+                
+                {/* Actions */}
                 <td className="px-6 py-4 text-sm text-right">
-                  <a
-                    onClick={e => e.stopPropagation()}
-                    href={`/grafana/d/pillar-node-detail/pillar-node-detail?orgId=1&from=now-1h&to=now&timezone=browser&var-datasource=pillar-prometheus&var-node_id=${encodeURIComponent(node.node_id)}&refresh=30s`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-purple-400 hover:text-purple-300 font-medium inline-flex items-center gap-1 group-hover:underline"
-                  >
-                    Metrics <span className="text-[10px]">↗</span>
-                  </a>
+                  {USE_MOCK ? (
+                    <Link
+                      onClick={e => e.stopPropagation()}
+                      to="/grafana"
+                      className="text-purple-400 hover:text-purple-300 font-medium inline-flex items-center gap-1 group-hover:underline"
+                    >
+                      Metrics <span className="text-[10px]">↗</span>
+                    </Link>
+                  ) : (
+                    <a
+                      onClick={e => e.stopPropagation()}
+                      href={`/grafana/d/pillar-node-detail/pillar-node-detail?orgId=1&from=now-1h&to=now&timezone=browser&var-datasource=pillar-prometheus&var-node_id=${encodeURIComponent(node.node_id)}&refresh=30s`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-purple-400 hover:text-purple-300 font-medium inline-flex items-center gap-1 group-hover:underline"
+                    >
+                      Metrics <span className="text-[10px]">↗</span>
+                    </a>
+                  )}
                 </td>
               </tr>
-            ))}
+            )})}
             {nodes.length === 0 && (
               <tr>
-                <td colSpan={10} className="px-6 py-12 text-center text-sm text-zinc-500">
+                <td colSpan={6} className="px-6 py-12 text-center text-sm text-zinc-500">
                   No validators connected. Use the command below to add one.
                 </td>
               </tr>

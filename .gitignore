@@ -22,3 +22,10 @@ node_modules/
 
 # Logs
 *.log
+
+# Secrets and Local configs
+controller/.local/
+*.db
+*.db-shm
+*.db-wal
+*.local.yaml

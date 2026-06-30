@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import { fetchNode, fetchNodeLogs, restartNode, recoverNode, deleteNode, stopNode, cancelDeployment, provisionNode, fetchVersionInfo, upgradeAgent } from '../api'
+import { fetchNode, fetchNodeLogs, restartNode, recoverNode, deleteNode, stopNode, cancelDeployment, provisionNode, fetchVersionInfo, upgradeAgent, USE_MOCK } from '../api'
 import type { Node, LogEntry, ProvisionRequest, VersionInfo } from '../api'
 
 const STATE_BADGE_CLASSES: Record<string, string> = {
@@ -455,164 +455,167 @@ function NodeDetail() {
   )
 
   return (
-    <div className="flex flex-col gap-8 max-w-6xl mx-auto">
+    <div className="flex flex-col gap-8">
       <Link to="/" className="inline-flex items-center text-sm font-medium text-zinc-400 hover:text-zinc-200 transition-colors w-max">&larr; Back to Overview</Link>
 
       {/* Header */}
-      <div className="flex flex-wrap items-center gap-4 bg-[#15131f] border border-white/10 rounded-xl p-6 shadow-sm">
-        <h1 className="text-2xl font-semibold text-zinc-100 m-0 leading-none">{node.node_id}</h1>
-        <div className="flex items-center gap-2">
-          <span className={`inline-flex items-center px-2 py-0.5 text-[11px] font-medium uppercase tracking-wider rounded border ${STATE_BADGE_CLASSES[node.lifecycle_state] || 'bg-zinc-500/10 text-zinc-400 border-zinc-500/20'}`}>
-            {node.lifecycle_state}
-          </span>
-          <span className="flex items-center gap-1.5 px-2 py-0.5 text-[11px] font-medium uppercase tracking-wider rounded border bg-zinc-800/50 border-zinc-700/50 text-zinc-400">
-            <div className={`w-1.5 h-1.5 rounded-full ${node.live_status ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.4)]' : 'bg-red-500'}`}></div>
-            {node.live_status ? 'Connected' : 'Disconnected'}
-          </span>
-        </div>
-        
-        {node.hostname && node.hostname !== node.node_id && (
-          <span className="text-sm font-mono text-zinc-500">{node.hostname}</span>
-        )}
-        <span className="text-sm text-zinc-500">Last seen: {formatLastSeen(node.last_seen_at)}</span>
-        
-        <div className="ml-auto">
-          <a
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-purple-400 bg-purple-500/10 border border-purple-500/20 rounded-md hover:bg-purple-500/20 transition-colors"
-            href={`/grafana/d/pillar-node-detail/pillar-node-detail?orgId=1&from=now-1h&to=now&timezone=browser&var-datasource=pillar-prometheus&var-node_id=${encodeURIComponent(node.node_id)}&refresh=30s`}
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Metrics ↗
-          </a>
-        </div>
-      </div>
-
-      {/* Node Info Cards - versions, client, cluster */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-        <div className="flex flex-col bg-purple-900/10 border border-purple-500/20 rounded-xl p-5 shadow-sm">
-          <div className="text-xs font-medium text-purple-400/80 uppercase tracking-wider mb-2">Validator Version</div>
-          <div className="text-lg font-mono font-medium text-purple-100">{s?.version || '-'}</div>
-        </div>
-        <div className="flex flex-col bg-[#15131f] border border-white/10 rounded-xl p-5 shadow-sm">
-          <div className="text-xs font-medium text-zinc-400 uppercase tracking-wider mb-2">Agent Version</div>
-          <div className="text-lg font-mono text-zinc-300">{node.agent_version || '-'}</div>
-        </div>
-        <div className="flex flex-col bg-[#15131f] border border-white/10 rounded-xl p-5 shadow-sm">
-          <div className="text-xs font-medium text-zinc-400 uppercase tracking-wider mb-2">Client</div>
-          <div className="text-lg text-zinc-300 capitalize">{node.client ?? s?.client ?? '-'}</div>
-        </div>
-        <div className="flex flex-col bg-[#15131f] border border-white/10 rounded-xl p-5 shadow-sm">
-          <div className="text-xs font-medium text-zinc-400 uppercase tracking-wider mb-2">Cluster</div>
-          <div className="text-lg text-zinc-300">
-            {(node.cluster || s?.cluster) ? (
-              <span className="inline-flex items-center px-2 py-0.5 text-xs font-medium bg-zinc-800 text-zinc-300 rounded border border-zinc-700">
-                {clusterLabel(node.cluster ?? s?.cluster)}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 bg-[#15131f] border border-white/10 rounded-xl p-6 shadow-sm">
+        <div className="flex flex-col gap-3">
+          <div className="flex items-center gap-4">
+            <h1 className="text-2xl font-semibold text-zinc-100 m-0 leading-none">{node.node_id}</h1>
+            <div className="flex items-center gap-2">
+              <span className={`inline-flex items-center px-2 py-0.5 text-[11px] font-medium uppercase tracking-wider rounded border ${STATE_BADGE_CLASSES[node.lifecycle_state] || 'bg-zinc-500/10 text-zinc-400 border-zinc-500/20'}`}>
+                {node.lifecycle_state}
               </span>
-            ) : '-'}
+              <span className="flex items-center gap-1.5 px-2 py-0.5 text-[11px] font-medium uppercase tracking-wider rounded border bg-zinc-800/50 border-zinc-700/50 text-zinc-400">
+                <div className={`w-1.5 h-1.5 rounded-full ${node.live_status ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.4)]' : 'bg-red-500'}`}></div>
+                {node.live_status ? 'Connected' : 'Disconnected'}
+              </span>
+            </div>
+          </div>
+          <div className="flex items-center gap-4">
+            {node.hostname && node.hostname !== node.node_id && (
+              <span className="text-sm font-mono text-zinc-500">{node.hostname}</span>
+            )}
+            <span className="text-sm text-zinc-500">Last seen: {formatLastSeen(node.last_seen_at)}</span>
           </div>
         </div>
-        <div className="flex flex-col bg-[#15131f] border border-white/10 rounded-xl p-5 shadow-sm">
-          <div className="text-xs font-medium text-zinc-400 uppercase tracking-wider mb-2">Role</div>
-          <div className="text-lg text-zinc-300 capitalize">{node.role ?? s?.role ?? '-'}</div>
+        
+        <div className="flex flex-wrap items-center gap-3">
+          <button className="px-3 py-1.5 text-sm font-medium text-zinc-300 bg-white/5 hover:bg-white/10 rounded-md border border-white/10 shadow-sm transition-all" onClick={handleRestart} title="Restart Validator">Restart</button>
+          <button className="px-3 py-1.5 text-sm font-medium text-zinc-300 bg-white/5 hover:bg-white/10 rounded-md border border-white/10 shadow-sm transition-all" onClick={handleStop} title="Stop Validator">Stop</button>
+          <button className="px-3 py-1.5 text-sm font-medium text-zinc-300 bg-white/5 hover:bg-white/10 rounded-md border border-white/10 shadow-sm transition-all" onClick={handleRecover} title="Recover from Snapshot">Recover</button>
+          
+          {versionInfo?.agent_update && node.agent_version && node.agent_version !== versionInfo.agent_update.version && (
+            <button className="px-3 py-1.5 text-sm font-medium text-white bg-green-600 hover:bg-green-500 rounded-md border border-green-500/50 shadow-sm transition-all" onClick={handleUpgradeAgent}>
+              Upgrade Agent (v{versionInfo.agent_update.version})
+            </button>
+          )}
+
+          {(node.lifecycle_state === 'provisioning' || node.lifecycle_state === 'starting_up') && (
+            <button className="px-3 py-1.5 text-sm font-medium text-red-400 bg-red-950/30 border border-red-900/50 rounded-md hover:bg-red-900/30 transition-all" onClick={handleCancel}>Cancel</button>
+          )}
+          
+          <button className="px-3 py-1.5 text-sm font-medium text-red-400 bg-red-950/30 border border-red-900/50 rounded-md hover:bg-red-900/30 transition-all" onClick={handleDelete} title="Delete Node">Delete</button>
+
+          <div className="w-px h-6 bg-white/10 mx-1"></div>
+
+          {USE_MOCK ? (
+            <Link
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-purple-400 bg-purple-500/10 border border-purple-500/20 rounded-md hover:bg-purple-500/20 transition-colors"
+              to="/grafana"
+            >
+              Metrics ↗
+            </Link>
+          ) : (
+            <a
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-purple-400 bg-purple-500/10 border border-purple-500/20 rounded-md hover:bg-purple-500/20 transition-colors"
+              href={`/grafana/d/pillar-node-detail/pillar-node-detail?orgId=1&from=now-1h&to=now&timezone=browser&var-datasource=pillar-prometheus&var-node_id=${encodeURIComponent(node.node_id)}&refresh=30s`}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Metrics ↗
+            </a>
+          )}
         </div>
       </div>
 
-      {/* Metrics */}
-      <div className="grid grid-cols-2 md:grid-cols-6 gap-4">
-        <div className="flex flex-col bg-[#15131f] border border-white/10 rounded-xl p-5 shadow-sm">
-          <div className="text-xs font-medium text-zinc-400 uppercase tracking-wider mb-2">Slots Behind</div>
-          <div className="text-xl font-mono text-zinc-200">{s?.slots_behind ?? '-'}</div>
-        </div>
-        <div className="flex flex-col bg-[#15131f] border border-white/10 rounded-xl p-5 shadow-sm">
-          <div className="text-xs font-medium text-zinc-400 uppercase tracking-wider mb-2">CPU</div>
-          <div className="text-xl font-mono text-zinc-200">{s ? `${s.cpu_usage_percent.toFixed(1)}%` : '-'}</div>
-        </div>
-        <div className="flex flex-col bg-[#15131f] border border-white/10 rounded-xl p-5 shadow-sm">
-          <div className="text-xs font-medium text-zinc-400 uppercase tracking-wider mb-2">Memory</div>
-          <div className="text-base font-mono text-zinc-300">
-            {s ? `${formatBytes(s.memory_used_bytes)} / ${formatBytes(s.memory_total_bytes)}` : '-'}
+      {/* Performance Metrics */}
+      <div className="bg-[#15131f] border border-white/10 rounded-xl p-6 shadow-sm">
+        <h2 className="text-lg font-semibold text-zinc-100 mb-6">Performance</h2>
+        <div className="grid grid-cols-2 md:grid-cols-6 gap-6">
+          <div className="flex flex-col gap-1.5 md:col-span-2">
+            <span className="text-xs font-medium text-zinc-400 uppercase tracking-wider">Slots Behind</span>
+            <div className="flex items-baseline gap-2">
+              <span className={`text-4xl font-mono ${s?.slots_behind !== undefined && s.slots_behind > 10 ? 'text-yellow-400' : 'text-zinc-100'}`}>
+                {s?.slots_behind !== undefined ? s.slots_behind.toLocaleString() : '-'}
+              </span>
+              <span className="text-sm text-zinc-500">slots</span>
+            </div>
           </div>
-        </div>
-        <div className="flex flex-col bg-[#15131f] border border-white/10 rounded-xl p-5 shadow-sm">
-          <div className="text-xs font-medium text-zinc-400 uppercase tracking-wider mb-2">Disk</div>
-          <div className="text-base font-mono text-zinc-300">
-            {s ? `${formatBytes(s.disk_used_bytes)} / ${formatBytes(s.disk_total_bytes)}` : '-'}
+          <div className="flex flex-col gap-1.5">
+            <span className="text-xs font-medium text-zinc-400 uppercase tracking-wider">CPU Usage</span>
+            <span className="text-2xl font-mono text-zinc-200">{s ? `${s.cpu_usage_percent.toFixed(1)}%` : '-'}</span>
           </div>
-        </div>
-        <div className="flex flex-col bg-[#15131f] border border-white/10 rounded-xl p-5 shadow-sm">
-          <div className="text-xs font-medium text-zinc-400 uppercase tracking-wider mb-2">Restarts</div>
-          <div className="text-xl font-mono text-zinc-200">{s?.restart_count ?? '-'}</div>
-        </div>
-        <div className="flex flex-col bg-[#15131f] border border-white/10 rounded-xl p-5 shadow-sm">
-          <div className="text-xs font-medium text-zinc-400 uppercase tracking-wider mb-2">Running Since</div>
-          <div className="text-base font-mono text-zinc-300">{s?.state_duration_secs != null ? formatDuration(s.state_duration_secs) : '-'}</div>
+          <div className="flex flex-col gap-1.5">
+            <span className="text-xs font-medium text-zinc-400 uppercase tracking-wider">Memory</span>
+            <span className="text-lg font-mono text-zinc-300">
+              {s ? `${formatBytes(s.memory_used_bytes)}` : '-'}
+            </span>
+            <span className="text-xs text-zinc-500 font-mono">{s ? `/ ${formatBytes(s.memory_total_bytes)}` : ''}</span>
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <span className="text-xs font-medium text-zinc-400 uppercase tracking-wider">Disk Space</span>
+            <span className="text-lg font-mono text-zinc-300">
+              {s ? `${formatBytes(s.disk_used_bytes)}` : '-'}
+            </span>
+            <span className="text-xs text-zinc-500 font-mono">{s ? `/ ${formatBytes(s.disk_total_bytes)}` : ''}</span>
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <span className="text-xs font-medium text-zinc-400 uppercase tracking-wider">Uptime</span>
+            <span className="text-lg font-mono text-zinc-300">{s?.state_duration_secs != null ? formatDuration(s.state_duration_secs) : '-'}</span>
+            <span className="text-xs text-zinc-500">{s?.restart_count !== undefined ? `${s.restart_count} restarts` : ''}</span>
+          </div>
         </div>
       </div>
 
-      {/* Current Config (read-only) */}
-      {hasConfig && (
-        <div className="bg-[#15131f] border border-white/10 rounded-xl p-6 shadow-sm">
-          <h2 className="text-lg font-semibold text-zinc-100 mb-4">Current Configuration</h2>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-6 p-4 bg-black/20 rounded-lg border border-white/5">
-            {node.client && (
-              <div className="flex flex-col gap-1">
-                <span className="text-[11px] font-medium text-zinc-500 uppercase tracking-wider">Client</span>
-                <span className="text-sm font-mono text-zinc-300">{node.client}</span>
-              </div>
-            )}
-            {(node.cluster || s?.cluster) && (
-              <div className="flex flex-col gap-1">
-                <span className="text-[11px] font-medium text-zinc-500 uppercase tracking-wider">Cluster</span>
-                <span className="text-sm font-mono text-zinc-300">{node.cluster ?? s?.cluster}</span>
-              </div>
-            )}
-            {s?.version && (
-              <div className="flex flex-col gap-1">
-                <span className="text-[11px] font-medium text-zinc-500 uppercase tracking-wider">Validator Version</span>
-                <span className="text-sm font-mono text-zinc-300">{s.version}</span>
-              </div>
-            )}
-            {node.agent_version && (
-              <div className="flex flex-col gap-1">
-                <span className="text-[11px] font-medium text-zinc-500 uppercase tracking-wider">Agent Version</span>
-                <span className="text-sm font-mono text-zinc-300">{node.agent_version}</span>
-              </div>
-            )}
-            {(node.role || s?.role) && (
-              <div className="flex flex-col gap-1">
-                <span className="text-[11px] font-medium text-zinc-500 uppercase tracking-wider">Role</span>
-                <span className="text-sm font-mono text-zinc-300">{node.role ?? s?.role}</span>
-              </div>
-            )}
-            {node.ip_address && (
-              <div className="flex flex-col gap-1">
-                <span className="text-[11px] font-medium text-zinc-500 uppercase tracking-wider">IP Address</span>
-                <span className="text-sm font-mono text-zinc-300">{node.ip_address}</span>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Provision - opens in modal */}
-      <div className="bg-[#15131f] border border-purple-500/20 rounded-xl p-6 shadow-[0_0_20px_rgba(153,69,255,0.05)]">
-        <div className="flex items-center justify-between gap-4">
+      {/* System & Configuration */}
+      <div className="bg-[#15131f] border border-white/10 rounded-xl p-6 shadow-sm">
+        <div className="flex items-center justify-between gap-4 mb-6">
           <div>
-            <h2 className="text-lg font-semibold text-zinc-100 mb-1">{hasConfig ? 'Update Validator' : 'Setup Validator'}</h2>
-            <p className="m-0 text-sm text-zinc-400">
-              {hasConfig
-                ? 'Change the client, version, cluster, ports, or flags and re-deploy this validator.'
-                : 'Install and configure a validator on this host — pick a client, cluster, version, and ports.'}
-            </p>
+            <h2 className="text-lg font-semibold text-zinc-100 m-0">System Configuration</h2>
+            <p className="text-sm text-zinc-400 mt-1 m-0">Identity, software versions, and network role.</p>
           </div>
           <button 
-            className="px-4 py-2 text-sm font-medium text-white bg-purple-600 hover:bg-purple-500 rounded-md border border-purple-500/50 shadow-sm transition-all whitespace-nowrap" 
+            className="px-4 py-2 text-sm font-medium text-purple-300 bg-purple-500/10 hover:bg-purple-500/20 rounded-md border border-purple-500/20 shadow-sm transition-all whitespace-nowrap" 
             onClick={() => setShowProvision(true)}
           >
-            {hasConfig ? 'Update Validator' : 'Configure Validator'}
+            {hasConfig ? 'Edit Config' : 'Setup Validator'}
           </button>
         </div>
+        
+        {hasConfig ? (
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+            <div className="flex flex-col bg-white/[0.02] border border-white/10 rounded-xl p-5 shadow-sm">
+              <span className="text-xs font-medium text-zinc-400 uppercase tracking-wider mb-2">Client</span>
+              <span className="text-lg text-zinc-200 capitalize">
+                {node.client ?? s?.client ?? '-'} <span className="text-zinc-500 font-mono text-sm lowercase ml-1">v{s?.version || '-'}</span>
+              </span>
+            </div>
+            <div className="flex flex-col bg-white/[0.02] border border-white/10 rounded-xl p-5 shadow-sm">
+              <span className="text-xs font-medium text-zinc-400 uppercase tracking-wider mb-2">Cluster</span>
+              <div className="flex items-center">
+                {(node.cluster || s?.cluster) ? (
+                  <span className="inline-flex items-center px-2.5 py-1 text-sm font-medium bg-zinc-800 text-zinc-300 rounded border border-zinc-700">
+                    {clusterLabel(node.cluster ?? s?.cluster)}
+                  </span>
+                ) : <span className="text-lg text-zinc-300">-</span>}
+              </div>
+            </div>
+            <div className="flex flex-col bg-white/[0.02] border border-white/10 rounded-xl p-5 shadow-sm">
+              <span className="text-xs font-medium text-zinc-400 uppercase tracking-wider mb-2">Role</span>
+              <span className="text-lg text-zinc-300 capitalize">{node.role ?? s?.role ?? '-'}</span>
+            </div>
+            <div className="flex flex-col bg-white/[0.02] border border-white/10 rounded-xl p-5 shadow-sm">
+              <span className="text-xs font-medium text-zinc-400 uppercase tracking-wider mb-2">IP Address</span>
+              <span className="text-lg font-mono text-zinc-300">{node.ip_address || '-'}</span>
+            </div>
+            <div className="flex flex-col bg-white/[0.02] border border-white/10 rounded-xl p-5 shadow-sm">
+              <span className="text-xs font-medium text-zinc-400 uppercase tracking-wider mb-2">Agent Version</span>
+              <span className="text-lg font-mono text-zinc-300">{node.agent_version || '-'}</span>
+            </div>
+          </div>
+        ) : (
+          <div className="p-8 text-center bg-black/20 rounded-lg border border-white/5 border-dashed">
+            <p className="text-zinc-400 text-sm mb-4">This node has not been configured yet.</p>
+            <button 
+              className="px-4 py-2 text-sm font-medium text-white bg-purple-600 hover:bg-purple-500 rounded-md shadow-sm transition-all" 
+              onClick={() => setShowProvision(true)}
+            >
+              Setup Validator Now
+            </button>
+          </div>
+        )}
       </div>
 
       {showProvision && (
@@ -867,24 +870,6 @@ function NodeDetail() {
         </div>
       </div>
 
-      {/* Actions — at the bottom (destructive/lifecycle controls) */}
-      <div className="mt-4 pt-6 border-t border-white/5">
-        <h3 className="text-sm font-medium text-zinc-400 uppercase tracking-wider mb-4">Actions</h3>
-        <div className="flex flex-wrap gap-3">
-          <button className="px-4 py-2 text-sm font-medium text-white bg-purple-600 hover:bg-purple-500 rounded-md border border-purple-500/50 shadow-sm transition-all" onClick={handleRestart}>Restart</button>
-          <button className="px-4 py-2 text-sm font-medium text-zinc-300 bg-white/5 hover:bg-white/10 rounded-md border border-white/10 shadow-sm transition-all" onClick={handleRecover}>Recover</button>
-          <button className="px-4 py-2 text-sm font-medium text-zinc-300 bg-white/5 hover:bg-white/10 rounded-md border border-white/10 shadow-sm transition-all" onClick={handleStop}>Stop</button>
-          {versionInfo?.agent_update && node.agent_version && node.agent_version !== versionInfo.agent_update.version && (
-            <button className="px-4 py-2 text-sm font-medium text-white bg-green-600 hover:bg-green-500 rounded-md border border-green-500/50 shadow-sm transition-all" onClick={handleUpgradeAgent}>
-              Upgrade Agent to v{versionInfo.agent_update.version}
-            </button>
-          )}
-          {(node.lifecycle_state === 'provisioning' || node.lifecycle_state === 'starting_up') && (
-            <button className="px-4 py-2 text-sm font-medium text-red-400 bg-red-950/30 border border-red-900/50 rounded-md hover:bg-red-900/30 transition-all ml-auto" onClick={handleCancel}>Cancel</button>
-          )}
-          <button className={`px-4 py-2 text-sm font-medium text-red-400 bg-red-950/30 border border-red-900/50 rounded-md hover:bg-red-900/30 transition-all ${!((node.lifecycle_state === 'provisioning' || node.lifecycle_state === 'starting_up')) ? 'ml-auto' : ''}`} onClick={handleDelete}>Delete</button>
-        </div>
-      </div>
     </div>
   )
 }

@@ -5,8 +5,9 @@ import NodeDetail from './pages/NodeDetail'
 import Docs from './pages/Docs'
 import Login from './pages/Login'
 import UpdateBanner from './components/UpdateBanner'
+import Grafana from './pages/Grafana'
 import { checkAuth, logout, changeCredentials } from './auth'
-
+import { USE_MOCK } from './api'
 function App() {
   const [authed, setAuthed] = useState<boolean | null>(null)
   const [username, setUsername] = useState('')
@@ -39,22 +40,28 @@ function App() {
 
   return (
     <div className="min-h-screen bg-[#0a0911] text-zinc-100 font-sans selection:bg-purple-500/30">
-      <nav className="sticky top-0 z-50 flex items-center justify-between px-6 py-4 bg-[#0a0911]/80 backdrop-blur-md border-b border-white/5">
-        <div className="flex items-center gap-8">
-          <NavLink to="/" className="flex items-center gap-2 hover:opacity-80 transition-opacity">
-            <img src="/pillar-logo.png" alt="Pillar" className="h-6 w-auto" />
-          </NavLink>
-          <div className="flex items-center gap-6 text-sm font-medium text-zinc-400">
-            <NavLink to="/" end className={({isActive}) => isActive ? "text-zinc-100" : "hover:text-zinc-100 transition-colors"}>Overview</NavLink>
-            <a href="/grafana/d/pillar-fleet-overview" target="_blank" rel="noopener noreferrer" className="hover:text-zinc-100 transition-colors">Metrics</a>
-            <NavLink to="/docs" className={({isActive}) => isActive ? "text-zinc-100" : "hover:text-zinc-100 transition-colors"}>Docs</NavLink>
+      <nav className="sticky top-0 z-50 bg-[#0a0911]/80 backdrop-blur-md border-b border-white/5">
+        <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
+          <div className="flex items-center gap-8">
+            <NavLink to="/" className="flex items-center gap-2 hover:opacity-80 transition-opacity">
+              <img src="/pillar-logo.png" alt="Pillar" className="h-6 w-auto" />
+            </NavLink>
+            <div className="flex items-center gap-6 text-sm font-medium text-zinc-400">
+              <NavLink to="/" end className={({isActive}) => isActive ? "text-zinc-100" : "hover:text-zinc-100 transition-colors"}>Overview</NavLink>
+              {USE_MOCK ? (
+                <NavLink to="/grafana" className={({isActive}) => isActive ? "text-zinc-100" : "hover:text-zinc-100 transition-colors"}>Metrics</NavLink>
+              ) : (
+                <a href="/grafana/d/pillar-fleet-overview" target="_blank" rel="noopener noreferrer" className="hover:text-zinc-100 transition-colors">Metrics</a>
+              )}
+              <NavLink to="/docs" className={({isActive}) => isActive ? "text-zinc-100" : "hover:text-zinc-100 transition-colors"}>Docs</NavLink>
+            </div>
           </div>
-        </div>
-        <div className="flex items-center gap-3">
-          <button className="px-3 py-1.5 text-sm font-medium rounded-md bg-white/5 border border-white/10 hover:bg-white/10 transition-colors text-zinc-300 hover:text-white" onClick={() => setShowChangePassword(true)}>
-            {username || 'admin'}
-          </button>
-          <button className="px-3 py-1.5 text-sm font-medium rounded-md bg-transparent border border-transparent hover:bg-white/5 transition-colors text-zinc-400 hover:text-zinc-300" onClick={handleLogout}>Logout</button>
+          <div className="flex items-center gap-3">
+            <button className="px-3 py-1.5 text-sm font-medium rounded-md bg-white/5 border border-white/10 hover:bg-white/10 transition-colors text-zinc-300 hover:text-white" onClick={() => setShowChangePassword(true)}>
+              {username || 'admin'}
+            </button>
+            <button className="px-3 py-1.5 text-sm font-medium rounded-md bg-transparent border border-transparent hover:bg-white/5 transition-colors text-zinc-400 hover:text-zinc-300" onClick={handleLogout}>Logout</button>
+          </div>
         </div>
       </nav>
       <UpdateBanner />
@@ -63,6 +70,7 @@ function App() {
           <Route path="/" element={<Overview />} />
           <Route path="/docs" element={<Docs />} />
           <Route path="/nodes/:id" element={<NodeDetail />} />
+          <Route path="/grafana/*" element={<Grafana />} />
         </Routes>
       </main>
       {showChangePassword && (

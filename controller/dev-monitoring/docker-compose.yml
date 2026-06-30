@@ -1,0 +1,44 @@
+# Local Prometheus + Grafana for Pillar controller metrics.
+# Usage:  docker compose -f controller/dev-monitoring/docker-compose.yml up -d
+# Grafana served behind the controller proxy at http://localhost:8080/grafana
+# (set grafana_url = http://localhost:3000 in the controller).
+
+services:
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: pillar-prometheus
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: pillar-grafana
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      # Controller proxies /grafana/* → this Grafana, so serve from that sub-path.
+      GF_SERVER_ROOT_URL: "http://localhost:8080/grafana/"
+      GF_SERVER_SERVE_FROM_SUB_PATH: "true"
+      # Anonymous Admin so the proxied dashboards render without a separate login (dev only).
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: "Admin"
+      GF_SECURITY_ALLOW_EMBEDDING: "true"
+      GF_USERS_DEFAULT_THEME: "dark"
+    volumes:
+      - ./grafana-datasource.yml:/etc/grafana/provisioning/datasources/pillar.yml:ro
+      - ./grafana-dashboards.yml:/etc/grafana/provisioning/dashboards/pillar.yml:ro
+      - ../dashboards/grafana:/var/lib/grafana/dashboards/pillar:ro
+      - grafana-data:/var/lib/grafana
+    depends_on:
+      - prometheus
+
+volumes:
+  prometheus-data:
+  grafana-data:
