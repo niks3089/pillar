@@ -7,7 +7,7 @@ import Login from './pages/Login'
 import UpdateBanner from './components/UpdateBanner'
 import Grafana from './pages/Grafana'
 import { checkAuth, logout, changeCredentials } from './auth'
-import { USE_MOCK } from './api'
+
 function App() {
   const [authed, setAuthed] = useState<boolean | null>(null)
   const [username, setUsername] = useState('')
@@ -48,11 +48,7 @@ function App() {
             </NavLink>
             <div className="flex items-center gap-6 text-sm font-medium text-zinc-400">
               <NavLink to="/" end className={({isActive}) => isActive ? "text-zinc-100" : "hover:text-zinc-100 transition-colors"}>Overview</NavLink>
-              {USE_MOCK ? (
-                <NavLink to="/grafana" className={({isActive}) => isActive ? "text-zinc-100" : "hover:text-zinc-100 transition-colors"}>Metrics</NavLink>
-              ) : (
-                <a href="/grafana/d/pillar-fleet-overview" target="_blank" rel="noopener noreferrer" className="hover:text-zinc-100 transition-colors">Metrics</a>
-              )}
+              <a href="/grafana/d/pillar-fleet-overview" target="_blank" rel="noopener noreferrer" className="hover:text-zinc-100 transition-colors">Metrics</a>
               <NavLink to="/docs" className={({isActive}) => isActive ? "text-zinc-100" : "hover:text-zinc-100 transition-colors"}>Docs</NavLink>
             </div>
           </div>

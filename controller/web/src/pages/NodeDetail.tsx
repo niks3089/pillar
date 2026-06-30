@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import { fetchNode, fetchNodeLogs, restartNode, recoverNode, deleteNode, stopNode, cancelDeployment, provisionNode, fetchVersionInfo, upgradeAgent, USE_MOCK } from '../api'
+import { fetchNode, fetchNodeLogs, restartNode, recoverNode, deleteNode, stopNode, cancelDeployment, provisionNode, fetchVersionInfo, upgradeAgent } from '../api'
 import type { Node, LogEntry, ProvisionRequest, VersionInfo } from '../api'
 
 const STATE_BADGE_CLASSES: Record<string, string> = {
@@ -500,23 +500,14 @@ function NodeDetail() {
 
           <div className="w-px h-6 bg-white/10 mx-1"></div>
 
-          {USE_MOCK ? (
-            <Link
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-purple-400 bg-purple-500/10 border border-purple-500/20 rounded-md hover:bg-purple-500/20 transition-colors"
-              to="/grafana"
-            >
-              Metrics ↗
-            </Link>
-          ) : (
-            <a
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-purple-400 bg-purple-500/10 border border-purple-500/20 rounded-md hover:bg-purple-500/20 transition-colors"
-              href={`/grafana/d/pillar-node-detail/pillar-node-detail?orgId=1&from=now-1h&to=now&timezone=browser&var-datasource=pillar-prometheus&var-node_id=${encodeURIComponent(node.node_id)}&refresh=30s`}
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              Metrics ↗
-            </a>
-          )}
+          <a
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-purple-400 bg-purple-500/10 border border-purple-500/20 rounded-md hover:bg-purple-500/20 transition-colors"
+            href={`/grafana/d/pillar-node-detail/pillar-node-detail?orgId=1&from=now-1h&to=now&timezone=browser&var-datasource=pillar-prometheus&var-node_id=${encodeURIComponent(node.node_id)}&refresh=30s`}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Metrics ↗
+          </a>
         </div>
       </div>
 

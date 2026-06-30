@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
-import { useNavigate, Link } from 'react-router-dom'
-import { fetchOverview, fetchNodes, fetchOnboardCommand, USE_MOCK } from '../api'
+import { useNavigate } from 'react-router-dom'
+import { fetchOverview, fetchNodes, fetchOnboardCommand } from '../api'
 import type { FleetOverview, Node } from '../api'
 
 const STATE_BADGE_CLASSES: Record<string, string> = {
@@ -175,25 +175,15 @@ function Overview() {
                 
                 {/* Actions */}
                 <td className="px-6 py-4 text-sm text-right">
-                  {USE_MOCK ? (
-                    <Link
-                      onClick={e => e.stopPropagation()}
-                      to="/grafana"
-                      className="text-purple-400 hover:text-purple-300 font-medium inline-flex items-center gap-1 group-hover:underline"
-                    >
-                      Metrics <span className="text-[10px]">↗</span>
-                    </Link>
-                  ) : (
-                    <a
-                      onClick={e => e.stopPropagation()}
-                      href={`/grafana/d/pillar-node-detail/pillar-node-detail?orgId=1&from=now-1h&to=now&timezone=browser&var-datasource=pillar-prometheus&var-node_id=${encodeURIComponent(node.node_id)}&refresh=30s`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-purple-400 hover:text-purple-300 font-medium inline-flex items-center gap-1 group-hover:underline"
-                    >
-                      Metrics <span className="text-[10px]">↗</span>
-                    </a>
-                  )}
+                  <a
+                    onClick={e => e.stopPropagation()}
+                    href={`/grafana/d/pillar-node-detail/pillar-node-detail?orgId=1&from=now-1h&to=now&timezone=browser&var-datasource=pillar-prometheus&var-node_id=${encodeURIComponent(node.node_id)}&refresh=30s`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-purple-400 hover:text-purple-300 font-medium inline-flex items-center gap-1 group-hover:underline"
+                  >
+                    Metrics <span className="text-[10px]">↗</span>
+                  </a>
                 </td>
               </tr>
             )})}
