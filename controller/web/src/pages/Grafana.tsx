@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { fetchGrafanaSettings, saveGrafanaUrl, USE_MOCK } from "../api";
+import { fetchGrafanaSettings, saveGrafanaUrl } from "../api";
 
 type Tab = "fleet-overview" | "node-detail";
 
@@ -84,17 +84,11 @@ function Grafana() {
           </div>
         </div>
         <div className="flex-1 bg-[#15131f] border border-white/10 rounded-xl overflow-hidden shadow-sm flex flex-col relative">
-          {USE_MOCK ? (
-            <div className="flex items-center justify-center h-full text-zinc-500 bg-black/20">
-              Unable to connect to the backend metrics service. Please ensure the controller is running and Grafana is configured.
-            </div>
-          ) : (
-            <iframe
-              src={iframeSrc}
-              title={`Grafana - ${activeTab}`}
-              className="w-full h-full border-none"
-            />
-          )}
+          <iframe
+            src={iframeSrc}
+            title={`Grafana - ${activeTab}`}
+            className="w-full h-full border-none"
+          />
         </div>
       </div>
     );

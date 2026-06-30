@@ -62,22 +62,15 @@ async function api<T>(path: string, opts?: RequestInit): Promise<T> {
   return res.json()
 }
 
-import { mockOverview, mockNodes, mockLogs, mockVersionInfo, mockGrafanaSettings } from './mockData'
-
-export const USE_MOCK = true
-
 export async function fetchOverview(): Promise<FleetOverview> {
-  if (USE_MOCK) return mockOverview
   return api('/api/overview')
 }
 
 export async function fetchNodes(): Promise<Node[]> {
-  if (USE_MOCK) return mockNodes
   return api('/api/nodes')
 }
 
 export async function fetchNode(id: string): Promise<Node> {
-  if (USE_MOCK) return mockNodes.find(n => n.node_id === id) || mockNodes[0]
   return api(`/api/nodes/${encodeURIComponent(id)}`)
 }
 
@@ -85,7 +78,6 @@ export async function fetchNodeLogs(
   id: string,
   params?: { service?: string; level?: string; since?: number; limit?: number },
 ): Promise<LogEntry[]> {
-  if (USE_MOCK) return mockLogs
   const qs = new URLSearchParams()
   if (params?.service) qs.set('service', params.service)
   if (params?.level) qs.set('level', params.level)
@@ -165,7 +157,6 @@ export async function provisionNode(id: string, config: ProvisionRequest): Promi
 }
 
 export async function fetchGrafanaSettings(): Promise<{ grafana_url: string }> {
-  if (USE_MOCK) return mockGrafanaSettings
   return api('/api/settings/grafana')
 }
 
@@ -196,7 +187,6 @@ export interface VersionInfo {
 }
 
 export async function fetchVersionInfo(): Promise<VersionInfo> {
-  if (USE_MOCK) return mockVersionInfo
   return api('/api/version')
 }
 
