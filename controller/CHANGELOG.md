@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.5.1](https://github.com/niks3089/pillar/compare/pillar-controller-v0.5.0...pillar-controller-v0.5.1) (2026-07-01)
+
+
+### Features
+
+* Cleaned up and wired with UI fully ([b91cdde](https://github.com/niks3089/pillar/commit/b91cddef36327c03218338cf2b1fe3ac622e7ada))
+* Shifted to tailwind from .css ([ff9ab95](https://github.com/niks3089/pillar/commit/ff9ab956ba46f10f4e93c788a59a9083d2a853b8))
+
 ## [0.5.0](https://github.com/niks3089/pillar/compare/pillar-controller-v0.4.0...pillar-controller-v0.5.0) (2026-06-25)
 
 
