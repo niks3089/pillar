@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.5.2](https://github.com/niks3089/pillar/compare/pillar-controller-v0.5.1...pillar-controller-v0.5.2) (2026-07-17)
+
+
+### Bug Fixes
+
+* close onboarding and from-source provisioning gaps ([0f08cea](https://github.com/niks3089/pillar/commit/0f08cea21fc7d5dee15dad4c6d3a0f8acc37c279))
+* close onboarding and from-source provisioning gaps ([2828c89](https://github.com/niks3089/pillar/commit/2828c8966822b96f2db2a6311cb9b9b64b387470))
+* fetch genesis with pinned hash instead of --no-genesis-fetch ([09543bf](https://github.com/niks3089/pillar/commit/09543bf8bf91b89e0f7cd76cc4034000d3eebbcb))
+* persist client/cluster on provision so the UI shows the config ([a0df379](https://github.com/niks3089/pillar/commit/a0df3799595451e39c16256267ada43486612d1b))
+* persist client/cluster on provision so the UI shows the config ([ad9b270](https://github.com/niks3089/pillar/commit/ad9b27056599a8454309f247c6c58f66f642ac99))
+
 ## [0.5.1](https://github.com/niks3089/pillar/compare/pillar-controller-v0.5.0...pillar-controller-v0.5.1) (2026-07-01)
 
 
