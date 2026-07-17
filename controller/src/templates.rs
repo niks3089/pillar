@@ -177,7 +177,12 @@ pub fn build_exec_start(
 
     if !known_validators.is_empty() {
         args.push("--only-known-rpc".to_string());
-        args.push("--no-genesis-fetch".to_string());
+        // NOT --no-genesis-fetch: a freshly provisioned node has no genesis.bin and
+        // would loop in bootstrap forever. Fetch it but pin the expected hash instead.
+        args.push(format!(
+            "--expected-genesis-hash {}",
+            genesis_hash_for_cluster(cluster)
+        ));
     }
 
     if jito.enabled {
@@ -312,6 +317,11 @@ mod tests {
         assert!(exec.contains("--entrypoint entrypoint.mainnet-beta.solana.com:8001"));
         assert!(exec.contains("--known-validator"));
         assert!(exec.contains("--only-known-rpc"));
+        // Fresh nodes have no genesis.bin — must fetch it (hash-pinned), never skip.
+        assert!(!exec.contains("--no-genesis-fetch"));
+        assert!(
+            exec.contains("--expected-genesis-hash 5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d")
+        );
         assert!(exec.contains("--gossip-port 8001"));
         // Jito disabled by default — no MEV flags.
         assert!(!exec.contains("--block-engine-url"));
