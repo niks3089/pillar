@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+set -euo pipefail
+echo "=== Pillar: Promoting backup to staked identity ==="
+
+{{tower_section}}
+{{binary_path}} -l {{ledger_path}} set-identity{{require_tower_flag}} {{staked_identity_path}}
+ln -sfn {{staked_identity_path}} {{symlink_path}}
+echo "Now voting with staked identity {{staked_pubkey}}"
+echo "=== Promote complete ==="

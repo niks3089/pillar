@@ -169,6 +169,89 @@ export async function saveGrafanaUrl(url: string): Promise<{ grafana_url: string
 }
 
 // ---------------------------------------------------------------------------
+// Failover (hot-spare identity swap)
+// ---------------------------------------------------------------------------
+
+export interface FailoverOperation {
+  op_id: string
+  pair_id: string
+  kind: string // 'graceful' | 'crash'
+  state: string // 'pending_demote' | 'pending_promote' | 'complete' | 'failed'
+  from_node_id: string
+  to_node_id: string
+  error?: string
+  started_at: number
+  updated_at: number
+  completed_at?: number
+}
+
+export interface FailoverPair {
+  pair_id: string
+  primary_node_id: string
+  backup_node_id: string
+  staked_identity_path: string
+  unstaked_identity_path: string
+  symlink_path: string
+  staked_pubkey?: string
+  auto_failover: boolean
+  prepare_state: string // 'preparing' | 'primary_ready' | 'backup_ready' | 'ready' | 'prepare_failed'
+  prepare_error?: string
+  pending_cold_demote_node_id?: string
+  created_at: number
+  updated_at: number
+  last_op?: FailoverOperation
+}
+
+export interface CreateFailoverPairRequest {
+  primary_node_id: string
+  backup_node_id: string
+  staked_identity_path?: string
+  unstaked_identity_path?: string
+  symlink_path?: string
+  auto_failover?: boolean
+}
+
+export async function fetchFailoverPairs(): Promise<FailoverPair[]> {
+  return api('/api/failover/pairs')
+}
+
+export async function createFailoverPair(req: CreateFailoverPairRequest): Promise<FailoverPair> {
+  return api('/api/failover/pairs', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(req),
+  })
+}
+
+export async function deleteFailoverPair(pairId: string): Promise<{ ok: boolean; message: string }> {
+  return api(`/api/failover/pairs/${encodeURIComponent(pairId)}`, { method: 'DELETE' })
+}
+
+export async function setFailoverAuto(pairId: string, auto: boolean): Promise<{ ok: boolean; message: string }> {
+  return api(`/api/failover/pairs/${encodeURIComponent(pairId)}/auto`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ auto_failover: auto }),
+  })
+}
+
+export async function triggerFailover(
+  pairId: string,
+  mode: 'graceful' | 'crash',
+  force = false,
+): Promise<FailoverOperation> {
+  return api(`/api/failover/pairs/${encodeURIComponent(pairId)}/failover`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ mode, force }),
+  })
+}
+
+export async function rerunFailoverPrepare(pairId: string): Promise<{ ok: boolean; message: string }> {
+  return api(`/api/failover/pairs/${encodeURIComponent(pairId)}/prepare`, { method: 'POST' })
+}
+
+// ---------------------------------------------------------------------------
 // Version / upgrade types and functions
 // ---------------------------------------------------------------------------
 

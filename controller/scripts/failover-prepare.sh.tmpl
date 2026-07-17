@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+set -euo pipefail
+echo "=== Pillar: Preparing node for failover ({{role}}) ==="
+
+# The staked identity is copied to this machine by the operator out-of-band —
+# Pillar never transfers private key material.
+if [ ! -f {{staked_identity_path}} ]; then
+  echo "ERROR: staked identity not found at {{staked_identity_path}}" >&2
+  echo "Copy the staked identity keypair to this machine first." >&2
+  exit 1
+fi
+
+if [ ! -f {{unstaked_identity_path}} ]; then
+  echo "Generating unstaked hot-spare identity..."
+  solana-keygen new -s --no-bip39-passphrase --force -o {{unstaked_identity_path}}
+fi
+sudo chown sol:sol {{unstaked_identity_path}}
+chmod 600 {{unstaked_identity_path}}
+
+ln -sfn {{symlink_target}} {{symlink_path}}
+echo "Identity symlink: {{symlink_path}} -> {{symlink_target}}"
+
+# Rewrite the systemd unit so the validator starts against the symlink and can
+# vote for the staked identity when it holds it.
+sudo tee /etc/systemd/system/{{service_name}}.service > /dev/null <<'UNIT'
+[Unit]
+Description={{unit_description}}
+After=network.target
+{{start_limit_line}}
+
+[Service]
+Type=simple
+User=sol
+ExecStart={{exec_start}}
+Restart=on-failure
+RestartSec={{restart_sec}}
+LimitNOFILE=1000000
+LimitMEMLOCK=infinity
+{{log_rate_limit_line}}
+{{environment_lines}}
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+
+sudo systemctl daemon-reload
+{{restart_section}}
+
+echo "---PILLAR-PUBKEY:$(solana-keygen pubkey {{staked_identity_path}})---"
+echo "=== Failover prepare complete ==="

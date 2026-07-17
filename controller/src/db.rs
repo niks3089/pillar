@@ -100,6 +100,47 @@ fn init_schema(conn: &Connection) -> Result<()> {
     )
     .context("creating script_executions table")?;
 
+    // Failover: hot-spare pairing + identity-swap operation tracking
+    conn.execute_batch(
+        "
+        CREATE TABLE IF NOT EXISTS failover_pairs (
+            pair_id TEXT PRIMARY KEY,
+            primary_node_id TEXT NOT NULL UNIQUE,
+            backup_node_id TEXT NOT NULL UNIQUE,
+            staked_identity_path TEXT NOT NULL,
+            unstaked_identity_path TEXT NOT NULL,
+            symlink_path TEXT NOT NULL,
+            staked_pubkey TEXT,
+            auto_failover INTEGER NOT NULL DEFAULT 0,
+            prepare_state TEXT NOT NULL DEFAULT 'preparing',
+            prepare_primary_script_id TEXT,
+            prepare_backup_script_id TEXT,
+            prepare_error TEXT,
+            pending_cold_demote_node_id TEXT,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS failover_operations (
+            op_id TEXT PRIMARY KEY,
+            pair_id TEXT NOT NULL,
+            kind TEXT NOT NULL,
+            state TEXT NOT NULL,
+            from_node_id TEXT NOT NULL,
+            to_node_id TEXT NOT NULL,
+            demote_script_id TEXT,
+            promote_script_id TEXT,
+            cold_demote_script_id TEXT,
+            tower_b64 TEXT,
+            error TEXT,
+            started_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            completed_at INTEGER
+        );
+        ",
+    )
+    .context("creating failover tables")?;
+
     Ok(())
 }
 
@@ -142,6 +183,52 @@ pub struct LogRow {
     pub message: String,
     pub unit: Option<String>,
     pub timestamp_ms: i64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct FailoverPairRow {
+    pub pair_id: String,
+    pub primary_node_id: String,
+    pub backup_node_id: String,
+    pub staked_identity_path: String,
+    pub unstaked_identity_path: String,
+    pub symlink_path: String,
+    pub staked_pubkey: Option<String>,
+    pub auto_failover: bool,
+    pub prepare_state: String,
+    #[serde(skip_serializing)]
+    pub prepare_primary_script_id: Option<String>,
+    #[serde(skip_serializing)]
+    pub prepare_backup_script_id: Option<String>,
+    pub prepare_error: Option<String>,
+    pub pending_cold_demote_node_id: Option<String>,
+    pub created_at: i64,
+    pub updated_at: i64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct FailoverOpRow {
+    pub op_id: String,
+    pub pair_id: String,
+    pub kind: String,
+    pub state: String,
+    pub from_node_id: String,
+    pub to_node_id: String,
+    #[serde(skip_serializing)]
+    pub demote_script_id: Option<String>,
+    #[serde(skip_serializing)]
+    pub promote_script_id: Option<String>,
+    #[serde(skip_serializing)]
+    pub cold_demote_script_id: Option<String>,
+    /// Transient relay blob; persisted so a wedged promote can be diagnosed,
+    /// never returned by the API and NULLed on completion.
+    #[allow(dead_code)]
+    #[serde(skip_serializing)]
+    pub tower_b64: Option<String>,
+    pub error: Option<String>,
+    pub started_at: i64,
+    pub updated_at: i64,
+    pub completed_at: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -414,6 +501,524 @@ pub async fn complete_script_execution(
         )
         .context("complete_script_execution")?;
         Ok(())
+    })
+    .await?
+}
+
+// ---------------------------------------------------------------------------
+// Failover pairs + operations
+// ---------------------------------------------------------------------------
+
+const PAIR_SELECT_COLUMNS: &str =
+    "pair_id, primary_node_id, backup_node_id, staked_identity_path, unstaked_identity_path,
+     symlink_path, staked_pubkey, auto_failover, prepare_state, prepare_primary_script_id,
+     prepare_backup_script_id, prepare_error, pending_cold_demote_node_id, created_at, updated_at";
+
+fn row_to_pair(row: &rusqlite::Row) -> rusqlite::Result<FailoverPairRow> {
+    Ok(FailoverPairRow {
+        pair_id: row.get(0)?,
+        primary_node_id: row.get(1)?,
+        backup_node_id: row.get(2)?,
+        staked_identity_path: row.get(3)?,
+        unstaked_identity_path: row.get(4)?,
+        symlink_path: row.get(5)?,
+        staked_pubkey: row.get(6)?,
+        auto_failover: row.get::<_, i64>(7)? != 0,
+        prepare_state: row.get(8)?,
+        prepare_primary_script_id: row.get(9)?,
+        prepare_backup_script_id: row.get(10)?,
+        prepare_error: row.get(11)?,
+        pending_cold_demote_node_id: row.get(12)?,
+        created_at: row.get(13)?,
+        updated_at: row.get(14)?,
+    })
+}
+
+const OP_SELECT_COLUMNS: &str =
+    "op_id, pair_id, kind, state, from_node_id, to_node_id, demote_script_id,
+     promote_script_id, cold_demote_script_id, tower_b64, error, started_at,
+     updated_at, completed_at";
+
+fn row_to_op(row: &rusqlite::Row) -> rusqlite::Result<FailoverOpRow> {
+    Ok(FailoverOpRow {
+        op_id: row.get(0)?,
+        pair_id: row.get(1)?,
+        kind: row.get(2)?,
+        state: row.get(3)?,
+        from_node_id: row.get(4)?,
+        to_node_id: row.get(5)?,
+        demote_script_id: row.get(6)?,
+        promote_script_id: row.get(7)?,
+        cold_demote_script_id: row.get(8)?,
+        tower_b64: row.get(9)?,
+        error: row.get(10)?,
+        started_at: row.get(11)?,
+        updated_at: row.get(12)?,
+        completed_at: row.get(13)?,
+    })
+}
+
+pub async fn create_failover_pair(db: &Db, pair: &FailoverPairRow) -> Result<()> {
+    let db = db.clone();
+    let pair = pair.clone();
+    tokio::task::spawn_blocking(move || {
+        let conn = db.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
+        let now = now_epoch_secs();
+        conn.execute(
+            "INSERT INTO failover_pairs
+                (pair_id, primary_node_id, backup_node_id, staked_identity_path,
+                 unstaked_identity_path, symlink_path, auto_failover, prepare_state,
+                 prepare_primary_script_id, prepare_backup_script_id, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?11)",
+            params![
+                pair.pair_id,
+                pair.primary_node_id,
+                pair.backup_node_id,
+                pair.staked_identity_path,
+                pair.unstaked_identity_path,
+                pair.symlink_path,
+                pair.auto_failover as i64,
+                pair.prepare_state,
+                pair.prepare_primary_script_id,
+                pair.prepare_backup_script_id,
+                now,
+            ],
+        )
+        .context("create_failover_pair")?;
+        Ok(())
+    })
+    .await?
+}
+
+pub async fn get_failover_pair(db: &Db, pair_id: &str) -> Result<Option<FailoverPairRow>> {
+    let db = db.clone();
+    let pair_id = pair_id.to_owned();
+    tokio::task::spawn_blocking(move || {
+        let conn = db.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
+        let sql = format!("SELECT {PAIR_SELECT_COLUMNS} FROM failover_pairs WHERE pair_id = ?1");
+        let row = conn
+            .prepare(&sql)?
+            .query_row(params![pair_id], row_to_pair)
+            .optional()
+            .context("get_failover_pair")?;
+        Ok(row)
+    })
+    .await?
+}
+
+pub async fn get_failover_pair_by_node(db: &Db, node_id: &str) -> Result<Option<FailoverPairRow>> {
+    let db = db.clone();
+    let node_id = node_id.to_owned();
+    tokio::task::spawn_blocking(move || {
+        let conn = db.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
+        let sql = format!(
+            "SELECT {PAIR_SELECT_COLUMNS} FROM failover_pairs
+             WHERE primary_node_id = ?1 OR backup_node_id = ?1"
+        );
+        let row = conn
+            .prepare(&sql)?
+            .query_row(params![node_id], row_to_pair)
+            .optional()
+            .context("get_failover_pair_by_node")?;
+        Ok(row)
+    })
+    .await?
+}
+
+pub async fn list_failover_pairs(db: &Db) -> Result<Vec<FailoverPairRow>> {
+    let db = db.clone();
+    tokio::task::spawn_blocking(move || {
+        let conn = db.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
+        let sql = format!("SELECT {PAIR_SELECT_COLUMNS} FROM failover_pairs ORDER BY created_at");
+        let rows = conn
+            .prepare(&sql)?
+            .query_map([], row_to_pair)
+            .context("list_failover_pairs")?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(rows)
+    })
+    .await?
+}
+
+pub async fn delete_failover_pair(db: &Db, pair_id: &str) -> Result<bool> {
+    let db = db.clone();
+    let pair_id = pair_id.to_owned();
+    tokio::task::spawn_blocking(move || {
+        let conn = db.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
+        let deleted = conn
+            .execute(
+                "DELETE FROM failover_pairs WHERE pair_id = ?1",
+                params![pair_id],
+            )
+            .context("delete_failover_pair")?;
+        Ok(deleted > 0)
+    })
+    .await?
+}
+
+pub async fn set_pair_auto_failover(db: &Db, pair_id: &str, auto: bool) -> Result<()> {
+    let db = db.clone();
+    let pair_id = pair_id.to_owned();
+    tokio::task::spawn_blocking(move || {
+        let conn = db.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
+        conn.execute(
+            "UPDATE failover_pairs SET auto_failover = ?1, updated_at = ?2 WHERE pair_id = ?3",
+            params![auto as i64, now_epoch_secs(), pair_id],
+        )
+        .context("set_pair_auto_failover")?;
+        Ok(())
+    })
+    .await?
+}
+
+pub async fn set_pair_prepare_state(
+    db: &Db,
+    pair_id: &str,
+    state: &str,
+    error: Option<&str>,
+) -> Result<()> {
+    let db = db.clone();
+    let pair_id = pair_id.to_owned();
+    let state = state.to_owned();
+    let error = error.map(|e| e.to_owned());
+    tokio::task::spawn_blocking(move || {
+        let conn = db.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
+        conn.execute(
+            "UPDATE failover_pairs SET prepare_state = ?1, prepare_error = ?2, updated_at = ?3
+             WHERE pair_id = ?4",
+            params![state, error, now_epoch_secs(), pair_id],
+        )
+        .context("set_pair_prepare_state")?;
+        Ok(())
+    })
+    .await?
+}
+
+pub async fn set_pair_prepare_scripts(
+    db: &Db,
+    pair_id: &str,
+    primary_script_id: &str,
+    backup_script_id: &str,
+) -> Result<()> {
+    let db = db.clone();
+    let pair_id = pair_id.to_owned();
+    let primary_script_id = primary_script_id.to_owned();
+    let backup_script_id = backup_script_id.to_owned();
+    tokio::task::spawn_blocking(move || {
+        let conn = db.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
+        conn.execute(
+            "UPDATE failover_pairs
+             SET prepare_primary_script_id = ?1, prepare_backup_script_id = ?2,
+                 prepare_state = 'preparing', prepare_error = NULL, staked_pubkey = NULL,
+                 updated_at = ?3
+             WHERE pair_id = ?4",
+            params![primary_script_id, backup_script_id, now_epoch_secs(), pair_id],
+        )
+        .context("set_pair_prepare_scripts")?;
+        Ok(())
+    })
+    .await?
+}
+
+/// Atomically advance the prepare state machine when one side's prepare script
+/// succeeds: preparing → <role>_ready, and <other-role>_ready → ready.
+pub async fn advance_pair_prepare(db: &Db, pair_id: &str, is_primary: bool) -> Result<()> {
+    let db = db.clone();
+    let pair_id = pair_id.to_owned();
+    let (this_ready, other_ready) = if is_primary {
+        ("primary_ready", "backup_ready")
+    } else {
+        ("backup_ready", "primary_ready")
+    };
+    tokio::task::spawn_blocking(move || {
+        let conn = db.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
+        conn.execute(
+            "UPDATE failover_pairs SET
+                 prepare_state = CASE prepare_state
+                     WHEN 'preparing' THEN ?1
+                     WHEN ?2 THEN 'ready'
+                     ELSE prepare_state
+                 END,
+                 updated_at = ?3
+             WHERE pair_id = ?4",
+            params![this_ready, other_ready, now_epoch_secs(), pair_id],
+        )
+        .context("advance_pair_prepare")?;
+        Ok(())
+    })
+    .await?
+}
+
+pub async fn set_pair_staked_pubkey(db: &Db, pair_id: &str, pubkey: &str) -> Result<()> {
+    let db = db.clone();
+    let pair_id = pair_id.to_owned();
+    let pubkey = pubkey.to_owned();
+    tokio::task::spawn_blocking(move || {
+        let conn = db.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
+        conn.execute(
+            "UPDATE failover_pairs SET staked_pubkey = ?1, updated_at = ?2 WHERE pair_id = ?3",
+            params![pubkey, now_epoch_secs(), pair_id],
+        )
+        .context("set_pair_staked_pubkey")?;
+        Ok(())
+    })
+    .await?
+}
+
+/// Swap primary and backup roles. SQLite evaluates the RHS against the old row,
+/// so both columns swap atomically in one statement.
+pub async fn swap_pair_roles(db: &Db, pair_id: &str) -> Result<()> {
+    let db = db.clone();
+    let pair_id = pair_id.to_owned();
+    tokio::task::spawn_blocking(move || {
+        let conn = db.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
+        conn.execute(
+            "UPDATE failover_pairs
+             SET primary_node_id = backup_node_id, backup_node_id = primary_node_id,
+                 updated_at = ?1
+             WHERE pair_id = ?2",
+            params![now_epoch_secs(), pair_id],
+        )
+        .context("swap_pair_roles")?;
+        Ok(())
+    })
+    .await?
+}
+
+pub async fn set_pair_pending_cold_demote(
+    db: &Db,
+    pair_id: &str,
+    node_id: Option<&str>,
+) -> Result<()> {
+    let db = db.clone();
+    let pair_id = pair_id.to_owned();
+    let node_id = node_id.map(|n| n.to_owned());
+    tokio::task::spawn_blocking(move || {
+        let conn = db.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
+        conn.execute(
+            "UPDATE failover_pairs SET pending_cold_demote_node_id = ?1, updated_at = ?2
+             WHERE pair_id = ?3",
+            params![node_id, now_epoch_secs(), pair_id],
+        )
+        .context("set_pair_pending_cold_demote")?;
+        Ok(())
+    })
+    .await?
+}
+
+pub async fn insert_failover_op(db: &Db, op: &FailoverOpRow) -> Result<()> {
+    let db = db.clone();
+    let op = op.clone();
+    tokio::task::spawn_blocking(move || {
+        let conn = db.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
+        let now = now_epoch_secs();
+        conn.execute(
+            "INSERT INTO failover_operations
+                (op_id, pair_id, kind, state, from_node_id, to_node_id,
+                 demote_script_id, promote_script_id, started_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?9)",
+            params![
+                op.op_id,
+                op.pair_id,
+                op.kind,
+                op.state,
+                op.from_node_id,
+                op.to_node_id,
+                op.demote_script_id,
+                op.promote_script_id,
+                now,
+            ],
+        )
+        .context("insert_failover_op")?;
+        Ok(())
+    })
+    .await?
+}
+
+pub async fn get_active_op_for_pair(db: &Db, pair_id: &str) -> Result<Option<FailoverOpRow>> {
+    let db = db.clone();
+    let pair_id = pair_id.to_owned();
+    tokio::task::spawn_blocking(move || {
+        let conn = db.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
+        let sql = format!(
+            "SELECT {OP_SELECT_COLUMNS} FROM failover_operations
+             WHERE pair_id = ?1 AND state IN ('pending_demote', 'pending_promote')
+             ORDER BY started_at DESC LIMIT 1"
+        );
+        let row = conn
+            .prepare(&sql)?
+            .query_row(params![pair_id], row_to_op)
+            .optional()
+            .context("get_active_op_for_pair")?;
+        Ok(row)
+    })
+    .await?
+}
+
+pub async fn get_latest_op_for_pair(db: &Db, pair_id: &str) -> Result<Option<FailoverOpRow>> {
+    let db = db.clone();
+    let pair_id = pair_id.to_owned();
+    tokio::task::spawn_blocking(move || {
+        let conn = db.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
+        let sql = format!(
+            "SELECT {OP_SELECT_COLUMNS} FROM failover_operations
+             WHERE pair_id = ?1 ORDER BY started_at DESC LIMIT 1"
+        );
+        let row = conn
+            .prepare(&sql)?
+            .query_row(params![pair_id], row_to_op)
+            .optional()
+            .context("get_latest_op_for_pair")?;
+        Ok(row)
+    })
+    .await?
+}
+
+pub async fn get_op_by_script_id(db: &Db, script_id: &str) -> Result<Option<FailoverOpRow>> {
+    let db = db.clone();
+    let script_id = script_id.to_owned();
+    tokio::task::spawn_blocking(move || {
+        let conn = db.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
+        let sql = format!(
+            "SELECT {OP_SELECT_COLUMNS} FROM failover_operations
+             WHERE demote_script_id = ?1 OR promote_script_id = ?1 OR cold_demote_script_id = ?1"
+        );
+        let row = conn
+            .prepare(&sql)?
+            .query_row(params![script_id], row_to_op)
+            .optional()
+            .context("get_op_by_script_id")?;
+        Ok(row)
+    })
+    .await?
+}
+
+/// Advance an op's state. Terminal states also stamp completed_at and clear the
+/// transient tower blob.
+pub async fn update_op_state(
+    db: &Db,
+    op_id: &str,
+    state: &str,
+    error: Option<&str>,
+) -> Result<()> {
+    let db = db.clone();
+    let op_id = op_id.to_owned();
+    let state = state.to_owned();
+    let error = error.map(|e| e.to_owned());
+    tokio::task::spawn_blocking(move || {
+        let conn = db.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
+        let now = now_epoch_secs();
+        let terminal = matches!(state.as_str(), "complete" | "failed");
+        if terminal {
+            conn.execute(
+                "UPDATE failover_operations
+                 SET state = ?1, error = ?2, updated_at = ?3, completed_at = ?3, tower_b64 = NULL
+                 WHERE op_id = ?4",
+                params![state, error, now, op_id],
+            )
+        } else {
+            conn.execute(
+                "UPDATE failover_operations
+                 SET state = ?1, error = ?2, updated_at = ?3 WHERE op_id = ?4",
+                params![state, error, now, op_id],
+            )
+        }
+        .context("update_op_state")?;
+        Ok(())
+    })
+    .await?
+}
+
+/// Record the promote dispatch: transition to pending_promote with the promote
+/// script ID and the (already validated) tower blob for potential retries.
+pub async fn set_op_promote(
+    db: &Db,
+    op_id: &str,
+    promote_script_id: &str,
+    tower_b64: Option<&str>,
+) -> Result<()> {
+    let db = db.clone();
+    let op_id = op_id.to_owned();
+    let promote_script_id = promote_script_id.to_owned();
+    let tower_b64 = tower_b64.map(|t| t.to_owned());
+    tokio::task::spawn_blocking(move || {
+        let conn = db.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
+        conn.execute(
+            "UPDATE failover_operations
+             SET state = 'pending_promote', promote_script_id = ?1, tower_b64 = ?2, updated_at = ?3
+             WHERE op_id = ?4",
+            params![promote_script_id, tower_b64, now_epoch_secs(), op_id],
+        )
+        .context("set_op_promote")?;
+        Ok(())
+    })
+    .await?
+}
+
+pub async fn set_op_cold_demote_script(db: &Db, op_id: &str, script_id: &str) -> Result<()> {
+    let db = db.clone();
+    let op_id = op_id.to_owned();
+    let script_id = script_id.to_owned();
+    tokio::task::spawn_blocking(move || {
+        let conn = db.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
+        conn.execute(
+            "UPDATE failover_operations SET cold_demote_script_id = ?1, updated_at = ?2
+             WHERE op_id = ?3",
+            params![script_id, now_epoch_secs(), op_id],
+        )
+        .context("set_op_cold_demote_script")?;
+        Ok(())
+    })
+    .await?
+}
+
+/// Fail any op stuck in a pending state whose last update is older than the cutoff.
+/// Returns the ops that were failed.
+pub async fn fail_stale_ops(db: &Db, max_age_secs: i64) -> Result<Vec<FailoverOpRow>> {
+    let db = db.clone();
+    tokio::task::spawn_blocking(move || {
+        let conn = db.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
+        let now = now_epoch_secs();
+        let cutoff = now - max_age_secs;
+        let sql = format!(
+            "SELECT {OP_SELECT_COLUMNS} FROM failover_operations
+             WHERE state IN ('pending_demote', 'pending_promote') AND updated_at < ?1"
+        );
+        let stale = conn
+            .prepare(&sql)?
+            .query_map(params![cutoff], row_to_op)
+            .context("fail_stale_ops select")?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        for op in &stale {
+            conn.execute(
+                "UPDATE failover_operations
+                 SET state = 'failed', error = 'timed out waiting for script result',
+                     updated_at = ?1, completed_at = ?1, tower_b64 = NULL
+                 WHERE op_id = ?2",
+                params![now, op.op_id],
+            )
+            .context("fail_stale_ops update")?;
+        }
+        Ok(stale)
+    })
+    .await?
+}
+
+/// Pairs with a crashed ex-primary still awaiting demote-on-reconnect.
+pub async fn list_pending_cold_demotes(db: &Db) -> Result<Vec<FailoverPairRow>> {
+    let db = db.clone();
+    tokio::task::spawn_blocking(move || {
+        let conn = db.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
+        let sql = format!(
+            "SELECT {PAIR_SELECT_COLUMNS} FROM failover_pairs
+             WHERE pending_cold_demote_node_id IS NOT NULL"
+        );
+        let rows = conn
+            .prepare(&sql)?
+            .query_map([], row_to_pair)
+            .context("list_pending_cold_demotes")?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(rows)
     })
     .await?
 }
@@ -868,6 +1473,168 @@ mod tests {
             get_setting(&db, "grafana_url").await.unwrap().as_deref(),
             Some("https://new.example.com")
         );
+    }
+
+    fn sample_pair() -> FailoverPairRow {
+        FailoverPairRow {
+            pair_id: "fo-test".to_string(),
+            primary_node_id: "node-a".to_string(),
+            backup_node_id: "node-b".to_string(),
+            staked_identity_path: "/home/sol/validator-keypair.json".to_string(),
+            unstaked_identity_path: "/home/sol/unstaked-identity.json".to_string(),
+            symlink_path: "/home/sol/pillar-identity.json".to_string(),
+            staked_pubkey: None,
+            auto_failover: false,
+            prepare_state: "preparing".to_string(),
+            prepare_primary_script_id: Some("script-p".to_string()),
+            prepare_backup_script_id: Some("script-b".to_string()),
+            prepare_error: None,
+            pending_cold_demote_node_id: None,
+            created_at: 0,
+            updated_at: 0,
+        }
+    }
+
+    fn sample_op() -> FailoverOpRow {
+        FailoverOpRow {
+            op_id: "op-1".to_string(),
+            pair_id: "fo-test".to_string(),
+            kind: "graceful".to_string(),
+            state: "pending_demote".to_string(),
+            from_node_id: "node-a".to_string(),
+            to_node_id: "node-b".to_string(),
+            demote_script_id: Some("script-d".to_string()),
+            promote_script_id: None,
+            cold_demote_script_id: None,
+            tower_b64: None,
+            error: None,
+            started_at: 0,
+            updated_at: 0,
+            completed_at: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn failover_pair_crud() {
+        let db = test_db();
+        create_failover_pair(&db, &sample_pair()).await.unwrap();
+
+        let pair = get_failover_pair(&db, "fo-test").await.unwrap().unwrap();
+        assert_eq!(pair.primary_node_id, "node-a");
+        assert_eq!(pair.prepare_state, "preparing");
+        assert!(!pair.auto_failover);
+
+        // Lookup by either node
+        assert!(get_failover_pair_by_node(&db, "node-a").await.unwrap().is_some());
+        assert!(get_failover_pair_by_node(&db, "node-b").await.unwrap().is_some());
+        assert!(get_failover_pair_by_node(&db, "node-c").await.unwrap().is_none());
+
+        set_pair_auto_failover(&db, "fo-test", true).await.unwrap();
+        set_pair_staked_pubkey(&db, "fo-test", "7Np41oeYq5").await.unwrap();
+        set_pair_prepare_state(&db, "fo-test", "ready", None).await.unwrap();
+        let pair = get_failover_pair(&db, "fo-test").await.unwrap().unwrap();
+        assert!(pair.auto_failover);
+        assert_eq!(pair.staked_pubkey.as_deref(), Some("7Np41oeYq5"));
+        assert_eq!(pair.prepare_state, "ready");
+
+        assert!(delete_failover_pair(&db, "fo-test").await.unwrap());
+        assert!(get_failover_pair(&db, "fo-test").await.unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn failover_pair_unique_nodes() {
+        let db = test_db();
+        create_failover_pair(&db, &sample_pair()).await.unwrap();
+
+        // node-a is already a primary — second pair reusing it must fail
+        let mut dup = sample_pair();
+        dup.pair_id = "fo-dup".to_string();
+        dup.backup_node_id = "node-c".to_string();
+        assert!(create_failover_pair(&db, &dup).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn failover_role_swap() {
+        let db = test_db();
+        create_failover_pair(&db, &sample_pair()).await.unwrap();
+
+        swap_pair_roles(&db, "fo-test").await.unwrap();
+        let pair = get_failover_pair(&db, "fo-test").await.unwrap().unwrap();
+        assert_eq!(pair.primary_node_id, "node-b");
+        assert_eq!(pair.backup_node_id, "node-a");
+
+        // Swap back
+        swap_pair_roles(&db, "fo-test").await.unwrap();
+        let pair = get_failover_pair(&db, "fo-test").await.unwrap().unwrap();
+        assert_eq!(pair.primary_node_id, "node-a");
+    }
+
+    #[tokio::test]
+    async fn failover_op_lifecycle() {
+        let db = test_db();
+        create_failover_pair(&db, &sample_pair()).await.unwrap();
+        insert_failover_op(&db, &sample_op()).await.unwrap();
+
+        let op = get_active_op_for_pair(&db, "fo-test").await.unwrap().unwrap();
+        assert_eq!(op.state, "pending_demote");
+
+        // Lookup by any script id column
+        let op = get_op_by_script_id(&db, "script-d").await.unwrap().unwrap();
+        assert_eq!(op.op_id, "op-1");
+        assert!(get_op_by_script_id(&db, "nope").await.unwrap().is_none());
+
+        set_op_promote(&db, "op-1", "script-pr", Some("dG93ZXI=")).await.unwrap();
+        let op = get_op_by_script_id(&db, "script-pr").await.unwrap().unwrap();
+        assert_eq!(op.state, "pending_promote");
+        assert_eq!(op.tower_b64.as_deref(), Some("dG93ZXI="));
+
+        // Terminal state clears the tower blob and stamps completion
+        update_op_state(&db, "op-1", "complete", None).await.unwrap();
+        let op = get_latest_op_for_pair(&db, "fo-test").await.unwrap().unwrap();
+        assert_eq!(op.state, "complete");
+        assert!(op.tower_b64.is_none());
+        assert!(op.completed_at.is_some());
+        assert!(get_active_op_for_pair(&db, "fo-test").await.unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn failover_stale_op_timeout() {
+        let db = test_db();
+        create_failover_pair(&db, &sample_pair()).await.unwrap();
+        insert_failover_op(&db, &sample_op()).await.unwrap();
+
+        // Fresh op is not stale
+        let failed = fail_stale_ops(&db, 3600).await.unwrap();
+        assert!(failed.is_empty());
+
+        // Backdate the op and expire it
+        {
+            let conn = db.lock().unwrap();
+            conn.execute(
+                "UPDATE failover_operations SET updated_at = updated_at - 7200",
+                [],
+            )
+            .unwrap();
+        }
+        let failed = fail_stale_ops(&db, 3600).await.unwrap();
+        assert_eq!(failed.len(), 1);
+        let op = get_latest_op_for_pair(&db, "fo-test").await.unwrap().unwrap();
+        assert_eq!(op.state, "failed");
+    }
+
+    #[tokio::test]
+    async fn failover_pending_cold_demote() {
+        let db = test_db();
+        create_failover_pair(&db, &sample_pair()).await.unwrap();
+
+        assert!(list_pending_cold_demotes(&db).await.unwrap().is_empty());
+        set_pair_pending_cold_demote(&db, "fo-test", Some("node-a")).await.unwrap();
+        let pending = list_pending_cold_demotes(&db).await.unwrap();
+        assert_eq!(pending.len(), 1);
+        assert_eq!(pending[0].pending_cold_demote_node_id.as_deref(), Some("node-a"));
+
+        set_pair_pending_cold_demote(&db, "fo-test", None).await.unwrap();
+        assert!(list_pending_cold_demotes(&db).await.unwrap().is_empty());
     }
 
     #[tokio::test]

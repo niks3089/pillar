@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { fetchNode, fetchNodeLogs, restartNode, recoverNode, deleteNode, stopNode, cancelDeployment, provisionNode, fetchVersionInfo, upgradeAgent } from '../api'
 import type { Node, LogEntry, ProvisionRequest, VersionInfo } from '../api'
+import FailoverCard from '../components/FailoverCard'
 
 const STATE_BADGE_CLASSES: Record<string, string> = {
   unprovisioned: 'bg-zinc-500/10 text-zinc-400 border-zinc-500/20',
@@ -599,8 +600,8 @@ function NodeDetail() {
         ) : (
           <div className="p-8 text-center bg-black/20 rounded-lg border border-white/5 border-dashed">
             <p className="text-zinc-400 text-sm mb-4">This node has not been configured yet.</p>
-            <button 
-              className="px-4 py-2 text-sm font-medium text-white bg-purple-600 hover:bg-purple-500 rounded-md shadow-sm transition-all" 
+            <button
+              className="px-4 py-2 text-sm font-medium text-white bg-purple-600 hover:bg-purple-500 rounded-md shadow-sm transition-all"
               onClick={() => setShowProvision(true)}
             >
               Setup Validator Now
@@ -608,6 +609,11 @@ function NodeDetail() {
           </div>
         )}
       </div>
+
+      {/* Failover — agave/jito validators with a stored provision config only */}
+      {!!node.provision_config_json && ['agave', 'jito'].includes(node.client ?? '') && id && (
+        <FailoverCard nodeId={id} />
+      )}
 
       {showProvision && (
         <div className="fixed inset-0 z-50 flex justify-center py-10 px-4 bg-black/60 backdrop-blur-sm overflow-y-auto" onClick={() => setShowProvision(false)}>

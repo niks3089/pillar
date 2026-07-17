@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+set -euo pipefail
+echo "=== Pillar: Demoting primary to unstaked identity ==="
+
+echo "Waiting for a safe restart window (this can take several minutes)..."
+{{binary_path}} -l {{ledger_path}} wait-for-restart-window --min-idle-time 2 --skip-new-snapshot-check
+
+{{binary_path}} -l {{ledger_path}} set-identity {{unstaked_identity_path}}
+ln -sfn {{unstaked_identity_path}} {{symlink_path}}
+echo "Now running with unstaked identity"
+
+# Relay the tower file (voting history) to the controller via stdout so the
+# backup can take over without risking a double vote.
+TOWER="{{ledger_path}}/tower-1_9-{{staked_pubkey}}.bin"
+echo "---TOWER-B64-BEGIN---"
+if [ -f "$TOWER" ]; then
+  base64 -w0 "$TOWER"
+  echo ""
+fi
+echo "---TOWER-B64-END---"
+echo "=== Demote complete ==="

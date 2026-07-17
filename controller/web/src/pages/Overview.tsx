@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { fetchOverview, fetchNodes, fetchOnboardCommand } from '../api'
-import type { FleetOverview, Node } from '../api'
+import { fetchOverview, fetchNodes, fetchOnboardCommand, fetchFailoverPairs } from '../api'
+import type { FleetOverview, Node, FailoverPair } from '../api'
 
 const STATE_BADGE_CLASSES: Record<string, string> = {
   healthy: 'bg-green-500/10 text-green-400 border-green-500/20',
@@ -35,12 +35,14 @@ function Overview() {
   const [nodes, setNodes] = useState<Node[]>([])
   const [onboardCmd, setOnboardCmd] = useState('')
   const [copied, setCopied] = useState(false)
+  const [pairs, setPairs] = useState<FailoverPair[]>([])
 
   const refresh = useCallback(async () => {
     try {
       const [ov, ns] = await Promise.all([fetchOverview(), fetchNodes()])
       setOverview(ov)
       setNodes(ns)
+      fetchFailoverPairs().then(setPairs).catch(() => {})
     } catch {
       // API may not be available yet
     }
@@ -114,7 +116,12 @@ function Overview() {
               const client = node.client ?? node.live_status?.client ?? '-';
               const version = node.live_status?.version ?? '-';
               const cluster = node.cluster ?? node.live_status?.cluster;
-              
+              const failoverRole = pairs.find(p => p.primary_node_id === node.node_id)
+                ? 'primary'
+                : pairs.find(p => p.backup_node_id === node.node_id)
+                  ? 'backup'
+                  : null;
+
               return (
               <tr 
                 key={node.node_id} 
@@ -126,6 +133,18 @@ function Overview() {
                   <div className="flex items-center gap-2 mb-1">
                     <div className={`w-2 h-2 rounded-full shrink-0 ${node.live_status ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.4)]' : 'bg-red-500'}`} title={node.live_status ? 'Connected' : 'Disconnected'}></div>
                     <div className="text-sm font-medium text-zinc-200">{node.node_id}</div>
+                    {failoverRole && (
+                      <span
+                        className={`inline-flex items-center px-1.5 py-px text-[10px] font-semibold uppercase tracking-wider rounded border ${
+                          failoverRole === 'primary'
+                            ? 'bg-amber-500/10 text-amber-400 border-amber-500/20'
+                            : 'bg-blue-500/10 text-blue-400 border-blue-500/20'
+                        }`}
+                        title={failoverRole === 'primary' ? 'Failover primary (staked voter)' : 'Failover backup (hot spare)'}
+                      >
+                        {failoverRole === 'primary' ? 'P' : 'B'}
+                      </span>
+                    )}
                   </div>
                   <div className="text-xs text-zinc-500 font-mono ml-4 flex gap-2 items-center">
                     {node.hostname && node.hostname !== node.node_id ? <span>{node.hostname}</span> : null}
