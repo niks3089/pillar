@@ -362,9 +362,6 @@ async fn run_result_reporter(
 
 /// Build a tonic Channel with optional server TLS from the controller config.
 pub async fn build_channel(config: &ControllerConfig) -> Result<Channel, tonic::transport::Error> {
-    // tonic only applies tls_config on https:// URIs. With a CA configured but an
-    // http:// endpoint it silently dials plaintext, which a TLS-enabled controller
-    // rejects with an opaque "h2 protocol error: FRAME_SIZE_ERROR" — so coerce.
     let mut endpoint_url = config.endpoint.clone();
     if !config.ca_cert_path.is_empty() && endpoint_url.starts_with("http://") {
         endpoint_url = endpoint_url.replacen("http://", "https://", 1);

@@ -37,9 +37,6 @@ if [ -z "${CURRENT:-}" ]; then
     # Base build tools; Firedancer's deps.sh installs the rest.
     if ! dpkg -s build-essential clang cmake gcc make pkg-config >/dev/null 2>&1; then
       echo "Installing base build tools..."
-      # NOT `a && b`: set -e ignores failures in any command of an &&-list except
-      # the last, so a failed apt-get would be silently skipped and the build
-      # would fail later with confusing linker errors.
       sudo apt-get update -qq
       sudo apt-get install -y -qq build-essential clang cmake gcc make pkg-config
     fi

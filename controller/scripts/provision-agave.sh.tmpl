@@ -55,9 +55,6 @@ if [ -z "${CURRENT:-}" ]; then
     # Install build deps if missing
     if ! dpkg -s build-essential clang cmake libudev-dev libssl-dev zlib1g-dev pkg-config libclang-dev protobuf-compiler >/dev/null 2>&1; then
       echo "Installing build dependencies..."
-      # NOT `a && b`: set -e ignores failures in any command of an &&-list except
-      # the last, so a failed apt-get would be silently skipped and the build
-      # would fail later with confusing linker errors.
       sudo apt-get update -qq
       sudo apt-get install -y -qq build-essential clang cmake libudev-dev libssl-dev zlib1g-dev pkg-config libclang-dev protobuf-compiler
     fi

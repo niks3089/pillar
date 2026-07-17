@@ -533,8 +533,6 @@ else
     journalctl -u pillar-controller --no-pager -n 10
 fi
 
-# The controller seeds a random admin password on first start and logs it once —
-# surface it here so operators aren't left hunting through the journal.
 ADMIN_PW=$(journalctl -u pillar-controller --no-pager 2>/dev/null \
     | sed -n 's/.*generated initial admin credentials.*password=\([A-Za-z0-9]*\).*/\1/p' | tail -1)
 
@@ -546,8 +544,7 @@ if [[ "$DASHBOARDS_COPIED" != "true" ]]; then
     section "Fetching dashboards from controller API"
 
     CONTROLLER_URL="http://localhost:${HTTP_PORT}"
-    # Wait for controller to be ready (up to 15 seconds). Must be a public
-    # endpoint — authenticated ones always return 401 here.
+    # Wait for controller to be ready (up to 15 seconds)
     for i in 1 2 3 4 5; do
         if curl -sf "$CONTROLLER_URL/api/auth/check" >/dev/null 2>&1; then
             break

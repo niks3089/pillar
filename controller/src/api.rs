@@ -49,8 +49,6 @@ pub fn router(state: ApiState) -> Router {
         .route("/api/auth/check", get(crate::auth::auth_check))
         .route("/api/certs/client-bundle", get(client_cert_bundle))
         .route("/metrics", get(crate::metrics_endpoint::metrics_handler))
-        // Static Grafana dashboard JSON (public in the repo, no secrets) — fetched
-        // unauthenticated by install-controller.sh to provision Grafana.
         .route(
             "/api/dashboards/fleet-overview",
             get(dashboard_fleet_overview),
@@ -946,8 +944,6 @@ fi"#,
     // We use the new service name as fallback since we don't have DB access here.
     let old_service_name = service_name.clone();
 
-    // The validator runs as sol, which typically can't create directories at the
-    // configured data roots (e.g. /mnt/ledger) — create and chown them up front.
     let data_dirs = [&req.ledger_path, &req.snapshot_path, &req.accounts_path]
         .iter()
         .filter(|p| !p.is_empty())
@@ -957,9 +953,7 @@ fi"#,
     let data_dirs_section = if data_dirs.is_empty() {
         String::new()
     } else {
-        format!(
-            "# Ensure validator data directories exist and are owned by sol\nsudo mkdir -p {data_dirs}\nsudo chown sol:sol {data_dirs}"
-        )
+        format!("sudo mkdir -p {data_dirs}\nsudo chown sol:sol {data_dirs}")
     };
 
     let mut vars = HashMap::new();
