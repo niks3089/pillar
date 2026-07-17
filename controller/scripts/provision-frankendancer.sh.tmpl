@@ -11,6 +11,8 @@ echo "{{sha256}}  $STAGING/binary" | sha256sum -c
 sudo install -m 755 "$STAGING/binary" {{binary_path}}
 echo "Binary installed to {{binary_path}}"
 
+{{data_dirs_section}}
+
 # Stop existing service if running
 sudo systemctl stop {{old_service_name}} 2>/dev/null || true
 

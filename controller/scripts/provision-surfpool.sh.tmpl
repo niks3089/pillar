@@ -24,6 +24,8 @@ if [ ! -x "{{binary_path}}" ]; then
 fi
 echo "surfpool ready at {{binary_path}}"
 
+{{data_dirs_section}}
+
 # Stop existing service if running
 sudo systemctl stop {{old_service_name}} 2>/dev/null || true
 

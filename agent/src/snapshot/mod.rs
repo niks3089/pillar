@@ -100,7 +100,7 @@ pub async fn scan_snapshot_slots(dir: &Path) -> PillarResult<(Option<u64>, Optio
         }
 
         if let Some((base, end)) = parse_incremental_slots(&name) {
-            let better = highest_incr.map_or(true, |(_, prev_end)| end > prev_end);
+            let better = highest_incr.is_none_or(|(_, prev_end)| end > prev_end);
             if better {
                 highest_incr = Some((base, end));
             }
