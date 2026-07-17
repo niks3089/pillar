@@ -49,6 +49,11 @@ pub fn router(state: ApiState) -> Router {
         .route("/api/auth/check", get(crate::auth::auth_check))
         .route("/api/certs/client-bundle", get(client_cert_bundle))
         .route("/metrics", get(crate::metrics_endpoint::metrics_handler))
+        .route(
+            "/api/dashboards/fleet-overview",
+            get(dashboard_fleet_overview),
+        )
+        .route("/api/dashboards/node-detail", get(dashboard_node_detail))
         .with_state(state.clone());
 
     // Protected routes (auth required)
@@ -78,11 +83,6 @@ pub fn router(state: ApiState) -> Router {
             "/api/auth/credentials",
             put(crate::auth::change_credentials),
         )
-        .route(
-            "/api/dashboards/fleet-overview",
-            get(dashboard_fleet_overview),
-        )
-        .route("/api/dashboards/node-detail", get(dashboard_node_detail))
         .layer(axum::middleware::from_fn_with_state(
             state.clone(),
             crate::auth::require_auth,
@@ -944,7 +944,20 @@ fi"#,
     // We use the new service name as fallback since we don't have DB access here.
     let old_service_name = service_name.clone();
 
+    let data_dirs = [&req.ledger_path, &req.snapshot_path, &req.accounts_path]
+        .iter()
+        .filter(|p| !p.is_empty())
+        .map(|p| p.as_str())
+        .collect::<Vec<_>>()
+        .join(" ");
+    let data_dirs_section = if data_dirs.is_empty() {
+        String::new()
+    } else {
+        format!("sudo mkdir -p {data_dirs}\nsudo chown sol:sol {data_dirs}")
+    };
+
     let mut vars = HashMap::new();
+    vars.insert("data_dirs_section".to_string(), data_dirs_section);
     vars.insert("version".to_string(), req.version.clone());
     vars.insert("cluster".to_string(), req.cluster.clone());
     vars.insert("download_url".to_string(), req.download_url.clone());

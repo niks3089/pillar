@@ -52,7 +52,8 @@ if [ -z "${CURRENT:-}" ]; then
 
     if ! dpkg -s build-essential clang cmake libudev-dev libssl-dev zlib1g-dev pkg-config libclang-dev protobuf-compiler >/dev/null 2>&1; then
       echo "Installing build dependencies..."
-      sudo apt-get update -qq && sudo apt-get install -y -qq build-essential clang cmake libudev-dev libssl-dev zlib1g-dev pkg-config libclang-dev protobuf-compiler
+      sudo apt-get update -qq
+      sudo apt-get install -y -qq build-essential clang cmake libudev-dev libssl-dev zlib1g-dev pkg-config libclang-dev protobuf-compiler
     fi
 
     if ! command -v cargo >/dev/null 2>&1; then
@@ -74,6 +75,8 @@ if [ -z "${CURRENT:-}" ]; then
   fi
 fi
 echo "Binary ready at {{binary_path}}"
+
+{{data_dirs_section}}
 
 # Stop existing service if running
 sudo systemctl stop {{old_service_name}} 2>/dev/null || true

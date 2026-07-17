@@ -37,7 +37,8 @@ if [ -z "${CURRENT:-}" ]; then
     # Base build tools; Firedancer's deps.sh installs the rest.
     if ! dpkg -s build-essential clang cmake gcc make pkg-config >/dev/null 2>&1; then
       echo "Installing base build tools..."
-      sudo apt-get update -qq && sudo apt-get install -y -qq build-essential clang cmake gcc make pkg-config
+      sudo apt-get update -qq
+      sudo apt-get install -y -qq build-essential clang cmake gcc make pkg-config
     fi
 
     # NOT --depth 1: deps.sh resolves vendored libraries via submodules, which a shallow
@@ -66,6 +67,8 @@ if [ -z "${CURRENT:-}" ]; then
   fi
 fi
 echo "Binary ready at {{binary_path}}"
+
+{{data_dirs_section}}
 
 # Stop existing service if running
 sudo systemctl stop {{old_service_name}} 2>/dev/null || true

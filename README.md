@@ -75,7 +75,9 @@ curl -sSL https://github.com/niks3089/pillar/releases/latest/download/install-co
   | sudo bash -s -- --external-url https://<controller-host>:50051
 ```
 
-The default login is `admin` / `admin` — **change it before any real use.**
+The controller generates a random `admin` password on first start — the installer prints
+it, and it is also logged once (`journalctl -u pillar-controller | grep "initial admin
+credentials"`). **Change it after first login.**
 
 **2. Add a node.** Open the controller UI, copy the onboarding command it generates (it
 includes the controller URL and a token), and run it on the validator host:

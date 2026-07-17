@@ -362,7 +362,12 @@ async fn run_result_reporter(
 
 /// Build a tonic Channel with optional server TLS from the controller config.
 pub async fn build_channel(config: &ControllerConfig) -> Result<Channel, tonic::transport::Error> {
-    let endpoint = Channel::from_shared(config.endpoint.clone()).expect("valid endpoint URI");
+    let mut endpoint_url = config.endpoint.clone();
+    if !config.ca_cert_path.is_empty() && endpoint_url.starts_with("http://") {
+        endpoint_url = endpoint_url.replacen("http://", "https://", 1);
+        tracing::warn!(endpoint = %endpoint_url, "CA cert configured; rewrote controller endpoint scheme to https");
+    }
+    let endpoint = Channel::from_shared(endpoint_url).expect("valid endpoint URI");
 
     let endpoint = if !config.ca_cert_path.is_empty() {
         let ca =
