@@ -796,7 +796,7 @@
       },
       "targets": [
         {
-          "expr": "pillar_snapshot_download_bytes{node_id=\"$node_id\"} / pillar_snapshot_download_total_bytes{node_id=\"$node_id\"} * 100",
+          "expr": "pillar_snapshot_download_bytes{node_id=\"$node_id\"} / clamp_min(pillar_snapshot_download_total_bytes{node_id=\"$node_id\"}, 1) * 100",
           "legendFormat": "progress %",
           "refId": "A"
         }

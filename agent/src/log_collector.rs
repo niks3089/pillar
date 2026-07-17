@@ -94,6 +94,19 @@ fn detect_snapshot_progress(message: &str) -> Option<SnapshotProgress> {
         }
     }
 
+    // "✨ Downloaded <url> (<total> bytes, ...)" — agave v2+ completion line
+    let sparkled = body.trim_start().trim_start_matches('✨').trim_start();
+    if sparkled.starts_with("Downloaded ") {
+        if let Some(paren) = sparkled.split('(').nth(1) {
+            let total: u64 = paren.split_whitespace().next()?.parse().ok()?;
+            return Some(SnapshotProgress {
+                downloaded_bytes: total,
+                total_bytes: total,
+                speed_bps: 0.0,
+            });
+        }
+    }
+
     None
 }
 
@@ -103,9 +116,10 @@ fn is_bootstrap_message(message: &str) -> bool {
     let body = strip_tracing_prefix(message);
 
     // Check for snapshot download progress
+    let unsparkled = body.trim_start().trim_start_matches('\u{2728}').trim_start();
     if body.starts_with("Downloading ")
         || body.starts_with("downloaded ")
-        || (body.starts_with("Downloaded ") && body.contains(" bytes"))
+        || (unsparkled.starts_with("Downloaded ") && unsparkled.contains(" bytes"))
     {
         return true;
     }
@@ -598,6 +612,15 @@ mod tests {
         let progress = detect_snapshot_progress(msg).unwrap();
         assert_eq!(progress.downloaded_bytes, 548684968);
         assert!(progress.speed_bps > 13_000_000.0);
+    }
+
+    #[test]
+    fn detects_the_sparkle_completion_line() {
+        let msg = "[2026-07-17T08:51:17.341Z INFO  solana_file_download]   \u{2728} Downloaded http://64.130.44.103:8899/snapshot-433335366-abc.tar.zst (108169226098 bytes, 100 MB/s)";
+        let p = detect_snapshot_progress(msg).expect("should parse");
+        assert_eq!(p.downloaded_bytes, 108169226098);
+        assert_eq!(p.total_bytes, 108169226098);
+        assert!(is_bootstrap_message(msg));
     }
 
     #[test]
