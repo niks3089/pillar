@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.1](https://github.com/niks3089/pillar/compare/pillar-agent-v0.4.0...pillar-agent-v0.4.1) (2026-07-17)
+
+
+### Bug Fixes
+
+* close onboarding and from-source provisioning gaps ([0f08cea](https://github.com/niks3089/pillar/commit/0f08cea21fc7d5dee15dad4c6d3a0f8acc37c279))
+* close onboarding and from-source provisioning gaps ([2828c89](https://github.com/niks3089/pillar/commit/2828c8966822b96f2db2a6311cb9b9b64b387470))
+
 ## [0.4.0](https://github.com/niks3089/pillar/compare/pillar-agent-v0.3.1...pillar-agent-v0.4.0) (2026-06-25)
 
 
