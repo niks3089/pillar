@@ -172,9 +172,9 @@ pub async fn upsert_node(db: &Db, req: &RegisterNodeRequest, ip_address: &str) -
                  agent_version, ip_address, registered_at, lifecycle_state)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, 'registered')
              ON CONFLICT(node_id) DO UPDATE SET
-                 role=excluded.role,
-                 client=excluded.client,
-                 cluster=excluded.cluster,
+                 role=COALESCE(excluded.role, nodes.role),
+                 client=COALESCE(excluded.client, nodes.client),
+                 cluster=COALESCE(excluded.cluster, nodes.cluster),
                  hostname=excluded.hostname,
                  architecture=excluded.architecture,
                  os=excluded.os,
@@ -327,15 +327,23 @@ pub async fn set_lifecycle_state(db: &Db, node_id: &str, state: &str) -> Result<
     .await?
 }
 
-pub async fn set_provision_config(db: &Db, node_id: &str, config_json: &str) -> Result<()> {
+pub async fn set_provision_config(
+    db: &Db,
+    node_id: &str,
+    config_json: &str,
+    client: &str,
+    cluster: &str,
+) -> Result<()> {
     let db = db.clone();
     let node_id = node_id.to_owned();
     let config_json = config_json.to_owned();
+    let client = client.to_owned();
+    let cluster = cluster.to_owned();
     tokio::task::spawn_blocking(move || {
         let conn = db.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
         conn.execute(
-            "UPDATE nodes SET provision_config_json = ?1 WHERE node_id = ?2",
-            params![config_json, node_id],
+            "UPDATE nodes SET provision_config_json = ?1, client = ?2, cluster = ?3 WHERE node_id = ?4",
+            params![config_json, client, cluster, node_id],
         )
         .context("set_provision_config")?;
         Ok(())
