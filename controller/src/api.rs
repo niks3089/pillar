@@ -1073,7 +1073,10 @@ async fn provision_node(
                 tracing::warn!(error = %e, "failed to set lifecycle_state to provisioning");
             }
             // Store provision config
-            if let Err(e) = db::set_provision_config(&state.db, &id, &provision_json).await {
+            if let Err(e) =
+                db::set_provision_config(&state.db, &id, &provision_json, &req.client, &req.cluster)
+                    .await
+            {
                 tracing::warn!(error = %e, "failed to store provision config");
             }
             // Record script execution
