@@ -59,6 +59,7 @@ pub struct GrpcServer {
     self_ip: String,
     /// When true, every RPC's claimed node_id must match the client cert CN (mTLS).
     require_client_certs: bool,
+    failover: crate::failover::FailoverEngine,
 }
 
 impl GrpcServer {
@@ -67,6 +68,7 @@ impl GrpcServer {
         registry: NodeRegistry,
         external_url: &str,
         require_client_certs: bool,
+        failover: crate::failover::FailoverEngine,
     ) -> Self {
         let host = external_url
             .trim_start_matches("http://")
@@ -91,6 +93,7 @@ impl GrpcServer {
             registry,
             self_ip,
             require_client_certs,
+            failover,
         }
     }
 
@@ -204,6 +207,10 @@ impl PillarController for GrpcServer {
             self.emit_log(&req.node_id, level, &msg).await;
         }
 
+        // Cheap map lookup unless this node is a crashed ex-primary that still
+        // owes a demote-on-reconnect.
+        self.failover.on_node_seen(&req.node_id).await;
+
         Ok(Response::new(ReportStatusResponse {}))
     }
 
@@ -270,6 +277,9 @@ impl PillarController for GrpcServer {
         {
             tracing::warn!(error = %e, "failed to update script execution record");
         }
+
+        // Advance any failover prepare/demote/promote waiting on this script.
+        self.failover.on_script_result(&result).await;
 
         // Emit a controller log for the node
         let now_ms = std::time::SystemTime::now()

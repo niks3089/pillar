@@ -23,6 +23,10 @@ pub mod scripts {
     pub const RECOVER: &str = include_str!("../scripts/recover.sh.tmpl");
     pub const RESTART: &str = include_str!("../scripts/restart.sh.tmpl");
     pub const STOP: &str = include_str!("../scripts/stop.sh.tmpl");
+    pub const FAILOVER_PREPARE: &str = include_str!("../scripts/failover-prepare.sh.tmpl");
+    pub const FAILOVER_DEMOTE: &str = include_str!("../scripts/failover-demote.sh.tmpl");
+    pub const FAILOVER_PROMOTE: &str = include_str!("../scripts/failover-promote.sh.tmpl");
+    pub const FAILOVER_DEMOTE_COLD: &str = include_str!("../scripts/failover-demote-cold.sh.tmpl");
 }
 
 pub fn provision_template(client: &str) -> Result<&'static str, String> {

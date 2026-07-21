@@ -39,6 +39,7 @@ pub struct ApiState {
     pub api_token: String,
     pub update_info: SharedUpdateInfo,
     pub sessions: SessionStore,
+    pub failover: crate::failover::FailoverEngine,
 }
 
 pub fn router(state: ApiState) -> Router {
@@ -69,6 +70,17 @@ pub fn router(state: ApiState) -> Router {
         .route("/api/nodes/{id}/upgrade", post(upgrade_node))
         .route("/api/nodes/{id}/stop", post(stop_node))
         .route("/api/nodes/{id}/cancel", post(cancel_deployment))
+        .route(
+            "/api/failover/pairs",
+            get(list_failover_pairs).post(create_failover_pair),
+        )
+        .route(
+            "/api/failover/pairs/{id}",
+            get(get_failover_pair).delete(delete_failover_pair),
+        )
+        .route("/api/failover/pairs/{id}/auto", put(set_failover_auto))
+        .route("/api/failover/pairs/{id}/failover", post(trigger_failover))
+        .route("/api/failover/pairs/{id}/prepare", post(rerun_failover_prepare))
         .route("/api/cluster-defaults/{cluster}", get(cluster_defaults))
         .route("/api/onboard-command", get(onboard_command))
         .route("/api/version", get(version_info))
@@ -171,7 +183,7 @@ impl From<LogEntry> for SseLogEntry {
 // ---------------------------------------------------------------------------
 
 /// Generate a unique script ID.
-fn generate_script_id() -> String {
+pub(crate) fn generate_script_id() -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
     let ts = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -187,14 +199,14 @@ fn rand_u16() -> u16 {
 }
 
 /// Wrap an ExecuteScript in a ControllerCommand.
-fn wrap_script(script: ExecuteScript) -> ControllerCommand {
+pub(crate) fn wrap_script(script: ExecuteScript) -> ControllerCommand {
     ControllerCommand {
         command: Some(controller_command::Command::Execute(script)),
     }
 }
 
 /// Emit a controller-originated log entry into the node's broadcast channel and persist to DB.
-async fn emit_controller_log(
+pub(crate) async fn emit_controller_log(
     registry: &NodeRegistry,
     db: &Db,
     node_id: &str,
@@ -583,7 +595,7 @@ async fn cancel_deployment(
     }
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 struct ProvisionRequest {
     client: String,
     version: String,
@@ -983,6 +995,53 @@ fi"#,
     vars
 }
 
+/// Per-node facts the failover engine needs from a stored provision config.
+pub(crate) struct ProvisionSummary {
+    pub client: String,
+    pub ledger_path: String,
+    pub service_name: String,
+    pub binary_path: String,
+    pub identity_keypair_path: String,
+}
+
+pub(crate) fn provision_summary(config_json: &str) -> Result<ProvisionSummary, String> {
+    let req: ProvisionRequest =
+        serde_json::from_str(config_json).map_err(|e| format!("invalid provision config: {e}"))?;
+    if req.ledger_path.is_empty() {
+        return Err("provision config has no ledger path".to_string());
+    }
+    Ok(ProvisionSummary {
+        service_name: templates::service_name_for_client(&req.client).to_string(),
+        binary_path: templates::binary_path_for_client(&req.client).to_string(),
+        client: req.client,
+        ledger_path: req.ledger_path,
+        identity_keypair_path: req.identity_keypair_path,
+    })
+}
+
+/// Template vars for the failover-prepare script: the node's stored provision
+/// config re-rendered so ExecStart points --identity at the failover symlink and
+/// always carries --authorized-voter for the staked identity.
+pub(crate) fn failover_prepare_vars(
+    config_json: &str,
+    symlink_path: &str,
+    staked_identity_path: &str,
+) -> Result<HashMap<String, String>, String> {
+    let mut req: ProvisionRequest =
+        serde_json::from_str(config_json).map_err(|e| format!("invalid provision config: {e}"))?;
+    req.identity_keypair_path = symlink_path.to_string();
+    req.validator_flags.insert(
+        "authorized-voter".to_string(),
+        staked_identity_path.to_string(),
+    );
+    let mut vars = build_provision_vars(&req);
+    vars.insert(
+        "unit_description".to_string(),
+        format!("Solana Validator ({})", req.client),
+    );
+    Ok(vars)
+}
+
 async fn provision_node(
     State(state): State<ApiState>,
     Path(id): Path<String>,
@@ -1094,6 +1153,9 @@ async fn provision_node(
             {
                 tracing::warn!(error = %e, "failed to record script execution");
             }
+            // Re-provisioning replaces the systemd unit, so a failover pair's
+            // prepared identity setup no longer holds.
+            state.failover.invalidate_on_provision(&id).await;
             emit_controller_log(&state.registry, &state.db, &id, "info", &log_msg).await;
             Json(CommandResponse {
                 ok: true,
@@ -1117,6 +1179,321 @@ async fn provision_node(
                     message: e,
                 }),
             )
+                .into_response()
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Failover (hot-spare identity swap)
+// ---------------------------------------------------------------------------
+
+/// Clients whose CLI supports `set-identity` the way the failover scripts use it.
+const FAILOVER_CLIENTS: &[&str] = &["agave", "jito"];
+
+#[derive(Debug, Deserialize)]
+struct CreateFailoverPairRequest {
+    primary_node_id: String,
+    backup_node_id: String,
+    #[serde(default)]
+    staked_identity_path: String,
+    #[serde(default)]
+    unstaked_identity_path: String,
+    #[serde(default)]
+    symlink_path: String,
+    #[serde(default)]
+    auto_failover: bool,
+}
+
+#[derive(Serialize)]
+struct FailoverPairWithOp {
+    #[serde(flatten)]
+    pair: db::FailoverPairRow,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    last_op: Option<db::FailoverOpRow>,
+}
+
+async fn pair_with_op(state: &ApiState, pair: db::FailoverPairRow) -> FailoverPairWithOp {
+    let last_op = db::get_latest_op_for_pair(&state.db, &pair.pair_id)
+        .await
+        .ok()
+        .flatten();
+    FailoverPairWithOp { pair, last_op }
+}
+
+fn failover_path_ok(path: &str) -> bool {
+    path.starts_with('/') && is_shell_safe(path) && !path.contains(char::is_whitespace)
+}
+
+/// Validate a pair request against the fleet: nodes exist, are distinct, share a
+/// cluster, run a supported client, and are provisioned. Returns the primary's
+/// provisioned identity path (default for staked_identity_path).
+async fn validate_pair_nodes(
+    state: &ApiState,
+    primary_id: &str,
+    backup_id: &str,
+) -> Result<String, String> {
+    if primary_id == backup_id {
+        return Err("primary and backup must be different nodes".to_string());
+    }
+    let mut primary_identity = String::new();
+    for (node_id, is_primary) in [(primary_id, true), (backup_id, false)] {
+        let node = db::get_node(&state.db, node_id)
+            .await
+            .map_err(|e| e.to_string())?
+            .ok_or_else(|| format!("node not found: {node_id}"))?;
+        let config = node
+            .provision_config_json
+            .ok_or_else(|| format!("node {node_id} is not provisioned"))?;
+        let summary = provision_summary(&config)?;
+        if !FAILOVER_CLIENTS.contains(&summary.client.as_str()) {
+            return Err(format!(
+                "failover supports agave/jito only; {node_id} runs {}",
+                summary.client
+            ));
+        }
+        if is_primary {
+            primary_identity = summary.identity_keypair_path;
+        }
+        if db::get_failover_pair_by_node(&state.db, node_id)
+            .await
+            .map_err(|e| e.to_string())?
+            .is_some()
+        {
+            return Err(format!("node {node_id} is already in a failover pair"));
+        }
+    }
+
+    let primary = db::get_node(&state.db, primary_id).await.ok().flatten();
+    let backup = db::get_node(&state.db, backup_id).await.ok().flatten();
+    let (Some(primary), Some(backup)) = (primary, backup) else {
+        return Err("node lookup failed".to_string());
+    };
+    if primary.cluster != backup.cluster {
+        return Err(format!(
+            "nodes are on different clusters ({:?} vs {:?})",
+            primary.cluster, backup.cluster
+        ));
+    }
+    Ok(primary_identity)
+}
+
+async fn list_failover_pairs(State(state): State<ApiState>) -> Response {
+    match db::list_failover_pairs(&state.db).await {
+        Ok(pairs) => {
+            let mut out = Vec::with_capacity(pairs.len());
+            for pair in pairs {
+                out.push(pair_with_op(&state, pair).await);
+            }
+            Json(out).into_response()
+        }
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(CommandResponse { ok: false, message: e.to_string() }),
+        )
+            .into_response(),
+    }
+}
+
+async fn get_failover_pair(State(state): State<ApiState>, Path(id): Path<String>) -> Response {
+    match db::get_failover_pair(&state.db, &id).await {
+        Ok(Some(pair)) => Json(pair_with_op(&state, pair).await).into_response(),
+        Ok(None) => (
+            StatusCode::NOT_FOUND,
+            Json(CommandResponse { ok: false, message: "pair not found".to_string() }),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(CommandResponse { ok: false, message: e.to_string() }),
+        )
+            .into_response(),
+    }
+}
+
+async fn create_failover_pair(
+    State(state): State<ApiState>,
+    Json(req): Json<CreateFailoverPairRequest>,
+) -> Response {
+    let primary_identity = match validate_pair_nodes(
+        &state,
+        &req.primary_node_id,
+        &req.backup_node_id,
+    )
+    .await
+    {
+        Ok(p) => p,
+        Err(msg) => {
+            return (StatusCode::BAD_REQUEST, Json(CommandResponse { ok: false, message: msg }))
+                .into_response()
+        }
+    };
+
+    let staked = if req.staked_identity_path.is_empty() {
+        primary_identity
+    } else {
+        req.staked_identity_path
+    };
+    let unstaked = if req.unstaked_identity_path.is_empty() {
+        crate::failover::DEFAULT_UNSTAKED_IDENTITY.to_string()
+    } else {
+        req.unstaked_identity_path
+    };
+    let symlink = if req.symlink_path.is_empty() {
+        crate::failover::DEFAULT_SYMLINK_PATH.to_string()
+    } else {
+        req.symlink_path
+    };
+    for path in [&staked, &unstaked, &symlink] {
+        if !failover_path_ok(path) {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(CommandResponse {
+                    ok: false,
+                    message: format!("invalid path: {path:?} (must be absolute, no special characters)"),
+                }),
+            )
+                .into_response();
+        }
+    }
+    if staked == unstaked || staked == symlink || unstaked == symlink {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(CommandResponse {
+                ok: false,
+                message: "staked, unstaked, and symlink paths must all differ".to_string(),
+            }),
+        )
+            .into_response();
+    }
+
+    match state
+        .failover
+        .create_pair(crate::failover::CreatePairRequest {
+            primary_node_id: req.primary_node_id,
+            backup_node_id: req.backup_node_id,
+            staked_identity_path: staked,
+            unstaked_identity_path: unstaked,
+            symlink_path: symlink,
+            auto_failover: req.auto_failover,
+        })
+        .await
+    {
+        Ok(pair) => Json(pair_with_op(&state, pair).await).into_response(),
+        Err(msg) => {
+            (StatusCode::BAD_REQUEST, Json(CommandResponse { ok: false, message: msg }))
+                .into_response()
+        }
+    }
+}
+
+async fn delete_failover_pair(State(state): State<ApiState>, Path(id): Path<String>) -> Response {
+    match db::get_active_op_for_pair(&state.db, &id).await {
+        Ok(Some(_)) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(CommandResponse {
+                    ok: false,
+                    message: "a failover is in progress; wait for it to finish".to_string(),
+                }),
+            )
+                .into_response()
+        }
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(CommandResponse { ok: false, message: e.to_string() }),
+            )
+                .into_response()
+        }
+        Ok(None) => {}
+    }
+    match db::delete_failover_pair(&state.db, &id).await {
+        Ok(true) => Json(CommandResponse {
+            ok: true,
+            // The nodes keep their symlink-based units — harmless without a pair.
+            message: "pair removed; node identity setup left in place".to_string(),
+        })
+        .into_response(),
+        Ok(false) => (
+            StatusCode::NOT_FOUND,
+            Json(CommandResponse { ok: false, message: "pair not found".to_string() }),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(CommandResponse { ok: false, message: e.to_string() }),
+        )
+            .into_response(),
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct SetAutoFailoverRequest {
+    auto_failover: bool,
+}
+
+async fn set_failover_auto(
+    State(state): State<ApiState>,
+    Path(id): Path<String>,
+    Json(req): Json<SetAutoFailoverRequest>,
+) -> Response {
+    match db::set_pair_auto_failover(&state.db, &id, req.auto_failover).await {
+        Ok(()) => Json(CommandResponse {
+            ok: true,
+            message: format!(
+                "auto-failover {}",
+                if req.auto_failover { "enabled" } else { "disabled" }
+            ),
+        })
+        .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(CommandResponse { ok: false, message: e.to_string() }),
+        )
+            .into_response(),
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct TriggerFailoverRequest {
+    /// "graceful" (live primary, tower relayed) or "crash" (dead primary, no tower).
+    mode: String,
+    #[serde(default)]
+    force: bool,
+}
+
+async fn trigger_failover(
+    State(state): State<ApiState>,
+    Path(id): Path<String>,
+    Json(req): Json<TriggerFailoverRequest>,
+) -> Response {
+    let result = match req.mode.as_str() {
+        "graceful" => state.failover.trigger_graceful(&id).await,
+        "crash" => state.failover.trigger_crash(&id, req.force).await,
+        other => Err(format!("invalid mode {other:?}; use \"graceful\" or \"crash\"")),
+    };
+    match result {
+        Ok(op) => Json(op).into_response(),
+        Err(msg) => {
+            (StatusCode::BAD_REQUEST, Json(CommandResponse { ok: false, message: msg }))
+                .into_response()
+        }
+    }
+}
+
+async fn rerun_failover_prepare(
+    State(state): State<ApiState>,
+    Path(id): Path<String>,
+) -> Response {
+    match state.failover.dispatch_prepare(&id).await {
+        Ok(()) => Json(CommandResponse {
+            ok: true,
+            message: "prepare dispatched to both nodes".to_string(),
+        })
+        .into_response(),
+        Err(msg) => {
+            (StatusCode::BAD_REQUEST, Json(CommandResponse { ok: false, message: msg }))
                 .into_response()
         }
     }
@@ -1799,6 +2176,64 @@ mod tests {
         assert!(!blocked("127.0.0.1")); // same-host grafana
         assert!(!blocked("10.0.0.5")); // internal grafana
         assert!(!blocked("34.107.8.212")); // public
+    }
+
+    #[test]
+    fn failover_prepare_vars_use_symlink_and_authorized_voter() {
+        let config = r#"{"client":"agave","version":"3.1.8","cluster":"testnet",
+            "identity_keypair_path":"/home/sol/validator-keypair.json",
+            "vote_account_keypair_path":"/home/sol/vote.json",
+            "ledger_path":"/mnt/ledger","snapshot_path":"/mnt/snapshots",
+            "accounts_path":"/mnt/accounts"}"#;
+        let vars = failover_prepare_vars(
+            config,
+            "/home/sol/pillar-identity.json",
+            "/home/sol/validator-keypair.json",
+        )
+        .unwrap();
+
+        let exec = &vars["exec_start"];
+        assert!(exec.contains("--identity /home/sol/pillar-identity.json"));
+        assert!(exec.contains("--authorized-voter /home/sol/validator-keypair.json"));
+        assert!(exec.contains("--vote-account /home/sol/vote.json"));
+
+        // The full prepare template must render without leftover placeholders.
+        let mut vars = vars;
+        for (k, v) in [
+            ("role", "primary"),
+            ("staked_identity_path", "/home/sol/validator-keypair.json"),
+            ("unstaked_identity_path", "/home/sol/unstaked-identity.json"),
+            ("symlink_path", "/home/sol/pillar-identity.json"),
+            ("symlink_target", "/home/sol/validator-keypair.json"),
+            ("restart_section", "echo noop"),
+        ] {
+            vars.insert(k.to_string(), v.to_string());
+        }
+        let rendered = templates::render(templates::scripts::FAILOVER_PREPARE, &vars);
+        assert!(
+            !rendered.contains("{{"),
+            "unrendered placeholder in prepare:\n{rendered}"
+        );
+        assert!(rendered.contains("solana-keygen new -s"));
+        assert!(rendered.contains("---PILLAR-PUBKEY:"));
+    }
+
+    #[test]
+    fn failover_summary_and_paths() {
+        let config = r#"{"client":"jito","version":"2.1.6","cluster":"mainnet",
+            "identity_keypair_path":"/home/sol/id.json","ledger_path":"/mnt/ledger"}"#;
+        let s = provision_summary(config).unwrap();
+        assert_eq!(s.service_name, "jito-validator");
+        assert_eq!(s.binary_path, "/usr/local/bin/jito-validator");
+        assert_eq!(s.identity_keypair_path, "/home/sol/id.json");
+
+        // No ledger → unusable for failover
+        assert!(provision_summary(r#"{"client":"agave","version":"1","cluster":"testnet"}"#).is_err());
+
+        assert!(failover_path_ok("/home/sol/unstaked-identity.json"));
+        assert!(!failover_path_ok("relative/path.json"));
+        assert!(!failover_path_ok("/tmp/evil;rm -rf.json"));
+        assert!(!failover_path_ok("/tmp/has space.json"));
     }
 
     #[test]

@@ -3,6 +3,7 @@ mod auth;
 mod certs;
 mod config;
 mod db;
+mod failover;
 mod grpc_server;
 mod metrics_endpoint;
 mod node_registry;
@@ -169,11 +170,15 @@ async fn main() -> anyhow::Result<()> {
         .grpc_listen
         .parse()
         .context("parsing grpc_listen address")?;
+    let failover_engine = failover::FailoverEngine::new(database.clone(), registry.clone());
+    failover_engine.load_pending().await;
+
     let grpc = GrpcServer::new(
         database.clone(),
         registry.clone(),
         &config.external_url,
         config.require_client_certs,
+        failover_engine.clone(),
     );
     let grpc_cancel = cancel.clone();
     let grpc_token = auth_token.clone();
@@ -221,6 +226,19 @@ async fn main() -> anyhow::Result<()> {
         }
     });
 
+    // Spawn failover maintenance loop (op timeouts + auto-failover monitor)
+    let failover_tick = failover_engine.clone();
+    let failover_cancel = cancel.clone();
+    let failover_handle = tokio::spawn(async move {
+        let mut interval = tokio::time::interval(Duration::from_secs(10));
+        loop {
+            tokio::select! {
+                _ = interval.tick() => failover_tick.tick().await,
+                _ = failover_cancel.cancelled() => break,
+            }
+        }
+    });
+
     // Check for updates on startup (lazy-refresh: re-checks when stale via /api/version)
     let update_info: update_checker::SharedUpdateInfo = Default::default();
     update_checker::spawn_initial_check(VERSION.to_string(), update_info.clone());
@@ -235,6 +253,7 @@ async fn main() -> anyhow::Result<()> {
         api_token: api_token.clone(),
         update_info: update_info.clone(),
         sessions,
+        failover: failover_engine,
     };
 
     let grafana_state = api_state.clone();
@@ -274,6 +293,12 @@ async fn main() -> anyhow::Result<()> {
             if !cancel.is_cancelled() {
                 cancel.cancel();
                 anyhow::bail!("retention pruner task exited unexpectedly: {res:?}");
+            }
+        }
+        res = failover_handle => {
+            if !cancel.is_cancelled() {
+                cancel.cancel();
+                anyhow::bail!("failover maintenance task exited unexpectedly: {res:?}");
             }
         }
     }
