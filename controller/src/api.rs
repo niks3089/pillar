@@ -1332,6 +1332,12 @@ async fn onboard_command(State(state): State<ApiState>) -> impl IntoResponse {
         cmd.push_str(&format!(" \\\n  --http-url {http_base}"));
     }
 
+    // The installer requires --cluster on a fresh box (no running validator to
+    // auto-detect from). The controller can't know the operator's intended
+    // cluster, so emit a placeholder they must edit — a conscious choice beats
+    // a silent mainnet-beta default.
+    cmd.push_str(" \\\n  --cluster <mainnet-beta|testnet|devnet>");
+
     Json(OnboardCommandResponse { command: cmd })
 }
 
