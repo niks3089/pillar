@@ -35,5 +35,5 @@ post_rule() {
 post_rule "Validator unhealthy / offline" "pillar_node_healthy" "lt" "1" "critical" "Validator {{ \$labels.node_id }} is unhealthy or offline" "2m"
 post_rule "Validator lagging behind" "pillar_node_slots_behind" "gt" "5000" "warning" "Validator {{ \$labels.node_id }} is more than 5000 slots behind" "5m"
 post_rule "Validator restart loop" "increase(pillar_node_restarts_total[15m])" "gt" "3" "warning" "Validator {{ \$labels.node_id }} is restarting repeatedly" "5m"
-post_rule "Validator disk almost full" "pillar_node_disk_used_bytes / pillar_node_disk_total_bytes" "gt" "0.9" "warning" "Validator {{ \$labels.node_id }} disk is over 90% full" "10m"
+post_rule "Validator disk almost full" "pillar_system_disk_used_bytes / pillar_system_disk_total_bytes" "gt" "0.9" "warning" "Validator {{ \$labels.node_id }} disk is over 90% full" "10m"
 echo "DONE"
