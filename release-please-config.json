@@ -1,4 +1,5 @@
 {
+  "separate-pull-requests": true,
   "packages": {
     "agent": {
       "release-type": "rust",
