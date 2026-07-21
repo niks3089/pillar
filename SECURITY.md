@@ -20,8 +20,8 @@ network or firewalled API, TLS with client certificates
 
 ## What `install-node.sh` does to your machine
 
-Run `install-node.sh --dry-run` to see the full plan — including the exact
-sudoers policy — before anything is written. Summary:
+The installer prints this plan — including a summary of the sudo policy —
+before it changes anything. In full:
 
 - Installs `pillar-agent` to `/usr/local/bin`, running as the `sol` user
   (created if missing; no password, no SSH keys).

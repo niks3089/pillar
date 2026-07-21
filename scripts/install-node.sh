@@ -32,7 +32,6 @@ AUTH_TOKEN=""
 NODE_ID=""
 VERSION="latest"
 SOLANA_VERSION="stable"
-DRY_RUN="false"
 
 GH_RELEASES="https://github.com/niks3089/pillar/releases"
 
@@ -69,7 +68,6 @@ while [[ $# -gt 0 ]]; do
         --token)                 AUTH_TOKEN="$2";            shift 2 ;;
         --node-id)               NODE_ID="$2";               shift 2 ;;
         --solana-version)        SOLANA_VERSION="$2";        shift 2 ;;
-        --dry-run)               DRY_RUN="true";             shift ;;
         --help|-h)
             head -12 "$0" | tail -8
             exit 0
@@ -99,7 +97,7 @@ if [[ -z "$NODE_ID" ]]; then
 fi
 
 # ------------------------------------------------------------------------------
-# Privileged-surface definitions, shared by --dry-run and the real install.
+# Privileged-surface definitions.
 #
 # The sudoers policy is argument-pinned: every entry is an exact command the
 # agent legitimately runs during provision/upgrade/recover. No unrestricted
@@ -201,33 +199,28 @@ done
 EOF
 }
 
-if [[ "$DRY_RUN" == "true" ]]; then
-    section "DRY RUN — nothing will be changed"
-    cat <<PLAN
-This install would do the following (in order):
+# Always show the operator what they are consenting to, before anything runs.
+section "What this installer will do"
+cat <<PLAN
+  1. Download pillar-agent ($VERSION) from $GH_RELEASES to $INSTALL_DIR/pillar-agent
+  2. Create user '$SOL_USER' (no password, no SSH keys added) if missing
+  3. Write $SUDOERS_FILE — ARGUMENT-PINNED sudo policy: exact systemctl verbs
+     for the known validator units, exact unit/config write targets, exact
+     binary install destinations, two exact apt-get commands, fdctl.
+     No unrestricted root commands. Review the file after install; the full
+     policy and its known residual risks are documented in SECURITY.md.
+  4. Install $DATADIR_HELPER — the only root file operation the agent gets:
+     mkdir/chown/rm of data dirs restricted to /mnt, /data, /srv, /home/sol
+  5. Write kernel/network tuning: /etc/sysctl.d/21-agave-validator.conf,
+     /etc/security/limits.d/sol-limits.conf
+  6. Install Solana CLI ($SOLANA_VERSION) for $SOL_USER; generate validator keypairs if missing
+  7. Write $CONFIG_DIR/agent.yaml (cluster=$CLUSTER, controller=$CONTROLLER_ENDPOINT;
+     owned by $SOL_USER, mode 600 — it contains the controller auth token)
+  8. Install + enable pillar-agent.service (runs as '$SOL_USER', not root)
 
-  1. Download pillar-agent ($VERSION) from $GH_RELEASES and install to $INSTALL_DIR/pillar-agent
-  2. Preflight + system assessment (read-only; may apt-get install bzip2 on a real run)
-  3. Create user '$SOL_USER' (no password, no SSH keys added) if missing
-  4. Write $SUDOERS_FILE with the argument-pinned policy below
-  5. Install the root helper $DATADIR_HELPER (path-allowlisted mkdir/chown/rm for data dirs)
-  6. Write /etc/sysctl.d/21-agave-validator.conf and /etc/security/limits.d/sol-limits.conf (kernel/network tuning)
-  7. Install Solana CLI ($SOLANA_VERSION) for $SOL_USER and generate validator keypairs if missing
-  8. Write $CONFIG_DIR/agent.yaml (cluster=$CLUSTER, controller=$CONTROLLER_ENDPOINT; owned $SOL_USER:$SOL_USER, mode 600 — contains the auth token)
-  9. Install + enable systemd unit pillar-agent.service (runs as $SOL_USER)
-
-After install, the agent executes controller-sent scripts as '$SOL_USER'. Root
-access is limited to the sudoers policy below — read it; it is the trust you
-are granting the controller.
-
------ $SUDOERS_FILE -----
+Trust model: after install, the pillar controller can execute scripts on this
+machine as '$SOL_USER', with root limited to the pinned policy in step 3.
 PLAN
-    write_sudoers /dev/stdout
-    echo "----- $DATADIR_HELPER -----"
-    write_datadir_helper /dev/stdout
-    echo "--------------------------"
-    exit 0
-fi
 
 # ==============================================================================
 # Phase 0: Download agent binary from S3
