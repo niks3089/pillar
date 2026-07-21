@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.5.0](https://github.com/niks3089/pillar/compare/pillar-agent-v0.4.1...pillar-agent-v0.5.0) (2026-07-21)
+
+
+### Features
+
+* **controller:** export pillar_node_state one-hot gauge ([#33](https://github.com/niks3089/pillar/issues/33)) ([26312b4](https://github.com/niks3089/pillar/commit/26312b4c845487ba103ed801cd24f2a351e64952))
+
+
+### Bug Fixes
+
+* **install:** least-privilege sudoers policy, datadir helper, SECURITY.md ([#40](https://github.com/niks3089/pillar/issues/40)) ([61ece94](https://github.com/niks3089/pillar/commit/61ece949d15a9a34fb1b6aff49c20463f911595b))
+* **install:** require or auto-detect --cluster; never silently default to mainnet-beta ([#38](https://github.com/niks3089/pillar/issues/38)) ([e661c84](https://github.com/niks3089/pillar/commit/e661c84c3b7404d541aacb0d6ea2c378b500812d))
+* **scripts:** correct disk metric names in setup-grafana-alerts ([#34](https://github.com/niks3089/pillar/issues/34)) ([7c46303](https://github.com/niks3089/pillar/commit/7c4630324684f104e6fed2f0721775f6607118bc))
+
 ## [0.4.1](https://github.com/niks3089/pillar/compare/pillar-agent-v0.4.0...pillar-agent-v0.4.1) (2026-07-17)
 
 
