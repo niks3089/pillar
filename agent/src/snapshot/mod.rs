@@ -12,7 +12,9 @@ use crate::error::{PillarError, PillarResult};
 pub use download_tcp::TcpSnapshotManager;
 
 /// Snapshot download transport.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Display, EnumString, Default)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Display, EnumString, Default,
+)]
 #[serde(rename_all = "lowercase")]
 #[strum(serialize_all = "lowercase")]
 pub enum DownloadMethod {

@@ -35,7 +35,10 @@ pub fn ensure_certs(certs_dir: &str, external_url: &str) -> Result<CertPaths> {
         && paths.server_cert.exists()
         && paths.server_key.exists()
     {
-        tracing::info!(dir = certs_dir, "TLS certificates already exist, skipping generation");
+        tracing::info!(
+            dir = certs_dir,
+            "TLS certificates already exist, skipping generation"
+        );
         return Ok(paths);
     }
 
@@ -199,8 +202,7 @@ mod tests {
         assert!(paths.server_key.exists());
 
         // Running again should skip generation
-        let paths2 =
-            ensure_certs(dir.path().to_str().unwrap(), "http://10.0.0.1:50051").unwrap();
+        let paths2 = ensure_certs(dir.path().to_str().unwrap(), "http://10.0.0.1:50051").unwrap();
         assert!(paths2.ca_cert.exists());
     }
 

@@ -67,8 +67,8 @@ async fn main() -> anyhow::Result<()> {
 
     // Default node_id to system hostname if not explicitly set
     if config.controller.node_id.is_empty() {
-        config.controller.node_id = sysinfo::System::host_name()
-            .unwrap_or_else(|| "unknown".to_string());
+        config.controller.node_id =
+            sysinfo::System::host_name().unwrap_or_else(|| "unknown".to_string());
     }
     tracing::info!(
         role = %config.role,
@@ -110,9 +110,8 @@ async fn main() -> anyhow::Result<()> {
 
     let validator_client = client::ValidatorClient::from_kind(config.client);
 
-    let service_manager = lifecycle::SystemdManager::new(
-        validator_client.service_name().to_string(),
-    );
+    let service_manager =
+        lifecycle::SystemdManager::new(validator_client.service_name().to_string());
 
     let snapshot_manager = snapshot::TcpSnapshotManager::new(
         config.snapshot.server_hostname.clone(),

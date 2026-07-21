@@ -116,7 +116,10 @@ fn is_bootstrap_message(message: &str) -> bool {
     let body = strip_tracing_prefix(message);
 
     // Check for snapshot download progress
-    let unsparkled = body.trim_start().trim_start_matches('\u{2728}').trim_start();
+    let unsparkled = body
+        .trim_start()
+        .trim_start_matches('\u{2728}')
+        .trim_start();
     if body.starts_with("Downloading ")
         || body.starts_with("downloaded ")
         || (unsparkled.starts_with("Downloaded ") && unsparkled.contains(" bytes"))
@@ -228,7 +231,10 @@ fn extract_message(obj: &serde_json::Value) -> Option<String> {
             }
         }
         serde_json::Value::Array(arr) => {
-            let bytes: Vec<u8> = arr.iter().filter_map(|v| v.as_u64().map(|n| n as u8)).collect();
+            let bytes: Vec<u8> = arr
+                .iter()
+                .filter_map(|v| v.as_u64().map(|n| n as u8))
+                .collect();
             let s = String::from_utf8_lossy(&bytes).to_string();
             let stripped = strip_ansi(&s);
             if stripped.is_empty() {
@@ -282,10 +288,7 @@ fn parse_journal_line(line: &str) -> Option<LogEntry> {
 
     let level = detect_level_from_message(&message)
         .unwrap_or_else(|| {
-            let priority = obj
-                .get("PRIORITY")
-                .and_then(|v| v.as_str())
-                .unwrap_or("6");
+            let priority = obj.get("PRIORITY").and_then(|v| v.as_str()).unwrap_or("6");
             priority_to_level(priority)
         })
         .to_string();
@@ -476,7 +479,10 @@ async fn flush_batch(
     if client.is_none() {
         match crate::grpc::build_channel(controller_config).await {
             Ok(channel) => {
-                *client = Some(crate::grpc::make_log_client(channel, &controller_config.auth_token));
+                *client = Some(crate::grpc::make_log_client(
+                    channel,
+                    &controller_config.auth_token,
+                ));
                 *backoff = Duration::from_secs(1);
             }
             Err(e) => {
@@ -498,7 +504,11 @@ async fn flush_batch(
     match c.push_logs(tonic::Request::new(stream)).await {
         Ok(resp) => {
             let ack = resp.into_inner();
-            tracing::debug!(sent = count, acked = ack.received_count, "log batch flushed");
+            tracing::debug!(
+                sent = count,
+                acked = ack.received_count,
+                "log batch flushed"
+            );
         }
         Err(e) => {
             agent_health.inc_log_batches_dropped();
@@ -656,22 +666,38 @@ mod tests {
         assert!(is_bootstrap_message("[2026-02-20T08:48:18.402Z INFO  solana_download_utils] downloaded 548684968 bytes 10.4% 13474726.0 bytes/s"));
         assert!(is_bootstrap_message("[2026-02-20T08:48:18.402Z INFO  solana_download_utils] Downloaded 52428800000 bytes in 3845s"));
         // Searching for RPC service (no bootstrap in module name)
-        assert!(is_bootstrap_message("[2026-02-20T08:48:18.402Z INFO  other_module] Searching for an RPC service..."));
+        assert!(is_bootstrap_message(
+            "[2026-02-20T08:48:18.402Z INFO  other_module] Searching for an RPC service..."
+        ));
         // Without prefix
-        assert!(is_bootstrap_message("Downloading 52428800000 bytes from 10.0.0.5:8899"));
-        assert!(is_bootstrap_message("downloaded 548684968 bytes 10.4% 13474726.0 bytes/s"));
+        assert!(is_bootstrap_message(
+            "Downloading 52428800000 bytes from 10.0.0.5:8899"
+        ));
+        assert!(is_bootstrap_message(
+            "downloaded 548684968 bytes 10.4% 13474726.0 bytes/s"
+        ));
         // Negative
-        assert!(!is_bootstrap_message("[2026-02-20T08:48:18.402Z INFO  solana_metrics::metrics] datapoint: cluster_info"));
+        assert!(!is_bootstrap_message(
+            "[2026-02-20T08:48:18.402Z INFO  solana_metrics::metrics] datapoint: cluster_info"
+        ));
         assert!(!is_bootstrap_message("validator started successfully"));
     }
 
     #[test]
     fn sudo_noise_is_filtered() {
-        assert!(is_sudo_noise("pam_unix(sudo:session): session opened for user root(uid=0) by (uid=994)"));
-        assert!(is_sudo_noise("pam_unix(sudo:session): session closed for user root"));
-        assert!(is_sudo_noise("sol : PWD=/ ; USER=root ; COMMAND=/usr/bin/systemctl is-active solana-validator"));
+        assert!(is_sudo_noise(
+            "pam_unix(sudo:session): session opened for user root(uid=0) by (uid=994)"
+        ));
+        assert!(is_sudo_noise(
+            "pam_unix(sudo:session): session closed for user root"
+        ));
+        assert!(is_sudo_noise(
+            "sol : PWD=/ ; USER=root ; COMMAND=/usr/bin/systemctl is-active solana-validator"
+        ));
         assert!(!is_sudo_noise("validator started successfully"));
-        assert!(!is_sudo_noise("2026-02-20T10:15:00.523898Z INFO reconcile: health check"));
+        assert!(!is_sudo_noise(
+            "2026-02-20T10:15:00.523898Z INFO reconcile: health check"
+        ));
     }
 
     #[test]

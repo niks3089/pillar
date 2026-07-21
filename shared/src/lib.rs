@@ -16,8 +16,8 @@ use prost::Message;
 pub fn read_state(path: &Path) -> Result<Option<proto::NodeStatus>, String> {
     match std::fs::read(path) {
         Ok(bytes) => {
-            let status =
-                proto::NodeStatus::decode(bytes.as_slice()).map_err(|e| format!("decode error: {e}"))?;
+            let status = proto::NodeStatus::decode(bytes.as_slice())
+                .map_err(|e| format!("decode error: {e}"))?;
             Ok(Some(status))
         }
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),

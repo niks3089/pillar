@@ -2,8 +2,8 @@ use async_trait::async_trait;
 
 use crate::config::{HealthConfig, NetworkConfig};
 use crate::error::PillarResult;
-use crate::rpc_client::RpcClient;
 use crate::role::NodeRole;
+use crate::rpc_client::RpcClient;
 
 pub use pillar_shared::types::{NodeHealth, NodeState, SlotInfo};
 

@@ -64,7 +64,10 @@ pub async fn run(
 ) {
     let mut sys = SystemInfo::new();
     let agent_pid = SysPid::from_u32(std::process::id());
-    tracing::info!(interval_secs = interval.as_secs(), "metrics updater starting");
+    tracing::info!(
+        interval_secs = interval.as_secs(),
+        "metrics updater starting"
+    );
 
     loop {
         tokio::select! {

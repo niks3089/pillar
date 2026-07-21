@@ -2,8 +2,8 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use tokio::sync::mpsc;
-use tonic::transport::{Certificate, Channel, ClientTlsConfig, Identity};
 use tokio_util::sync::CancellationToken;
+use tonic::transport::{Certificate, Channel, ClientTlsConfig, Identity};
 
 use crate::agent_health::AgentHealth;
 use crate::command::AgentCommand;
@@ -21,7 +21,9 @@ pub mod proto {
 use proto::pillar_controller_client::PillarControllerClient;
 
 /// Type alias for the client with an optional auth interceptor.
-type AuthClient = PillarControllerClient<tonic::service::interceptor::InterceptedService<Channel, AuthInterceptor>>;
+type AuthClient = PillarControllerClient<
+    tonic::service::interceptor::InterceptedService<Channel, AuthInterceptor>,
+>;
 
 /// Public alias for use by the log collector.
 pub type LogClient = AuthClient;
@@ -135,11 +137,7 @@ impl ControllerLink {
         tracing::info!("controller link shutting down");
     }
 
-    async fn run_connected(
-        &mut self,
-        client: AuthClient,
-        cancel: CancellationToken,
-    ) {
+    async fn run_connected(&mut self, client: AuthClient, cancel: CancellationToken) {
         // Register with controller on every (re-)connect
         let mut reg_client = client.clone();
         let reg_req = tonic::Request::new(pillar_shared::proto::RegisterNodeRequest {
@@ -184,7 +182,14 @@ impl ControllerLink {
         let cmd_tx = self.cmd_tx.clone();
 
         let cmd_handle = tokio::spawn(async move {
-            run_command_stream(&mut cmd_client, &cmd_node_id, cmd_health, cmd_tx, cmd_cancel).await
+            run_command_stream(
+                &mut cmd_client,
+                &cmd_node_id,
+                cmd_health,
+                cmd_tx,
+                cmd_cancel,
+            )
+            .await
         });
 
         // Spawn result reporter — drains result_rx and sends to controller
@@ -370,11 +375,11 @@ pub async fn build_channel(config: &ControllerConfig) -> Result<Channel, tonic::
     let endpoint = Channel::from_shared(endpoint_url).expect("valid endpoint URI");
 
     let endpoint = if !config.ca_cert_path.is_empty() {
-        let ca =
-            std::fs::read_to_string(&config.ca_cert_path).expect("reading CA cert");
+        let ca = std::fs::read_to_string(&config.ca_cert_path).expect("reading CA cert");
         let mut tls = ClientTlsConfig::new().ca_certificate(Certificate::from_pem(&ca));
         if !config.client_cert_path.is_empty() && !config.client_key_path.is_empty() {
-            let cert = std::fs::read_to_string(&config.client_cert_path).expect("reading client cert");
+            let cert =
+                std::fs::read_to_string(&config.client_cert_path).expect("reading client cert");
             let key = std::fs::read_to_string(&config.client_key_path).expect("reading client key");
             tls = tls.identity(Identity::from_pem(cert, key));
             tracing::info!("mTLS client certificate loaded");

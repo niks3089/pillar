@@ -68,10 +68,7 @@ impl NodeRegistry {
 
     /// Create an mpsc command channel for the node. If the node doesn't exist,
     /// it is registered first. Returns the receiver end.
-    pub async fn create_command_channel(
-        &self,
-        node_id: &str,
-    ) -> mpsc::Receiver<ControllerCommand> {
+    pub async fn create_command_channel(&self, node_id: &str) -> mpsc::Receiver<ControllerCommand> {
         self.register_node(node_id).await;
 
         let (tx, rx) = mpsc::channel(32);
@@ -83,11 +80,7 @@ impl NodeRegistry {
 
     /// Send a command to a node via the stored mpsc sender.
     /// Clones the sender so we don't hold the DashMap ref across the await.
-    pub async fn send_command(
-        &self,
-        node_id: &str,
-        cmd: ControllerCommand,
-    ) -> Result<(), String> {
+    pub async fn send_command(&self, node_id: &str, cmd: ControllerCommand) -> Result<(), String> {
         let tx = {
             let entry = self
                 .nodes
@@ -99,16 +92,11 @@ impl NodeRegistry {
                 .ok_or_else(|| format!("node not connected: {node_id}"))?
                 .clone()
         };
-        tx.send(cmd)
-            .await
-            .map_err(|e| format!("send failed: {e}"))
+        tx.send(cmd).await.map_err(|e| format!("send failed: {e}"))
     }
 
     /// Subscribe to the log broadcast channel for a node.
-    pub async fn get_log_subscriber(
-        &self,
-        node_id: &str,
-    ) -> Option<broadcast::Receiver<LogEntry>> {
+    pub async fn get_log_subscriber(&self, node_id: &str) -> Option<broadcast::Receiver<LogEntry>> {
         self.nodes.get(node_id).map(|e| e.log_tx.subscribe())
     }
 
