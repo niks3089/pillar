@@ -5,11 +5,16 @@ echo "=== Pillar: Recovery for {{service_name}} ==="
 # Stop the validator
 sudo systemctl stop {{service_name}} 2>/dev/null || true
 
-# Wipe ledger directory
+# Wipe ledger directory (pillar-datadir enforces the path allowlist; the
+# fallback covers nodes still on the pre-helper blanket sudoers)
 echo "Wiping ledger directory: {{ledger_path}}"
-sudo rm -rf "{{ledger_path}}"
-sudo mkdir -p "{{ledger_path}}"
-sudo chown sol:sol "{{ledger_path}}"
+if [ -x /usr/local/bin/pillar-datadir ]; then
+  sudo /usr/local/bin/pillar-datadir recreate "{{ledger_path}}"
+else
+  sudo rm -rf "{{ledger_path}}"
+  sudo mkdir -p "{{ledger_path}}"
+  sudo chown sol:sol "{{ledger_path}}"
+fi
 
 # Restart the validator (it will re-sync from snapshot)
 sudo systemctl start {{service_name}}

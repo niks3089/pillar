@@ -149,6 +149,132 @@ if [[ -z "$NODE_ID" ]]; then
     NODE_ID="$(hostname -s 2>/dev/null || echo "unknown")"
 fi
 
+# ------------------------------------------------------------------------------
+# Privileged-surface definitions.
+#
+# The sudoers policy is argument-pinned: every entry is an exact command the
+# agent legitimately runs during provision/upgrade/recover. No unrestricted
+# tee/cp/sed/chown/mkdir — root file operations on data directories go through
+# the pillar-datadir helper, which enforces a path-prefix allowlist.
+# See SECURITY.md for the full access model and the known residual risks.
+# ------------------------------------------------------------------------------
+
+SUDOERS_FILE="/etc/sudoers.d/sol-pillar"
+DATADIR_HELPER="$INSTALL_DIR/pillar-datadir"
+
+write_sudoers() {
+    cat <<'EOF' > "$1"
+# Managed by pillar install-node.sh — argument-pinned commands only.
+# Each alias entry is an exact invocation used by pillar's provision, upgrade,
+# recover, restart, and stop scripts. See SECURITY.md in the pillar repo.
+
+Cmnd_Alias PILLAR_SVC = \
+    /usr/bin/systemctl daemon-reload, \
+    /usr/bin/systemctl restart pillar-agent, \
+    /usr/bin/systemctl start solana-validator, /usr/bin/systemctl stop solana-validator, /usr/bin/systemctl restart solana-validator, /usr/bin/systemctl enable --now solana-validator, \
+    /usr/bin/systemctl start jito-validator, /usr/bin/systemctl stop jito-validator, /usr/bin/systemctl restart jito-validator, /usr/bin/systemctl enable --now jito-validator, \
+    /usr/bin/systemctl start firedancer, /usr/bin/systemctl stop firedancer, /usr/bin/systemctl restart firedancer, /usr/bin/systemctl enable --now firedancer, \
+    /usr/bin/systemctl start frankendancer, /usr/bin/systemctl stop frankendancer, /usr/bin/systemctl restart frankendancer, /usr/bin/systemctl enable --now frankendancer, \
+    /usr/bin/systemctl start surfpool, /usr/bin/systemctl stop surfpool, /usr/bin/systemctl restart surfpool, /usr/bin/systemctl enable --now surfpool
+
+Cmnd_Alias PILLAR_UNIT = \
+    /usr/bin/tee /etc/systemd/system/solana-validator.service, \
+    /usr/bin/tee /etc/systemd/system/jito-validator.service, \
+    /usr/bin/tee /etc/systemd/system/firedancer.service, \
+    /usr/bin/tee /etc/systemd/system/frankendancer.service, \
+    /usr/bin/tee /etc/systemd/system/surfpool.service, \
+    /usr/bin/tee /etc/pillar/yellowstone-grpc.json, \
+    /usr/bin/tee /etc/pillar/validator.toml, \
+    /usr/bin/mkdir -p /etc/pillar
+
+Cmnd_Alias PILLAR_BIN = \
+    /usr/bin/install -m 755 * /usr/local/bin/agave-validator, \
+    /usr/bin/install -m 755 * /usr/local/bin/jito-validator, \
+    /usr/bin/install -m 755 * /usr/local/bin/fdctl, \
+    /usr/bin/install -m 755 * /usr/local/bin/surfpool, \
+    /usr/bin/install -m 755 * /usr/local/bin/pillar-agent, \
+    /usr/bin/install -d -o sol -g sol /home/sol/surfpool
+
+Cmnd_Alias PILLAR_APT = \
+    /usr/bin/apt-get update -qq, \
+    /usr/bin/apt-get install -y -qq build-essential clang cmake libudev-dev libssl-dev zlib1g-dev pkg-config libclang-dev protobuf-compiler, \
+    /usr/bin/apt-get install -y -qq build-essential clang cmake gcc make pkg-config
+
+Cmnd_Alias PILLAR_DATA = \
+    /usr/local/bin/pillar-datadir ensure *, \
+    /usr/local/bin/pillar-datadir recreate *
+
+Cmnd_Alias PILLAR_FD = \
+    /usr/local/bin/fdctl, \
+    /usr/bin/timeout 180 /usr/local/bin/fdctl *
+
+sol ALL=(root) NOPASSWD: PILLAR_SVC, PILLAR_UNIT, PILLAR_BIN, PILLAR_APT, PILLAR_DATA, PILLAR_FD
+EOF
+}
+
+write_datadir_helper() {
+    cat <<'EOF' > "$1"
+#!/usr/bin/env bash
+# pillar-datadir — the only root file operation pillar's agent may perform.
+# Usage: pillar-datadir ensure|recreate <dir>...
+# Paths must be absolute, contain no "..", and live under an allowed prefix.
+set -euo pipefail
+MODE="${1:-}"
+shift || true
+if [ "$MODE" != "ensure" ] && [ "$MODE" != "recreate" ]; then
+    echo "usage: pillar-datadir ensure|recreate <dir>..." >&2
+    exit 1
+fi
+if [ $# -lt 1 ]; then
+    echo "pillar-datadir: no directories given" >&2
+    exit 1
+fi
+for d in "$@"; do
+    case "$d" in
+        /*) ;;
+        *) echo "pillar-datadir: refusing non-absolute path: $d" >&2; exit 1 ;;
+    esac
+    case "$d" in
+        *..*) echo "pillar-datadir: refusing path containing ..: $d" >&2; exit 1 ;;
+    esac
+    case "$d" in
+        /mnt/?*|/data/?*|/srv/?*|/home/sol/?*) ;;
+        *) echo "pillar-datadir: path outside allowed prefixes (/mnt /data /srv /home/sol): $d" >&2; exit 1 ;;
+    esac
+done
+for d in "$@"; do
+    if [ "$MODE" = "recreate" ]; then
+        rm -rf "$d"
+    fi
+    mkdir -p "$d"
+    chown sol:sol "$d"
+done
+EOF
+}
+
+# Always show the operator what they are consenting to, before anything runs.
+section "What this installer will do"
+cat <<PLAN
+  1. Download pillar-agent ($VERSION) from $GH_RELEASES to $INSTALL_DIR/pillar-agent
+  2. Create user '$SOL_USER' (no password, no SSH keys added) if missing
+  3. Write $SUDOERS_FILE — ARGUMENT-PINNED sudo policy: exact systemctl verbs
+     for the known validator units, exact unit/config write targets, exact
+     binary install destinations, two exact apt-get commands, fdctl.
+     No unrestricted root commands. Review the file after install; the full
+     policy and its known residual risks are documented in SECURITY.md.
+  4. Install $DATADIR_HELPER — the only root file operation the agent gets:
+     mkdir/chown/rm of data dirs restricted to /mnt, /data, /srv, /home/sol
+  5. Write kernel/network tuning: /etc/sysctl.d/21-agave-validator.conf,
+     /etc/security/limits.d/sol-limits.conf
+  6. Install Solana CLI ($SOLANA_VERSION) for $SOL_USER; generate validator keypairs if missing
+  7. Write $CONFIG_DIR/agent.yaml (cluster=$CLUSTER, controller=$CONTROLLER_ENDPOINT;
+     owned by $SOL_USER, mode 600 — it contains the controller auth token)
+  8. Install + enable pillar-agent.service (runs as '$SOL_USER', not root)
+
+Trust model: after install, the pillar controller can execute scripts on this
+machine as '$SOL_USER', with root limited to the pinned policy in step 3.
+PLAN
+
 # ==============================================================================
 # Phase 0: Download agent binary from S3
 # ==============================================================================
@@ -359,16 +485,22 @@ done
 # Phase 3b: Sudoers for sol to manage validator systemd services
 # ------------------------------------------------------------------------------
 
-SUDOERS_FILE="/etc/sudoers.d/sol-pillar"
-cat > "$SUDOERS_FILE" <<'EOF'
-# Allow sol user to manage systemd services and run provisioning without a password.
-# Used by pillar-agent to start/stop/restart the validator and run provision scripts.
-sol ALL=(root) NOPASSWD: /usr/bin/systemctl, /usr/bin/install, /usr/bin/tee, /usr/bin/sed, /usr/bin/mkdir, /usr/bin/cp, /usr/bin/find, /usr/bin/chown, /usr/bin/apt-get, /usr/local/bin/fdctl
-EOF
-chmod 440 "$SUDOERS_FILE"
+write_sudoers "$SUDOERS_FILE.tmp"
+if visudo -c -f "$SUDOERS_FILE.tmp" >/dev/null; then
+    mv "$SUDOERS_FILE.tmp" "$SUDOERS_FILE"
+    chmod 440 "$SUDOERS_FILE"
+else
+    rm -f "$SUDOERS_FILE.tmp"
+    die "generated sudoers policy failed visudo validation (bug — please report)"
+fi
 # Remove old sudoers file if it exists
 rm -f /etc/sudoers.d/sol-systemctl 2>/dev/null || true
-ok "wrote $SUDOERS_FILE"
+ok "wrote $SUDOERS_FILE (argument-pinned policy)"
+
+write_datadir_helper "$DATADIR_HELPER"
+chmod 755 "$DATADIR_HELPER"
+chown root:root "$DATADIR_HELPER"
+ok "installed $DATADIR_HELPER (allowlisted data-dir helper)"
 
 # ------------------------------------------------------------------------------
 # Phase 3c: Apply sysctl tuning (Anza-recommended)
@@ -545,7 +677,9 @@ section "Writing configuration"
 
 AGENT_CONFIG="$CONFIG_DIR/agent.yaml"
 if [[ -f "$AGENT_CONFIG" ]]; then
-    ok "agent config exists: $AGENT_CONFIG (not overwriting)"
+    chown "$SOL_USER:$SOL_USER" "$AGENT_CONFIG"
+    chmod 600 "$AGENT_CONFIG"
+    ok "agent config exists: $AGENT_CONFIG (not overwriting; ownership/mode enforced)"
 else
     cat > "$AGENT_CONFIG" <<EOF
 role: $ROLE
@@ -598,8 +732,8 @@ log_collector:
   flush_interval_ms: 1000
 EOF
     chown "$SOL_USER:$SOL_USER" "$AGENT_CONFIG"
-    chmod 644 "$AGENT_CONFIG"
-    ok "wrote $AGENT_CONFIG"
+    chmod 600 "$AGENT_CONFIG"
+    ok "wrote $AGENT_CONFIG (mode 600 — contains the controller auth token)"
 fi
 
 # ------------------------------------------------------------------------------

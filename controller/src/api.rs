@@ -928,13 +928,18 @@ echo "Wrote /etc/pillar/yellowstone-grpc.json""#
     } else {
         templates::reference_rpc_for_cluster(&req.cluster).to_string()
     };
+    // agent.yaml is owned by sol (mode 600) on current installs, so plain sed
+    // works. Nodes installed before the least-privilege sudoers change may
+    // still have a root-owned config; their old blanket sudoers still permits
+    // the sudo fallback until install-node.sh is re-run.
     let agent_config_sed_commands = format!(
         r#"if [ -f "$CONFIG" ]; then
-  sudo sed -i 's/^client:.*/client: {client}/' "$CONFIG"
-  sudo sed -i 's/^  cluster:.*/  cluster: {cluster}/' "$CONFIG"
-  sudo sed -i 's|^  service_name:.*|  service_name: {service_name}|' "$CONFIG"
-  sudo sed -i '/reference_rpc_urls:/,/^[^ ]/ {{ /- http/d }}' "$CONFIG"
-  sudo sed -i '/reference_rpc_urls:/a\\    - {reference_rpc}' "$CONFIG"
+  if [ -w "$CONFIG" ]; then SED="sed"; else SED="sudo sed"; fi
+  $SED -i 's/^client:.*/client: {client}/' "$CONFIG"
+  $SED -i 's/^  cluster:.*/  cluster: {cluster}/' "$CONFIG"
+  $SED -i 's|^  service_name:.*|  service_name: {service_name}|' "$CONFIG"
+  $SED -i '/reference_rpc_urls:/,/^[^ ]/ {{ /- http/d }}' "$CONFIG"
+  $SED -i '/reference_rpc_urls:/a\\    - {reference_rpc}' "$CONFIG"
   echo "Updated agent config: client={client}, cluster={cluster}, service={service_name}"
 fi"#,
         client = req.client,
@@ -953,10 +958,20 @@ fi"#,
         .map(|p| p.as_str())
         .collect::<Vec<_>>()
         .join(" ");
+    // pillar-datadir is the allowlisted root helper installed by
+    // install-node.sh; the mkdir/chown fallback covers nodes still on the
+    // pre-helper blanket sudoers.
     let data_dirs_section = if data_dirs.is_empty() {
         String::new()
     } else {
-        format!("sudo mkdir -p {data_dirs}\nsudo chown sol:sol {data_dirs}")
+        format!(
+            "if [ -x /usr/local/bin/pillar-datadir ]; then\n  \
+             sudo /usr/local/bin/pillar-datadir ensure {data_dirs}\n\
+             else\n  \
+             sudo mkdir -p {data_dirs}\n  \
+             sudo chown sol:sol {data_dirs}\n\
+             fi"
+        )
     };
 
     let mut vars = HashMap::new();
