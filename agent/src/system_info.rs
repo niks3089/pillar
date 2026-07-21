@@ -57,7 +57,10 @@ impl SystemInfo {
 
     /// Find first process matching a name and return its stats.
     pub fn find_process_by_name(&self, name: &str) -> Option<ProcessStats> {
-        let p = self.system.processes_by_exact_name(OsStr::new(name)).next()?;
+        let p = self
+            .system
+            .processes_by_exact_name(OsStr::new(name))
+            .next()?;
         Some(ProcessStats {
             cpu_usage_percent: p.cpu_usage(),
             memory_rss_bytes: p.memory(),

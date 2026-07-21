@@ -50,11 +50,9 @@ impl RpcClient {
                 }
             }
         }
-        Err(last_err.unwrap_or_else(|| {
-            PillarError::Rpc {
-                method: "getSlot".to_string(),
-                reason: "no reference RPCs configured".to_string(),
-            }
+        Err(last_err.unwrap_or_else(|| PillarError::Rpc {
+            method: "getSlot".to_string(),
+            reason: "no reference RPCs configured".to_string(),
         }))
     }
 
@@ -176,11 +174,9 @@ impl RpcClient {
                 reason: format!("{url}: {e}"),
             })?;
 
-        resp.json::<Value>()
-            .await
-            .map_err(|e| PillarError::Rpc {
-                method: method.to_string(),
-                reason: format!("invalid JSON from {url}: {e}"),
-            })
+        resp.json::<Value>().await.map_err(|e| PillarError::Rpc {
+            method: method.to_string(),
+            reason: format!("invalid JSON from {url}: {e}"),
+        })
     }
 }

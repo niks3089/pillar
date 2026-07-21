@@ -39,18 +39,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             ".pillar.RegisterNodeResponse",
             "::pillar_shared::proto::RegisterNodeResponse",
         )
-        .extern_path(
-            ".pillar.LogBatch",
-            "::pillar_shared::proto::LogBatch",
-        )
-        .extern_path(
-            ".pillar.LogEntry",
-            "::pillar_shared::proto::LogEntry",
-        )
-        .extern_path(
-            ".pillar.LogAck",
-            "::pillar_shared::proto::LogAck",
-        )
+        .extern_path(".pillar.LogBatch", "::pillar_shared::proto::LogBatch")
+        .extern_path(".pillar.LogEntry", "::pillar_shared::proto::LogEntry")
+        .extern_path(".pillar.LogAck", "::pillar_shared::proto::LogAck")
         .compile_protos(&["../shared/proto/pillar.proto"], &["../shared/proto/"])?;
     Ok(())
 }

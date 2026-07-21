@@ -57,10 +57,7 @@ pub fn spawn_initial_check(current_version: String, update_info: SharedUpdateInf
 
 /// Called by the `/api/version` handler. Returns cached data immediately,
 /// spawns a background refresh if the cache is stale (>1 hour).
-pub async fn get_or_refresh(
-    current_version: &str,
-    update_info: &SharedUpdateInfo,
-) -> UpdateInfo {
+pub async fn get_or_refresh(current_version: &str, update_info: &SharedUpdateInfo) -> UpdateInfo {
     let info = update_info.read().await.clone();
     let stale = match info.checked_at {
         Some(ts) => now_ms() - ts > STALE_AFTER_MS,
@@ -103,10 +100,7 @@ async fn fetch_manifest(current_version: &str) -> Result<UpdateInfo, String> {
         return Err(format!("HTTP {}", resp.status()));
     }
 
-    let manifest: ReleaseManifest = resp
-        .json()
-        .await
-        .map_err(|e| format!("parse error: {e}"))?;
+    let manifest: ReleaseManifest = resp.json().await.map_err(|e| format!("parse error: {e}"))?;
 
     let controller_update = manifest
         .controller

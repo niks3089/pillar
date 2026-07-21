@@ -40,7 +40,8 @@ impl AgentHealth {
     }
 
     pub fn set_controller_connected(&self, connected: bool) {
-        self.controller_connected.store(connected, Ordering::Relaxed);
+        self.controller_connected
+            .store(connected, Ordering::Relaxed);
     }
 
     pub fn set_controller_latency_ms(&self, ms: u64) {

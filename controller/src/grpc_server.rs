@@ -3,8 +3,7 @@ use tonic::{Request, Response, Status, Streaming};
 
 use pillar_shared::proto::{
     CommandStreamRequest, ControllerCommand, LogAck, LogBatch, RegisterNodeRequest,
-    RegisterNodeResponse, ReportStatusRequest, ReportStatusResponse, ScriptResult,
-    ScriptResultAck,
+    RegisterNodeResponse, ReportStatusRequest, ReportStatusResponse, ScriptResult, ScriptResultAck,
 };
 
 use crate::db::{self, Db};
@@ -43,7 +42,13 @@ pub fn check_auth_token(
 /// Extract the Common Name from a DER-encoded leaf certificate.
 pub fn leaf_common_name(der: &[u8]) -> Option<String> {
     let (_, cert) = x509_parser::parse_x509_certificate(der).ok()?;
-    let cn = cert.subject().iter_common_name().next()?.as_str().ok()?.to_string();
+    let cn = cert
+        .subject()
+        .iter_common_name()
+        .next()?
+        .as_str()
+        .ok()?
+        .to_string();
     Some(cn)
 }
 
@@ -69,10 +74,17 @@ impl GrpcServer {
         // Handle IPv6 in brackets [::1]:port, plain IPv4 1.2.3.4:port, or hostname:port
         let self_ip = if host.starts_with('[') {
             // IPv6: extract between brackets
-            host.split(']').next().unwrap_or("").trim_start_matches('[').to_string()
+            host.split(']')
+                .next()
+                .unwrap_or("")
+                .trim_start_matches('[')
+                .to_string()
         } else {
             // IPv4 or hostname: split on last colon (port)
-            host.rsplit_once(':').map(|(h, _)| h).unwrap_or(host).to_string()
+            host.rsplit_once(':')
+                .map(|(h, _)| h)
+                .unwrap_or(host)
+                .to_string()
         };
         Self {
             db,
@@ -148,7 +160,14 @@ impl PillarController for GrpcServer {
         self.registry.register_node(&req.node_id).await;
 
         // Emit controller log for the node
-        let msg = format!("Node registered (agent {})", if req.agent_version.is_empty() { "unknown" } else { &req.agent_version });
+        let msg = format!(
+            "Node registered (agent {})",
+            if req.agent_version.is_empty() {
+                "unknown"
+            } else {
+                &req.agent_version
+            }
+        );
         self.emit_log(&req.node_id, "info", &msg).await;
 
         Ok(Response::new(RegisterNodeResponse {
@@ -332,7 +351,9 @@ impl PillarController for GrpcServer {
         {
             if let Some(ref cn) = allowed_cn {
                 if cn != &batch.node_id {
-                    return Err(Status::permission_denied("node_id does not match client cert"));
+                    return Err(Status::permission_denied(
+                        "node_id does not match client cert",
+                    ));
                 }
             }
             let node_id = &batch.node_id;

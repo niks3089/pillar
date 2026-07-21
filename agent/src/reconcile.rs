@@ -112,7 +112,10 @@ impl Reconciler {
     fn restarts_in_window(&self) -> usize {
         let window = Duration::from_secs(self.config.lifecycle.crash_window_secs);
         let cutoff = Instant::now() - window;
-        self.restart_timestamps.iter().filter(|t| **t >= cutoff).count()
+        self.restart_timestamps
+            .iter()
+            .filter(|t| **t >= cutoff)
+            .count()
     }
 
     fn record_restart(&mut self) {
@@ -123,7 +126,10 @@ impl Reconciler {
     /// Wakes immediately when a command arrives via the channel.
     pub async fn run(&mut self, cancel: CancellationToken) {
         let interval = Duration::from_secs(self.config.health.check_interval_secs);
-        tracing::info!(interval_secs = interval.as_secs(), "reconcile loop starting");
+        tracing::info!(
+            interval_secs = interval.as_secs(),
+            "reconcile loop starting"
+        );
 
         loop {
             tokio::select! {
@@ -234,8 +240,7 @@ impl Reconciler {
         if let Some(ref cv) = self.last_health.cluster_version {
             self.cluster_version = Some(cv.clone());
         }
-        if let (Some(local), Some(cluster)) =
-            (&self.local_validator_version, &self.cluster_version)
+        if let (Some(local), Some(cluster)) = (&self.local_validator_version, &self.cluster_version)
         {
             let local_major = parse_major_version(local);
             let cluster_major = parse_major_version(cluster);

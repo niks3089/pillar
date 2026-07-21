@@ -1,32 +1,38 @@
 use pillar_shared::proto::NodeStatus;
-use prometheus::{
-    Encoder, Gauge, GaugeVec, IntCounter, IntGauge, Opts, Registry, TextEncoder,
-};
+use prometheus::{Encoder, Gauge, GaugeVec, IntCounter, IntGauge, Opts, Registry, TextEncoder};
 
 /// All possible node states, used to set the GaugeVec.
 const NODE_STATES: &[&str] = &["off", "starting_up", "behind", "healthy", "recovering"];
 
 fn register_gauge(registry: &Registry, name: &str, help: &str) -> Gauge {
     let g = Gauge::new(name, help).expect("metric definition");
-    registry.register(Box::new(g.clone())).expect("register metric");
+    registry
+        .register(Box::new(g.clone()))
+        .expect("register metric");
     g
 }
 
 fn register_int_gauge(registry: &Registry, name: &str, help: &str) -> IntGauge {
     let g = IntGauge::new(name, help).expect("metric definition");
-    registry.register(Box::new(g.clone())).expect("register metric");
+    registry
+        .register(Box::new(g.clone()))
+        .expect("register metric");
     g
 }
 
 fn register_int_counter(registry: &Registry, name: &str, help: &str) -> IntCounter {
     let c = IntCounter::new(name, help).expect("metric definition");
-    registry.register(Box::new(c.clone())).expect("register metric");
+    registry
+        .register(Box::new(c.clone()))
+        .expect("register metric");
     c
 }
 
 fn register_gauge_vec(registry: &Registry, name: &str, help: &str, labels: &[&str]) -> GaugeVec {
     let g = GaugeVec::new(Opts::new(name, help), labels).expect("metric definition");
-    registry.register(Box::new(g.clone())).expect("register metric");
+    registry
+        .register(Box::new(g.clone()))
+        .expect("register metric");
     g
 }
 
@@ -88,48 +94,188 @@ impl Metrics {
         let registry = Registry::new();
 
         Self {
-            node_state: register_gauge_vec(&registry, "pillar_node_state", "Current node state (1.0 for active state)", &["state"]),
-            node_slots_behind: register_int_gauge(&registry, "pillar_node_slots_behind", "Slots behind reference"),
-            node_local_slot: register_int_gauge(&registry, "pillar_node_local_slot", "Local slot height"),
-            node_reference_slot: register_int_gauge(&registry, "pillar_node_reference_slot", "Reference slot height"),
-            node_healthy: register_int_gauge(&registry, "pillar_node_healthy", "Whether the node is healthy (1/0)"),
-            node_restarts_total: register_int_gauge(&registry, "pillar_node_restarts_total", "Total restart count"),
-            node_crash_looping: register_int_gauge(&registry, "pillar_node_crash_looping", "Whether crash loop is detected (1/0)"),
-            health_check_duration_seconds: register_gauge(&registry, "pillar_health_check_duration_seconds", "Last health check duration"),
-            node_info: register_gauge_vec(&registry, "pillar_node_info", "Node metadata", &["role", "client", "cluster", "version"]),
-            system_cpu_usage_percent: register_gauge(&registry, "pillar_system_cpu_usage_percent", "CPU usage percentage"),
-            system_memory_used_bytes: register_int_gauge(&registry, "pillar_system_memory_used_bytes", "Used memory in bytes"),
-            system_memory_total_bytes: register_int_gauge(&registry, "pillar_system_memory_total_bytes", "Total memory in bytes"),
-            system_network_rx_bytes_total: register_int_counter(&registry, "pillar_system_network_rx_bytes_total", "Total network bytes received"),
-            system_network_tx_bytes_total: register_int_counter(&registry, "pillar_system_network_tx_bytes_total", "Total network bytes transmitted"),
-            system_disk_used_bytes: register_int_gauge(&registry, "pillar_system_disk_used_bytes", "Used disk space in bytes"),
-            system_disk_total_bytes: register_int_gauge(&registry, "pillar_system_disk_total_bytes", "Total disk space in bytes"),
-            process_cpu_percent: register_gauge_vec(&registry, "pillar_process_cpu_percent", "Process CPU usage percentage", &["process"]),
-            process_memory_bytes: register_gauge_vec(&registry, "pillar_process_memory_bytes", "Process RSS memory in bytes", &["process"]),
+            node_state: register_gauge_vec(
+                &registry,
+                "pillar_node_state",
+                "Current node state (1.0 for active state)",
+                &["state"],
+            ),
+            node_slots_behind: register_int_gauge(
+                &registry,
+                "pillar_node_slots_behind",
+                "Slots behind reference",
+            ),
+            node_local_slot: register_int_gauge(
+                &registry,
+                "pillar_node_local_slot",
+                "Local slot height",
+            ),
+            node_reference_slot: register_int_gauge(
+                &registry,
+                "pillar_node_reference_slot",
+                "Reference slot height",
+            ),
+            node_healthy: register_int_gauge(
+                &registry,
+                "pillar_node_healthy",
+                "Whether the node is healthy (1/0)",
+            ),
+            node_restarts_total: register_int_gauge(
+                &registry,
+                "pillar_node_restarts_total",
+                "Total restart count",
+            ),
+            node_crash_looping: register_int_gauge(
+                &registry,
+                "pillar_node_crash_looping",
+                "Whether crash loop is detected (1/0)",
+            ),
+            health_check_duration_seconds: register_gauge(
+                &registry,
+                "pillar_health_check_duration_seconds",
+                "Last health check duration",
+            ),
+            node_info: register_gauge_vec(
+                &registry,
+                "pillar_node_info",
+                "Node metadata",
+                &["role", "client", "cluster", "version"],
+            ),
+            system_cpu_usage_percent: register_gauge(
+                &registry,
+                "pillar_system_cpu_usage_percent",
+                "CPU usage percentage",
+            ),
+            system_memory_used_bytes: register_int_gauge(
+                &registry,
+                "pillar_system_memory_used_bytes",
+                "Used memory in bytes",
+            ),
+            system_memory_total_bytes: register_int_gauge(
+                &registry,
+                "pillar_system_memory_total_bytes",
+                "Total memory in bytes",
+            ),
+            system_network_rx_bytes_total: register_int_counter(
+                &registry,
+                "pillar_system_network_rx_bytes_total",
+                "Total network bytes received",
+            ),
+            system_network_tx_bytes_total: register_int_counter(
+                &registry,
+                "pillar_system_network_tx_bytes_total",
+                "Total network bytes transmitted",
+            ),
+            system_disk_used_bytes: register_int_gauge(
+                &registry,
+                "pillar_system_disk_used_bytes",
+                "Used disk space in bytes",
+            ),
+            system_disk_total_bytes: register_int_gauge(
+                &registry,
+                "pillar_system_disk_total_bytes",
+                "Total disk space in bytes",
+            ),
+            process_cpu_percent: register_gauge_vec(
+                &registry,
+                "pillar_process_cpu_percent",
+                "Process CPU usage percentage",
+                &["process"],
+            ),
+            process_memory_bytes: register_gauge_vec(
+                &registry,
+                "pillar_process_memory_bytes",
+                "Process RSS memory in bytes",
+                &["process"],
+            ),
 
             // Reconciler health
-            reconcile_count: register_int_gauge(&registry, "pillar_reconcile_count", "Total reconciliation ticks"),
-            health_check_errors: register_int_gauge(&registry, "pillar_health_check_errors", "Cumulative health check failures"),
-            consecutive_off_count: register_int_gauge(&registry, "pillar_consecutive_off_count", "Current consecutive Off debounce counter"),
-            recovery_count: register_int_gauge(&registry, "pillar_recovery_count", "Snapshot recoveries attempted"),
-            agent_uptime_secs: register_int_gauge(&registry, "pillar_agent_uptime_secs", "Seconds since agent started"),
-            version_mismatch: register_int_gauge(&registry, "pillar_version_mismatch", "Validator/cluster version mismatch (1/0)"),
+            reconcile_count: register_int_gauge(
+                &registry,
+                "pillar_reconcile_count",
+                "Total reconciliation ticks",
+            ),
+            health_check_errors: register_int_gauge(
+                &registry,
+                "pillar_health_check_errors",
+                "Cumulative health check failures",
+            ),
+            consecutive_off_count: register_int_gauge(
+                &registry,
+                "pillar_consecutive_off_count",
+                "Current consecutive Off debounce counter",
+            ),
+            recovery_count: register_int_gauge(
+                &registry,
+                "pillar_recovery_count",
+                "Snapshot recoveries attempted",
+            ),
+            agent_uptime_secs: register_int_gauge(
+                &registry,
+                "pillar_agent_uptime_secs",
+                "Seconds since agent started",
+            ),
+            version_mismatch: register_int_gauge(
+                &registry,
+                "pillar_version_mismatch",
+                "Validator/cluster version mismatch (1/0)",
+            ),
 
             // Controller connectivity
-            controller_connected: register_int_gauge(&registry, "pillar_controller_connected", "Active gRPC connection to controller (1/0)"),
-            controller_latency_ms: register_int_gauge(&registry, "pillar_controller_latency_ms", "Last ReportStatus round-trip in ms"),
-            status_reports_sent: register_int_gauge(&registry, "pillar_status_reports_sent", "Successful status report count"),
-            status_reports_failed: register_int_gauge(&registry, "pillar_status_reports_failed", "Failed status report count"),
-            log_batches_dropped: register_int_gauge(&registry, "pillar_log_batches_dropped", "Log batches dropped on controller unreachable"),
-            commands_received: register_int_gauge(&registry, "pillar_commands_received", "Commands received via CommandStream"),
+            controller_connected: register_int_gauge(
+                &registry,
+                "pillar_controller_connected",
+                "Active gRPC connection to controller (1/0)",
+            ),
+            controller_latency_ms: register_int_gauge(
+                &registry,
+                "pillar_controller_latency_ms",
+                "Last ReportStatus round-trip in ms",
+            ),
+            status_reports_sent: register_int_gauge(
+                &registry,
+                "pillar_status_reports_sent",
+                "Successful status report count",
+            ),
+            status_reports_failed: register_int_gauge(
+                &registry,
+                "pillar_status_reports_failed",
+                "Failed status report count",
+            ),
+            log_batches_dropped: register_int_gauge(
+                &registry,
+                "pillar_log_batches_dropped",
+                "Log batches dropped on controller unreachable",
+            ),
+            commands_received: register_int_gauge(
+                &registry,
+                "pillar_commands_received",
+                "Commands received via CommandStream",
+            ),
 
             // Start time
-            agent_started_at_unix_secs: register_int_gauge(&registry, "pillar_agent_started_at_unix_secs", "Agent process start time (unix epoch)"),
+            agent_started_at_unix_secs: register_int_gauge(
+                &registry,
+                "pillar_agent_started_at_unix_secs",
+                "Agent process start time (unix epoch)",
+            ),
 
             // Snapshot download progress
-            snapshot_download_bytes: register_int_gauge(&registry, "pillar_snapshot_download_bytes", "Snapshot download bytes received"),
-            snapshot_download_total_bytes: register_int_gauge(&registry, "pillar_snapshot_download_total_bytes", "Snapshot download total size in bytes"),
-            snapshot_download_speed_bps: register_gauge(&registry, "pillar_snapshot_download_speed_bps", "Snapshot download speed in bytes/s"),
+            snapshot_download_bytes: register_int_gauge(
+                &registry,
+                "pillar_snapshot_download_bytes",
+                "Snapshot download bytes received",
+            ),
+            snapshot_download_total_bytes: register_int_gauge(
+                &registry,
+                "pillar_snapshot_download_total_bytes",
+                "Snapshot download total size in bytes",
+            ),
+            snapshot_download_speed_bps: register_gauge(
+                &registry,
+                "pillar_snapshot_download_speed_bps",
+                "Snapshot download speed in bytes/s",
+            ),
 
             registry,
         }
@@ -154,12 +300,16 @@ impl Metrics {
 
         self.node_info.reset();
         self.node_info
-            .with_label_values(&[&status.role, &status.client, &status.cluster, &status.version])
+            .with_label_values(&[
+                &status.role,
+                &status.client,
+                &status.cluster,
+                &status.version,
+            ])
             .set(1.0);
 
         // System metrics
-        self.system_cpu_usage_percent
-            .set(status.cpu_usage_percent);
+        self.system_cpu_usage_percent.set(status.cpu_usage_percent);
         self.system_memory_used_bytes
             .set(status.memory_used_bytes as i64);
         self.system_memory_total_bytes
@@ -197,16 +347,13 @@ impl Metrics {
             .set(status.agent_memory_bytes as f64);
 
         // Reconciler health
-        self.reconcile_count
-            .set(status.reconcile_count as i64);
+        self.reconcile_count.set(status.reconcile_count as i64);
         self.health_check_errors
             .set(status.health_check_errors as i64);
         self.consecutive_off_count
             .set(status.consecutive_off_count as i64);
-        self.recovery_count
-            .set(status.recovery_count as i64);
-        self.agent_uptime_secs
-            .set(status.agent_uptime_secs as i64);
+        self.recovery_count.set(status.recovery_count as i64);
+        self.agent_uptime_secs.set(status.agent_uptime_secs as i64);
         self.version_mismatch
             .set(if status.version_mismatch { 1 } else { 0 });
 
@@ -221,8 +368,7 @@ impl Metrics {
             .set(status.status_reports_failed as i64);
         self.log_batches_dropped
             .set(status.log_batches_dropped as i64);
-        self.commands_received
-            .set(status.commands_received as i64);
+        self.commands_received.set(status.commands_received as i64);
 
         // Start time
         self.agent_started_at_unix_secs

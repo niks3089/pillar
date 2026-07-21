@@ -5,47 +5,124 @@ use axum::http::StatusCode;
 use axum::response::IntoResponse;
 
 use pillar_shared::proto::NodeStatus;
+use pillar_shared::types::NodeState;
 
 use crate::node_registry::NodeRegistry;
 
 /// Metric definitions: (name, help text).
 const METRIC_HEADERS: &[(&str, &str)] = &[
-    ("pillar_node_info", "Node metadata (role, cluster) — always 1"),
-    ("pillar_node_healthy", "Whether the node is healthy (1) or not (0)"),
-    ("pillar_node_slots_behind", "Number of slots behind the reference"),
+    (
+        "pillar_node_info",
+        "Node metadata (role, cluster) — always 1",
+    ),
+    (
+        "pillar_node_healthy",
+        "Whether the node is healthy (1) or not (0)",
+    ),
+    (
+        "pillar_node_slots_behind",
+        "Number of slots behind the reference",
+    ),
     ("pillar_node_local_slot", "Current local slot of the node"),
-    ("pillar_node_reference_slot", "Reference slot from the network"),
-    ("pillar_node_restarts_total", "Total number of validator restarts"),
-    ("pillar_node_crash_looping", "Whether the node is in a crash loop (1) or not (0)"),
-    ("pillar_system_cpu_usage_percent", "System CPU usage percentage"),
-    ("pillar_system_memory_used_bytes", "System memory used in bytes"),
-    ("pillar_system_memory_total_bytes", "System total memory in bytes"),
+    (
+        "pillar_node_reference_slot",
+        "Reference slot from the network",
+    ),
+    (
+        "pillar_node_restarts_total",
+        "Total number of validator restarts",
+    ),
+    (
+        "pillar_node_crash_looping",
+        "Whether the node is in a crash loop (1) or not (0)",
+    ),
+    (
+        "pillar_node_state",
+        "Node lifecycle state (off/starting_up/behind/healthy/recovering), one-hot per state label",
+    ),
+    (
+        "pillar_system_cpu_usage_percent",
+        "System CPU usage percentage",
+    ),
+    (
+        "pillar_system_memory_used_bytes",
+        "System memory used in bytes",
+    ),
+    (
+        "pillar_system_memory_total_bytes",
+        "System total memory in bytes",
+    ),
     ("pillar_system_disk_used_bytes", "Disk used in bytes"),
     ("pillar_system_disk_total_bytes", "Disk total in bytes"),
     ("pillar_system_network_rx_bytes", "Network bytes received"),
-    ("pillar_system_network_tx_bytes", "Network bytes transmitted"),
-    ("pillar_process_cpu_percent", "Per-process CPU usage percentage"),
-    ("pillar_process_memory_bytes", "Per-process memory usage in bytes"),
+    (
+        "pillar_system_network_tx_bytes",
+        "Network bytes transmitted",
+    ),
+    (
+        "pillar_process_cpu_percent",
+        "Per-process CPU usage percentage",
+    ),
+    (
+        "pillar_process_memory_bytes",
+        "Per-process memory usage in bytes",
+    ),
     // Reconciler health
     ("pillar_reconcile_count", "Total reconciliation ticks"),
-    ("pillar_health_check_errors", "Cumulative health check failures"),
-    ("pillar_consecutive_off_count", "Current consecutive Off debounce counter"),
+    (
+        "pillar_health_check_errors",
+        "Cumulative health check failures",
+    ),
+    (
+        "pillar_consecutive_off_count",
+        "Current consecutive Off debounce counter",
+    ),
     ("pillar_recovery_count", "Snapshot recoveries attempted"),
     ("pillar_agent_uptime_secs", "Seconds since agent started"),
-    ("pillar_version_mismatch", "Validator/cluster version mismatch (1/0)"),
+    (
+        "pillar_version_mismatch",
+        "Validator/cluster version mismatch (1/0)",
+    ),
     // Controller connectivity
-    ("pillar_controller_connected", "Active gRPC connection to controller (1/0)"),
-    ("pillar_controller_latency_ms", "Last ReportStatus round-trip in ms"),
-    ("pillar_status_reports_sent", "Successful status report count"),
+    (
+        "pillar_controller_connected",
+        "Active gRPC connection to controller (1/0)",
+    ),
+    (
+        "pillar_controller_latency_ms",
+        "Last ReportStatus round-trip in ms",
+    ),
+    (
+        "pillar_status_reports_sent",
+        "Successful status report count",
+    ),
     ("pillar_status_reports_failed", "Failed status report count"),
-    ("pillar_log_batches_dropped", "Log batches dropped on controller unreachable"),
-    ("pillar_commands_received", "Commands received via CommandStream"),
+    (
+        "pillar_log_batches_dropped",
+        "Log batches dropped on controller unreachable",
+    ),
+    (
+        "pillar_commands_received",
+        "Commands received via CommandStream",
+    ),
     // Process start time (unix epoch, stable per process lifetime)
-    ("pillar_agent_started_at_unix_secs", "Agent process start time (unix epoch)"),
+    (
+        "pillar_agent_started_at_unix_secs",
+        "Agent process start time (unix epoch)",
+    ),
     // Snapshot download progress
-    ("pillar_snapshot_download_bytes", "Snapshot download bytes received"),
-    ("pillar_snapshot_download_total_bytes", "Snapshot download total size in bytes"),
-    ("pillar_snapshot_download_speed_bps", "Snapshot download speed in bytes/s"),
+    (
+        "pillar_snapshot_download_bytes",
+        "Snapshot download bytes received",
+    ),
+    (
+        "pillar_snapshot_download_total_bytes",
+        "Snapshot download total size in bytes",
+    ),
+    (
+        "pillar_snapshot_download_speed_bps",
+        "Snapshot download speed in bytes/s",
+    ),
 ];
 
 fn emit_node_metrics(out: &mut String, node_id: &str, status: &NodeStatus) {
@@ -61,51 +138,113 @@ fn emit_node_metrics(out: &mut String, node_id: &str, status: &NodeStatus) {
 
     // Node health metrics
     let node_metrics: &[(&str, f64)] = &[
-        ("pillar_node_healthy", if status.healthy { 1.0 } else { 0.0 }),
+        (
+            "pillar_node_healthy",
+            if status.healthy { 1.0 } else { 0.0 },
+        ),
         ("pillar_node_slots_behind", status.slots_behind as f64),
         ("pillar_node_local_slot", status.local_slot as f64),
         ("pillar_node_reference_slot", status.reference_slot as f64),
         ("pillar_node_restarts_total", status.restart_count as f64),
-        ("pillar_node_crash_looping", if status.crash_looping { 1.0 } else { 0.0 }),
+        (
+            "pillar_node_crash_looping",
+            if status.crash_looping { 1.0 } else { 0.0 },
+        ),
         ("pillar_system_cpu_usage_percent", status.cpu_usage_percent),
-        ("pillar_system_memory_used_bytes", status.memory_used_bytes as f64),
-        ("pillar_system_memory_total_bytes", status.memory_total_bytes as f64),
-        ("pillar_system_disk_used_bytes", status.disk_used_bytes as f64),
-        ("pillar_system_disk_total_bytes", status.disk_total_bytes as f64),
-        ("pillar_system_network_rx_bytes", status.network_rx_bytes as f64),
-        ("pillar_system_network_tx_bytes", status.network_tx_bytes as f64),
+        (
+            "pillar_system_memory_used_bytes",
+            status.memory_used_bytes as f64,
+        ),
+        (
+            "pillar_system_memory_total_bytes",
+            status.memory_total_bytes as f64,
+        ),
+        (
+            "pillar_system_disk_used_bytes",
+            status.disk_used_bytes as f64,
+        ),
+        (
+            "pillar_system_disk_total_bytes",
+            status.disk_total_bytes as f64,
+        ),
+        (
+            "pillar_system_network_rx_bytes",
+            status.network_rx_bytes as f64,
+        ),
+        (
+            "pillar_system_network_tx_bytes",
+            status.network_tx_bytes as f64,
+        ),
     ];
 
     // Reconciler health
     let reconciler_metrics: &[(&str, f64)] = &[
         ("pillar_reconcile_count", status.reconcile_count as f64),
-        ("pillar_health_check_errors", status.health_check_errors as f64),
-        ("pillar_consecutive_off_count", status.consecutive_off_count as f64),
+        (
+            "pillar_health_check_errors",
+            status.health_check_errors as f64,
+        ),
+        (
+            "pillar_consecutive_off_count",
+            status.consecutive_off_count as f64,
+        ),
         ("pillar_recovery_count", status.recovery_count as f64),
         ("pillar_agent_uptime_secs", status.agent_uptime_secs as f64),
-        ("pillar_version_mismatch", if status.version_mismatch { 1.0 } else { 0.0 }),
+        (
+            "pillar_version_mismatch",
+            if status.version_mismatch { 1.0 } else { 0.0 },
+        ),
     ];
 
     // Controller connectivity
     let controller_metrics: &[(&str, f64)] = &[
-        ("pillar_controller_connected", if status.controller_connected { 1.0 } else { 0.0 }),
-        ("pillar_controller_latency_ms", status.controller_latency_ms as f64),
-        ("pillar_status_reports_sent", status.status_reports_sent as f64),
-        ("pillar_status_reports_failed", status.status_reports_failed as f64),
-        ("pillar_log_batches_dropped", status.log_batches_dropped as f64),
+        (
+            "pillar_controller_connected",
+            if status.controller_connected {
+                1.0
+            } else {
+                0.0
+            },
+        ),
+        (
+            "pillar_controller_latency_ms",
+            status.controller_latency_ms as f64,
+        ),
+        (
+            "pillar_status_reports_sent",
+            status.status_reports_sent as f64,
+        ),
+        (
+            "pillar_status_reports_failed",
+            status.status_reports_failed as f64,
+        ),
+        (
+            "pillar_log_batches_dropped",
+            status.log_batches_dropped as f64,
+        ),
         ("pillar_commands_received", status.commands_received as f64),
     ];
 
     // Process start time
-    let start_time_metrics: &[(&str, f64)] = &[
-        ("pillar_agent_started_at_unix_secs", status.agent_started_at_unix_secs as f64),
-    ];
+    let start_time_metrics: &[(&str, f64)] = &[(
+        "pillar_agent_started_at_unix_secs",
+        status.agent_started_at_unix_secs as f64,
+    )];
 
     // Snapshot download progress
     let snapshot_metrics: &[(&str, f64)] = &[
-        ("pillar_snapshot_download_bytes", status.snapshot_download_bytes as f64),
-        ("pillar_snapshot_download_total_bytes", status.snapshot_download_total_bytes as f64),
-        ("pillar_snapshot_download_speed_bps", status.snapshot_download_speed_bps),
+        (
+            "pillar_snapshot_download_bytes",
+            status.snapshot_download_bytes as f64,
+        ),
+        (
+            "pillar_snapshot_download_total_bytes",
+            status.snapshot_download_total_bytes as f64,
+        ),
+        (
+            "pillar_snapshot_download_speed_bps",
+            status.snapshot_download_speed_bps,
+        ),
     ];
 
     for (name, value) in node_metrics
@@ -118,9 +257,22 @@ fn emit_node_metrics(out: &mut String, node_id: &str, status: &NodeStatus) {
         let _ = writeln!(out, "{name}{{{base}}} {value}");
     }
 
+    for s in NodeState::ALL {
+        let v = if status.state == s.as_str() { 1 } else { 0 };
+        let _ = writeln!(
+            out,
+            "pillar_node_state{{{base},state=\"{}\"}} {v}",
+            s.as_str()
+        );
+    }
+
     // Per-process metrics (need process label in addition to node_id)
     let processes: &[(&str, f64, u64)] = &[
-        ("validator", status.validator_cpu_percent, status.validator_memory_bytes),
+        (
+            "validator",
+            status.validator_cpu_percent,
+            status.validator_memory_bytes,
+        ),
         ("agent", status.agent_cpu_percent, status.agent_memory_bytes),
     ];
 
@@ -154,9 +306,7 @@ pub async fn gather_metrics(registry: &NodeRegistry) -> String {
 }
 
 /// Axum handler that serves Prometheus metrics.
-pub async fn metrics_handler(
-    State(state): State<crate::api::ApiState>,
-) -> impl IntoResponse {
+pub async fn metrics_handler(State(state): State<crate::api::ApiState>) -> impl IntoResponse {
     let body = gather_metrics(&state.registry).await;
     (
         StatusCode::OK,
@@ -211,7 +361,8 @@ mod tests {
         let output = gather_metrics(&reg).await;
         assert!(output.contains("node_id=\"node-1\""));
         // role and cluster only on info metric
-        assert!(output.contains("pillar_node_info{node_id=\"node-1\",role=\"rpc\",cluster=\"mainnet\"} 1"));
+        assert!(output
+            .contains("pillar_node_info{node_id=\"node-1\",role=\"rpc\",cluster=\"mainnet\"} 1"));
         // other metrics use only node_id
         assert!(output.contains("pillar_node_healthy{node_id=\"node-1\"} 1"));
     }
@@ -224,6 +375,8 @@ mod tests {
 
         let output = gather_metrics(&reg).await;
         assert!(output.contains("pillar_node_healthy{"));
+        assert!(output.contains("pillar_node_state{node_id=\"n1\",state=\"healthy\"} 1"));
+        assert!(output.contains("pillar_node_state{node_id=\"n1\",state=\"starting_up\"} 0"));
         assert!(output.contains("pillar_node_slots_behind{"));
         assert!(output.contains("pillar_node_local_slot{"));
         assert!(output.contains("pillar_system_cpu_usage_percent{"));

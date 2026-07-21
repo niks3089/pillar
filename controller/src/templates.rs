@@ -197,7 +197,10 @@ pub fn build_exec_start(
             args.push(format!("--relayer-url {}", jito.relayer_url));
         }
         if !jito.shred_receiver_addr.is_empty() {
-            args.push(format!("--shred-receiver-address {}", jito.shred_receiver_addr));
+            args.push(format!(
+                "--shred-receiver-address {}",
+                jito.shred_receiver_addr
+            ));
         }
 
         if !validator_flags.contains_key("tip-payment-program-pubkey") {
@@ -415,7 +418,8 @@ mod tests {
         );
         flags.insert("commission-bps".to_string(), "1000".to_string());
         let exec = jito_exec("mainnet", &jito, &flags);
-        assert!(exec.contains("--tip-payment-program-pubkey CustomTipPayment1111111111111111111111111111"));
+        assert!(exec
+            .contains("--tip-payment-program-pubkey CustomTipPayment1111111111111111111111111111"));
         assert!(exec.contains("--commission-bps 1000"));
         // The default commission/tip-payment must not also be emitted.
         assert!(!exec.contains("--commission-bps 800"));

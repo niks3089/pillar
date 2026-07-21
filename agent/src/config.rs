@@ -55,22 +55,36 @@ impl AgentConfig {
         let mut errors = Vec::new();
 
         if self.health.check_interval_secs == 0 {
-            errors.push("health.check_interval_secs must be > 0 (would cause CPU spin loop)".to_string());
+            errors.push(
+                "health.check_interval_secs must be > 0 (would cause CPU spin loop)".to_string(),
+            );
         }
         if self.lifecycle.max_startup_wait_secs == 0 {
-            errors.push("lifecycle.max_startup_wait_secs must be > 0 (would cause immediate timeout)".to_string());
+            errors.push(
+                "lifecycle.max_startup_wait_secs must be > 0 (would cause immediate timeout)"
+                    .to_string(),
+            );
         }
         if self.lifecycle.max_catchup_wait_secs == 0 {
-            errors.push("lifecycle.max_catchup_wait_secs must be > 0 (would cause immediate timeout)".to_string());
+            errors.push(
+                "lifecycle.max_catchup_wait_secs must be > 0 (would cause immediate timeout)"
+                    .to_string(),
+            );
         }
         if self.lifecycle.crash_threshold == 0 {
-            errors.push("lifecycle.crash_threshold must be > 0 (would cause immediate crash loop)".to_string());
+            errors.push(
+                "lifecycle.crash_threshold must be > 0 (would cause immediate crash loop)"
+                    .to_string(),
+            );
         }
         if self.lifecycle.crash_window_secs == 0 {
             errors.push("lifecycle.crash_window_secs must be > 0".to_string());
         }
         if self.network.reference_rpc_urls.is_empty() {
-            errors.push("network.reference_rpc_urls must not be empty (health checks would always fail)".to_string());
+            errors.push(
+                "network.reference_rpc_urls must not be empty (health checks would always fail)"
+                    .to_string(),
+            );
         }
         if self.health.rpc_timeout_secs == 0 {
             errors.push("health.rpc_timeout_secs must be > 0".to_string());
@@ -95,29 +109,50 @@ impl AgentConfig {
         // Path validation
         let ledger = std::path::Path::new(&self.paths.ledger_path);
         if !ledger.is_absolute() {
-            errors.push(format!("paths.ledger_path must be absolute: {}", self.paths.ledger_path));
+            errors.push(format!(
+                "paths.ledger_path must be absolute: {}",
+                self.paths.ledger_path
+            ));
         } else if ledger.components().count() < 3 {
-            errors.push(format!("paths.ledger_path too shallow: {}", self.paths.ledger_path));
+            errors.push(format!(
+                "paths.ledger_path too shallow: {}",
+                self.paths.ledger_path
+            ));
         }
 
         let accounts = std::path::Path::new(&self.paths.accounts_path);
         if !accounts.is_absolute() {
-            errors.push(format!("paths.accounts_path must be absolute: {}", self.paths.accounts_path));
+            errors.push(format!(
+                "paths.accounts_path must be absolute: {}",
+                self.paths.accounts_path
+            ));
         } else if accounts.components().count() < 3 {
-            errors.push(format!("paths.accounts_path too shallow: {}", self.paths.accounts_path));
+            errors.push(format!(
+                "paths.accounts_path too shallow: {}",
+                self.paths.accounts_path
+            ));
         }
 
         let snapshot = std::path::Path::new(&self.paths.snapshot_path);
         if !snapshot.is_absolute() {
-            errors.push(format!("paths.snapshot_path must be absolute: {}", self.paths.snapshot_path));
+            errors.push(format!(
+                "paths.snapshot_path must be absolute: {}",
+                self.paths.snapshot_path
+            ));
         } else if snapshot.components().count() < 3 {
-            errors.push(format!("paths.snapshot_path too shallow: {}", self.paths.snapshot_path));
+            errors.push(format!(
+                "paths.snapshot_path too shallow: {}",
+                self.paths.snapshot_path
+            ));
         }
 
         if errors.is_empty() {
             Ok(())
         } else {
-            Err(format!("config validation failed:\n  - {}", errors.join("\n  - ")))
+            Err(format!(
+                "config validation failed:\n  - {}",
+                errors.join("\n  - ")
+            ))
         }
     }
 }
@@ -277,34 +312,80 @@ impl Default for LogCollectorConfig {
     }
 }
 
-fn default_log_collector_enabled() -> bool { true }
+fn default_log_collector_enabled() -> bool {
+    true
+}
 fn default_log_collector_units() -> Vec<String> {
     vec![
         "solana-validator.service".to_string(),
         "pillar-agent.service".to_string(),
     ]
 }
-fn default_log_collector_buffer_size() -> usize { 100 }
-fn default_log_collector_flush_interval_ms() -> u64 { 1000 }
-fn default_validator_min_level() -> String { "warn".to_string() }
-fn default_default_min_level() -> String { "debug".to_string() }
+fn default_log_collector_buffer_size() -> usize {
+    100
+}
+fn default_log_collector_flush_interval_ms() -> u64 {
+    1000
+}
+fn default_validator_min_level() -> String {
+    "warn".to_string()
+}
+fn default_default_min_level() -> String {
+    "debug".to_string()
+}
 
 // Serde default functions
-fn default_service_name() -> String { DEFAULT_SERVICE_NAME.to_string() }
-fn default_max_startup_wait_secs() -> u64 { DEFAULT_MAX_STARTUP_WAIT_SECS }
-fn default_max_catchup_wait_secs() -> u64 { DEFAULT_MAX_CATCHUP_WAIT_SECS }
-fn default_crash_window_secs() -> u64 { DEFAULT_CRASH_WINDOW_SECS }
-fn default_crash_threshold() -> usize { DEFAULT_CRASH_THRESHOLD }
-fn default_staleness_threshold_slots() -> u64 { DEFAULT_STALENESS_THRESHOLD_SLOTS }
-fn default_download_timeout_secs() -> u64 { DEFAULT_DOWNLOAD_TIMEOUT_SECS }
-fn default_consecutive_off_threshold() -> usize { DEFAULT_CONSECUTIVE_OFF_THRESHOLD }
-fn default_check_interval_secs() -> u64 { DEFAULT_CHECK_INTERVAL_SECS }
-fn default_slots_behind_threshold() -> u64 { DEFAULT_SLOTS_BEHIND_THRESHOLD }
-fn default_rpc_timeout_secs() -> u64 { DEFAULT_RPC_TIMEOUT_SECS }
-fn default_local_rpc_url() -> String { DEFAULT_LOCAL_RPC_URL.to_string() }
-fn default_ledger_path() -> String { DEFAULT_LEDGER_PATH.to_string() }
-fn default_accounts_path() -> String { DEFAULT_ACCOUNTS_PATH.to_string() }
-fn default_snapshot_path() -> String { DEFAULT_SNAPSHOT_PATH.to_string() }
-fn default_http_listen() -> String { DEFAULT_HTTP_LISTEN.to_string() }
-fn default_report_interval_secs() -> u64 { DEFAULT_REPORT_INTERVAL_SECS }
-fn default_sysinfo_refresh_interval_secs() -> u64 { DEFAULT_SYSINFO_REFRESH_INTERVAL_SECS }
+fn default_service_name() -> String {
+    DEFAULT_SERVICE_NAME.to_string()
+}
+fn default_max_startup_wait_secs() -> u64 {
+    DEFAULT_MAX_STARTUP_WAIT_SECS
+}
+fn default_max_catchup_wait_secs() -> u64 {
+    DEFAULT_MAX_CATCHUP_WAIT_SECS
+}
+fn default_crash_window_secs() -> u64 {
+    DEFAULT_CRASH_WINDOW_SECS
+}
+fn default_crash_threshold() -> usize {
+    DEFAULT_CRASH_THRESHOLD
+}
+fn default_staleness_threshold_slots() -> u64 {
+    DEFAULT_STALENESS_THRESHOLD_SLOTS
+}
+fn default_download_timeout_secs() -> u64 {
+    DEFAULT_DOWNLOAD_TIMEOUT_SECS
+}
+fn default_consecutive_off_threshold() -> usize {
+    DEFAULT_CONSECUTIVE_OFF_THRESHOLD
+}
+fn default_check_interval_secs() -> u64 {
+    DEFAULT_CHECK_INTERVAL_SECS
+}
+fn default_slots_behind_threshold() -> u64 {
+    DEFAULT_SLOTS_BEHIND_THRESHOLD
+}
+fn default_rpc_timeout_secs() -> u64 {
+    DEFAULT_RPC_TIMEOUT_SECS
+}
+fn default_local_rpc_url() -> String {
+    DEFAULT_LOCAL_RPC_URL.to_string()
+}
+fn default_ledger_path() -> String {
+    DEFAULT_LEDGER_PATH.to_string()
+}
+fn default_accounts_path() -> String {
+    DEFAULT_ACCOUNTS_PATH.to_string()
+}
+fn default_snapshot_path() -> String {
+    DEFAULT_SNAPSHOT_PATH.to_string()
+}
+fn default_http_listen() -> String {
+    DEFAULT_HTTP_LISTEN.to_string()
+}
+fn default_report_interval_secs() -> u64 {
+    DEFAULT_REPORT_INTERVAL_SECS
+}
+fn default_sysinfo_refresh_interval_secs() -> u64 {
+    DEFAULT_SYSINFO_REFRESH_INTERVAL_SECS
+}

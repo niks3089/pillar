@@ -633,8 +633,7 @@ fn map_state_to_lifecycle(state: &str) -> &str {
 // We need the optional() method on query_row results.
 use rusqlite::OptionalExtension;
 
-const NODE_SELECT_COLUMNS: &str =
-    "node_id, lifecycle_state, role, client, cluster, hostname,
+const NODE_SELECT_COLUMNS: &str = "node_id, lifecycle_state, role, client, cluster, hostname,
      agent_version, ip_address, last_seen_at, registered_at, provision_config_json";
 
 fn row_to_node(row: &rusqlite::Row) -> rusqlite::Result<NodeRow> {
@@ -727,7 +726,9 @@ mod tests {
     #[tokio::test]
     async fn list_nodes_with_data() {
         let db = test_db();
-        upsert_node(&db, &sample_register_request(), "10.0.0.1").await.unwrap();
+        upsert_node(&db, &sample_register_request(), "10.0.0.1")
+            .await
+            .unwrap();
         let mut req2 = sample_register_request();
         req2.node_id = "node-2".to_string();
         upsert_node(&db, &req2, "10.0.0.2").await.unwrap();
@@ -739,7 +740,9 @@ mod tests {
     #[tokio::test]
     async fn update_status_and_transitions() {
         let db = test_db();
-        upsert_node(&db, &sample_register_request(), "10.0.0.1").await.unwrap();
+        upsert_node(&db, &sample_register_request(), "10.0.0.1")
+            .await
+            .unwrap();
 
         let status = sample_status(); // state = "healthy"
 
@@ -766,7 +769,9 @@ mod tests {
     #[tokio::test]
     async fn delete_node_found() {
         let db = test_db();
-        upsert_node(&db, &sample_register_request(), "10.0.0.1").await.unwrap();
+        upsert_node(&db, &sample_register_request(), "10.0.0.1")
+            .await
+            .unwrap();
         assert!(delete_node(&db, "node-1").await.unwrap());
         assert!(get_node(&db, "node-1").await.unwrap().is_none());
     }
@@ -800,7 +805,9 @@ mod tests {
         let count = insert_logs(&db, "node-1", &entries).await.unwrap();
         assert_eq!(count, 2);
 
-        let logs = get_logs(&db, "node-1", None, None, None, 100u32).await.unwrap();
+        let logs = get_logs(&db, "node-1", None, None, None, 100u32)
+            .await
+            .unwrap();
         assert_eq!(logs.len(), 2);
 
         // Filter by service
@@ -827,7 +834,9 @@ mod tests {
     #[tokio::test]
     async fn fleet_overview() {
         let db = test_db();
-        upsert_node(&db, &sample_register_request(), "10.0.0.1").await.unwrap();
+        upsert_node(&db, &sample_register_request(), "10.0.0.1")
+            .await
+            .unwrap();
 
         let mut req2 = sample_register_request();
         req2.node_id = "node-2".to_string();

@@ -90,8 +90,14 @@ pub struct LoginRequest {
 }
 
 pub async fn login(State(state): State<ApiState>, Json(req): Json<LoginRequest>) -> Response {
-    let stored_username = db::get_setting(&state.db, "admin_username").await.ok().flatten();
-    let stored_hash = db::get_setting(&state.db, "admin_password_hash").await.ok().flatten();
+    let stored_username = db::get_setting(&state.db, "admin_username")
+        .await
+        .ok()
+        .flatten();
+    let stored_hash = db::get_setting(&state.db, "admin_password_hash")
+        .await
+        .ok()
+        .flatten();
 
     let (Some(expected_username), Some(expected_hash)) = (stored_username, stored_hash) else {
         return (
@@ -143,8 +149,7 @@ pub async fn logout(State(state): State<ApiState>, req: Request) -> Response {
         state.sessions.remove(&session_id);
     }
 
-    let clear_cookie =
-        "pillar_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0".to_string();
+    let clear_cookie = "pillar_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0".to_string();
 
     (
         StatusCode::OK,
@@ -240,11 +245,7 @@ pub async fn change_credentials(
 // Middleware
 // ---------------------------------------------------------------------------
 
-pub async fn require_auth(
-    State(state): State<ApiState>,
-    req: Request,
-    next: Next,
-) -> Response {
+pub async fn require_auth(State(state): State<ApiState>, req: Request, next: Next) -> Response {
     if is_authenticated(&state, &req) {
         return next.run(req).await;
     }

@@ -13,6 +13,14 @@ pub enum NodeState {
 }
 
 impl NodeState {
+    pub const ALL: &'static [NodeState] = &[
+        NodeState::Off,
+        NodeState::StartingUp,
+        NodeState::Behind,
+        NodeState::Healthy,
+        NodeState::Recovering,
+    ];
+
     pub fn as_str(&self) -> &str {
         match self {
             NodeState::Off => "off",

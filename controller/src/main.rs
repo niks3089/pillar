@@ -77,8 +77,7 @@ async fn main() -> anyhow::Result<()> {
     let database = db::open_db(&config.db_path)?;
 
     // Seed grafana_url from config into DB if not already set
-    if !config.grafana_url.is_empty()
-        && db::get_setting(&database, "grafana_url").await?.is_none()
+    if !config.grafana_url.is_empty() && db::get_setting(&database, "grafana_url").await?.is_none()
     {
         db::set_setting(&database, "grafana_url", &config.grafana_url).await?;
         tracing::info!("seeded grafana_url from config");
@@ -101,10 +100,10 @@ async fn main() -> anyhow::Result<()> {
     // Optionally generate TLS certs (server-only TLS, no client certs)
     let tls_config = if !config.certs_dir.is_empty() {
         let cert_paths = certs::ensure_certs(&config.certs_dir, &config.external_url)?;
-        let server_cert = std::fs::read_to_string(&cert_paths.server_cert)
-            .context("reading server cert")?;
-        let server_key = std::fs::read_to_string(&cert_paths.server_key)
-            .context("reading server key")?;
+        let server_cert =
+            std::fs::read_to_string(&cert_paths.server_cert).context("reading server cert")?;
+        let server_key =
+            std::fs::read_to_string(&cert_paths.server_key).context("reading server key")?;
 
         let identity = tonic::transport::Identity::from_pem(&server_cert, &server_key);
         let mut tls = tonic::transport::ServerTlsConfig::new().identity(identity);
@@ -122,7 +121,10 @@ async fn main() -> anyhow::Result<()> {
 
     // Seed admin credentials if not present. We generate a random password instead of a
     // guessable default (`admin/admin`) and print it ONCE; the operator changes it via the UI.
-    if db::get_setting(&database, "admin_username").await?.is_none() {
+    if db::get_setting(&database, "admin_username")
+        .await?
+        .is_none()
+    {
         db::set_setting(&database, "admin_username", "admin").await?;
         let password = certs::generate_token();
         let hash = auth::hash_password(&password)
@@ -240,9 +242,10 @@ async fn main() -> anyhow::Result<()> {
     let app = api::router(api_state)
         .nest(
             "/grafana",
-            api::grafana_router(grafana_state).layer(
-                axum::middleware::from_fn_with_state(auth_state, auth::require_auth),
-            ),
+            api::grafana_router(grafana_state).layer(axum::middleware::from_fn_with_state(
+                auth_state,
+                auth::require_auth,
+            )),
         )
         .merge(web::router())
         .layer(CorsLayer::permissive());
