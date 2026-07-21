@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.6.1](https://github.com/niks3089/pillar/compare/pillar-controller-v0.6.0...pillar-controller-v0.6.1) (2026-07-21)
+
+
+### Bug Fixes
+
+* **controller:** include --cluster placeholder in onboard command ([#42](https://github.com/niks3089/pillar/issues/42)) ([9c649c4](https://github.com/niks3089/pillar/commit/9c649c47a6b633f7aae3f292c31285ede5078f30))
+* **controller:** onboard command includes --cluster (fixes broken copy-paste) ([8663f36](https://github.com/niks3089/pillar/commit/8663f36f10c636108b7452b383a9b12f7c910250))
+
 ## [0.6.0](https://github.com/niks3089/pillar/compare/pillar-controller-v0.5.2...pillar-controller-v0.6.0) (2026-07-21)
 
 
