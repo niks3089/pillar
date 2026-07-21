@@ -4,9 +4,13 @@
 # creates the sol user, applies sysctl tuning, and generates validator keypairs.
 #
 # Usage:
-#   curl -sSL https://github.com/niks3089/pillar/releases/latest/download/install-node.sh | sudo bash -s -- --controller https://10.0.0.1:50051
-#   sudo ./install-node.sh --controller http://10.0.0.1:50051 --version 0.1.0
 #   sudo ./install-node.sh --controller http://10.0.0.1:50051 --cluster testnet
+#   sudo ./install-node.sh --controller http://10.0.0.1:50051 --version 0.1.0
+#
+# --cluster (mainnet-beta | testnet | devnet) is required unless a validator is
+# already running locally, in which case it is auto-detected from the genesis
+# hash (and a contradicting --cluster flag is rejected; --skip-cluster-check
+# overrides).
 #
 # Idempotent — safe to run multiple times.
 
@@ -24,7 +28,8 @@ LOG_DIR="/var/log/pillar"
 
 ROLE="rpc"
 CLIENT="agave"
-CLUSTER="mainnet-beta"
+CLUSTER=""
+SKIP_CLUSTER_CHECK="false"
 REFERENCE_RPC=""
 CONTROLLER_ENDPOINT=""
 HTTP_URL=""
@@ -62,6 +67,7 @@ while [[ $# -gt 0 ]]; do
         --role)                  ROLE="$2";                  shift 2 ;;
         --client)                CLIENT="$2";                shift 2 ;;
         --cluster)               CLUSTER="$2";               shift 2 ;;
+        --skip-cluster-check)    SKIP_CLUSTER_CHECK="true";  shift ;;
         --reference-rpc)         REFERENCE_RPC="$2";         shift 2 ;;
         --controller-endpoint|--controller) CONTROLLER_ENDPOINT="$2"; shift 2 ;;
         --http-url)              HTTP_URL="$2";              shift 2 ;;
@@ -77,6 +83,53 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
+
+# ------------------------------------------------------------------------------
+# Cluster resolution — never silently assume mainnet-beta.
+#
+# The cluster is not just a label: it selects the reference RPC the agent
+# compares the local node against. A wrong cluster means garbage slots_behind
+# and potentially destructive recovery actions. If a validator is already
+# running locally, its genesis hash is the ground truth.
+# ------------------------------------------------------------------------------
+
+GENESIS_MAINNET="5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d"
+GENESIS_TESTNET="4uhcVJyU9pJkvQyS88uRDiswHXSCkY3zQawwpjk2NsNY"
+GENESIS_DEVNET="EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG"
+
+detect_cluster_from_local_rpc() {
+    local hash
+    hash=$(curl -s -m 5 "http://127.0.0.1:8899" -X POST -H 'Content-Type: application/json' \
+        -d '{"jsonrpc":"2.0","id":1,"method":"getGenesisHash"}' 2>/dev/null |
+        grep -o '"result":"[^"]*"' | cut -d'"' -f4) || true
+    case "$hash" in
+        "$GENESIS_MAINNET") echo "mainnet-beta" ;;
+        "$GENESIS_TESTNET") echo "testnet" ;;
+        "$GENESIS_DEVNET")  echo "devnet" ;;
+        *)                  echo "" ;;
+    esac
+}
+
+DETECTED_CLUSTER="$(detect_cluster_from_local_rpc)"
+if [[ -n "$DETECTED_CLUSTER" ]]; then
+    if [[ -z "$CLUSTER" ]]; then
+        CLUSTER="$DETECTED_CLUSTER"
+        ok "cluster auto-detected from local RPC genesis hash: $CLUSTER"
+    elif [[ "$CLUSTER" != "$DETECTED_CLUSTER" ]]; then
+        if [[ "$SKIP_CLUSTER_CHECK" == "true" ]]; then
+            warn "--cluster $CLUSTER contradicts the local node's genesis hash ($DETECTED_CLUSTER); proceeding due to --skip-cluster-check"
+        else
+            die "--cluster $CLUSTER contradicts the running node: its genesis hash says $DETECTED_CLUSTER. Fix the flag, or pass --skip-cluster-check to override."
+        fi
+    fi
+elif [[ -z "$CLUSTER" ]]; then
+    die "--cluster is required (mainnet-beta | testnet | devnet). No local RPC answered on 127.0.0.1:8899 to auto-detect it, and defaulting silently is how a testnet node ends up monitored against mainnet."
+fi
+
+case "$CLUSTER" in
+    mainnet-beta|testnet|devnet) ;;
+    *) die "invalid --cluster: $CLUSTER (want mainnet-beta | testnet | devnet)" ;;
+esac
 
 # Cluster-aware reference RPC defaults (if user didn't override)
 if [[ -z "$REFERENCE_RPC" ]]; then
