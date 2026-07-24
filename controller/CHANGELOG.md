@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.8.0](https://github.com/niks3089/pillar/compare/pillar-controller-v0.7.0...pillar-controller-v0.8.0) (2026-07-24)
+
+
+### Features
+
+* sudo-free controller self-upgrade, always target latest release ([12ce883](https://github.com/niks3089/pillar/commit/12ce883bb20b754d7b4fe748facf8c40f230a41e))
+* sudo-free controller self-upgrade, always target latest release ([6cf62a2](https://github.com/niks3089/pillar/commit/6cf62a21496536c30ac3ff669c7aeae9c16f77c7))
+
 ## [0.7.0](https://github.com/niks3089/pillar/compare/pillar-controller-v0.6.1...pillar-controller-v0.7.0) (2026-07-24)
 
 
