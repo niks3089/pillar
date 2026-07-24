@@ -117,8 +117,8 @@ rsync -az --exclude target --exclude node_modules --exclude .git . ubuntu@<dev-b
 # 3. Build on dev box
 ssh ubuntu@<dev-box> "cd /tmp/pillar-build && export PATH=/home/ubuntu/.cargo/bin:\$PATH && cargo build --release -p pillar-controller"
 
-# 4. Deploy controller (NOTE: systemd runs /usr/local/bin/controller, NOT pillar-controller)
-ssh ubuntu@<dev-box> "sudo systemctl stop pillar-controller && sudo cp /tmp/pillar-build/target/release/controller /usr/local/bin/controller && sudo systemctl start pillar-controller"
+# 4. Deploy controller (NOTE: systemd runs /var/lib/pillar/bin/controller, NOT pillar-controller)
+ssh ubuntu@<dev-box> "sudo systemctl stop pillar-controller && sudo cp /tmp/pillar-build/target/release/controller /var/lib/pillar/bin/controller && sudo systemctl start pillar-controller"
 
 # 5. Deploy agent
 ssh ubuntu@<dev-box> "cd /tmp/pillar-build && export PATH=/home/ubuntu/.cargo/bin:\$PATH && cargo build --release -p pillar-agent"
@@ -131,7 +131,7 @@ rm -rf target/release/.fingerprint/pillar-controller-* target/release/deps/pilla
 ```
 
 ### Service files
-- Controller: `/etc/systemd/system/pillar-controller.service` (runs as `pillar` user, binary: `/usr/local/bin/controller`)
+- Controller: `/etc/systemd/system/pillar-controller.service` (runs as `pillar` user, binary: `/var/lib/pillar/bin/controller`, pillar-owned dir so self-upgrade needs no sudo)
 - Agent: `/etc/systemd/system/pillar-agent.service` (runs as `sol` user, binary: `/usr/local/bin/pillar-agent`)
 - Controller config: `/etc/pillar/controller.yaml`
 - Agent config: `/etc/pillar/agent.yaml`

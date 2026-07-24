@@ -36,7 +36,7 @@ ssh ubuntu@<dev-box> "sudo journalctl -u pillar-controller --since '10 seconds a
 
 **Important notes:**
 - `include_str!` template changes require fingerprint removal (step 3) or they won't recompile
-- Controller binary is at `/usr/local/bin/controller` (NOT `pillar-controller`)
+- Controller binary is at `/var/lib/pillar/bin/controller` (NOT `pillar-controller`; pillar-owned for no-sudo self-upgrade)
 - Agent binary is at `/usr/local/bin/pillar-agent`
 - Always build on the dev box (Linux x86_64), not on macOS (cross-compile fails for libsqlite3-sys)
 

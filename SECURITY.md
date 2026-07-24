@@ -52,6 +52,16 @@ Removed relative to older installs: unrestricted `tee`, `sed`, `cp`, `find`,
 root-equivalent. Re-run `install-node.sh` on existing nodes to migrate to
 the pinned policy.
 
+## Controller self-upgrade (no sudo)
+
+The controller binary lives in `/var/lib/pillar/bin`, owned by the `pillar`
+service user. Self-upgrade is: download release binary, verify its sha256
+against the release manifest, atomically rename over itself, exit — systemd
+(`Restart=always`) starts the new version. The `pillar` user has **no sudoers
+entry at all**; the trade-off is that the service user can replace its own
+binary, which grants nothing it doesn't already have (the binary runs as that
+user).
+
 ## Known residual risks (deliberate, documented)
 
 1. **Unit-file writes are root-equivalent.** `tee` to a systemd unit plus

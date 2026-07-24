@@ -18,7 +18,9 @@ set -euo pipefail
 
 PILLAR_USER="pillar"
 PILLAR_GROUP="pillar"
-INSTALL_DIR="/usr/local/bin"
+# Owned by $PILLAR_USER so the controller can self-upgrade (atomic rename over
+# its own binary + restart via systemd Restart=always) with zero sudo grants.
+INSTALL_DIR="/var/lib/pillar/bin"
 CONFIG_DIR="/etc/pillar"
 DB_DIR="/var/lib/pillar"
 LOG_DIR="/var/log/pillar"
@@ -177,10 +179,24 @@ ok "directories ready"
 
 section "Installing controller binary"
 
+mkdir -p "$INSTALL_DIR"
+chown "$PILLAR_USER:$PILLAR_GROUP" "$INSTALL_DIR"
+chmod 755 "$INSTALL_DIR"
+
 DST="$INSTALL_DIR/controller"
 install -m 755 "$DOWNLOAD_DIR/controller" "$DST"
 rm -rf "$DOWNLOAD_DIR"
 ok "installed controller -> $DST"
+
+# Migrate installs that predate the self-upgradable layout.
+if [[ -f /usr/local/bin/controller ]]; then
+    rm -f /usr/local/bin/controller
+    ok "removed legacy /usr/local/bin/controller"
+fi
+if [[ -f /etc/sudoers.d/pillar-controller ]]; then
+    rm -f /etc/sudoers.d/pillar-controller
+    ok "removed legacy pillar sudoers grant (self-upgrade no longer needs sudo)"
+fi
 
 # ==============================================================================
 # Phase 4: Install Prometheus
