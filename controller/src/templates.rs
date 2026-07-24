@@ -79,6 +79,18 @@ pub fn reference_rpc_for_cluster(cluster: &str) -> &'static str {
     }
 }
 
+/// Anza public InfluxDB write config (https://docs.anza.xyz/clusters/available).
+/// Read natively by agave/jito via the solana-metrics crate; Firedancer has its
+/// own metrics system and ignores it. Empty for unknown clusters (e.g. localnet).
+pub fn metrics_config_for_cluster(cluster: &str) -> &'static str {
+    match cluster {
+        "devnet" => "host=https://metrics.solana.com:8086,db=devnet,u=scratch_writer,p=topsecret",
+        "testnet" => "host=https://metrics.solana.com:8086,db=tds,u=testnet_write,p=c4fa841aa918bf8274e3e2a44d77568d9861b3ea",
+        "mainnet" | "mainnet-beta" => "host=https://metrics.solana.com:8086,db=mainnet-beta,u=mainnet-beta_write,p=password",
+        _ => "",
+    }
+}
+
 /// Map cluster to its genesis hash. Firedancer requires an explicit
 /// `expected_genesis_hash` in its config (it does not accept "auto").
 pub fn genesis_hash_for_cluster(cluster: &str) -> &'static str {

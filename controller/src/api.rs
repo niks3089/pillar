@@ -907,12 +907,25 @@ echo "Wrote /etc/pillar/yellowstone-grpc.json""#
         String::new()
     };
 
-    // Build Environment= lines
-    let mut env_keys: Vec<&String> = req.environment_vars.keys().collect();
+    // Build Environment= lines. Auto-inject Anza influx reporting for clients
+    // that read SOLANA_METRICS_CONFIG (agave/jito); a user-provided value wins
+    // (set it empty to opt out). Firedancer ignores the var; frankendancer
+    // support is unverified, so both are left alone.
+    let mut env_vars = req.environment_vars.clone();
+    if matches!(req.client.as_str(), "agave" | "jito") {
+        let metrics_config = templates::metrics_config_for_cluster(&req.cluster);
+        if !metrics_config.is_empty() {
+            env_vars
+                .entry("SOLANA_METRICS_CONFIG".to_string())
+                .or_insert_with(|| metrics_config.to_string());
+        }
+    }
+    let mut env_keys: Vec<&String> = env_vars.keys().collect();
     env_keys.sort();
     let environment_lines = env_keys
         .iter()
-        .map(|k| format!("Environment={}={}", k, req.environment_vars[*k]))
+        .filter(|k| !env_vars[**k].is_empty())
+        .map(|k| format!("Environment={}={}", k, env_vars[*k]))
         .collect::<Vec<_>>()
         .join("\n");
 
@@ -1774,6 +1787,26 @@ mod tests {
         assert!(!blocked("127.0.0.1")); // same-host grafana
         assert!(!blocked("10.0.0.5")); // internal grafana
         assert!(!blocked("34.107.8.212")); // public
+    }
+
+    #[test]
+    fn injects_solana_metrics_config_for_agave_and_jito_only() {
+        let env = |json| build_provision_vars(&req(json))["environment_lines"].clone();
+
+        let agave = env(r#"{"client":"agave","version":"2.1.6","cluster":"testnet"}"#);
+        assert!(agave.contains("Environment=SOLANA_METRICS_CONFIG=host=https://metrics.solana.com:8086,db=tds"));
+
+        let jito = env(r#"{"client":"jito","version":"2.1.6","cluster":"mainnet-beta"}"#);
+        assert!(jito.contains("db=mainnet-beta"));
+
+        let fd = env(r#"{"client":"firedancer","version":"0.505","cluster":"testnet"}"#);
+        assert!(!fd.contains("SOLANA_METRICS_CONFIG"));
+
+        // user override wins; empty value opts out
+        let overridden = env(r#"{"client":"agave","version":"2.1.6","cluster":"testnet","environment_vars":{"SOLANA_METRICS_CONFIG":"host=http://my-influx:8086,db=x"}}"#);
+        assert!(overridden.contains("my-influx"));
+        let opted_out = env(r#"{"client":"agave","version":"2.1.6","cluster":"testnet","environment_vars":{"SOLANA_METRICS_CONFIG":""}}"#);
+        assert!(!opted_out.contains("SOLANA_METRICS_CONFIG"));
     }
 
     #[test]
