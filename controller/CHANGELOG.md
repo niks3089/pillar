@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.7.0](https://github.com/niks3089/pillar/compare/pillar-controller-v0.6.1...pillar-controller-v0.7.0) (2026-07-24)
+
+
+### Features
+
+* auto-inject SOLANA_METRICS_CONFIG for agave/jito provisions ([aa47769](https://github.com/niks3089/pillar/commit/aa47769264f64e4cbea102ed0a9ed397cfa07469))
+* auto-inject SOLANA_METRICS_CONFIG for agave/jito provisions ([68db7b9](https://github.com/niks3089/pillar/commit/68db7b9b48302bbf0237ad9aa6f434b18894d4b1))
+
 ## [0.6.1](https://github.com/niks3089/pillar/compare/pillar-controller-v0.6.0...pillar-controller-v0.6.1) (2026-07-21)
 
 
