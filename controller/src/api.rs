@@ -1411,47 +1411,87 @@ async fn version_info(State(state): State<ApiState>) -> impl IntoResponse {
     })
 }
 
+/// Manifest fields are remote content; validate before they reach a shell.
+fn valid_manifest_entry(sha256: &str, download_url: &str) -> bool {
+    sha256.len() == 64
+        && sha256.bytes().all(|b| b.is_ascii_hexdigit())
+        && download_url.starts_with("https://github.com/")
+        && download_url.bytes().all(|b| b.is_ascii_graphic() && b != b'"' && b != b'\'')
+}
+
 async fn upgrade_controller(State(state): State<ApiState>) -> impl IntoResponse {
+    let err = |code: StatusCode, message: String| {
+        (
+            code,
+            Json(CommandResponse { ok: false, message }),
+        )
+            .into_response()
+    };
+
+    // Fetch the manifest fresh so we land on the actual latest release,
+    // not whatever the (up to 1h stale) banner was showing.
+    crate::update_checker::refresh_now(VERSION, &state.update_info).await;
+
     let info = state.update_info.read().await;
     let update = match &info.controller_update {
         Some(u) => u.clone(),
         None => {
-            return (
+            return err(
                 StatusCode::BAD_REQUEST,
-                Json(CommandResponse {
-                    ok: false,
-                    message: "no controller update available".to_string(),
-                }),
-            )
-                .into_response();
+                "no controller update available".to_string(),
+            );
         }
     };
     drop(info);
 
-    let download_url = update.download_url.clone();
-    let sha256 = update.sha256.clone();
-    let version = update.version.clone();
+    if !valid_manifest_entry(&update.sha256, &update.download_url) {
+        return err(
+            StatusCode::BAD_GATEWAY,
+            "release manifest has malformed sha256/download_url".to_string(),
+        );
+    }
 
+    // Self-upgrade without sudo: stage next to the running binary, verify,
+    // rename over ourselves, exit(0), and systemd (Restart=always) starts the
+    // new version. Requires the binary dir to be owned by the service user —
+    // install-controller.sh sets that up.
+    let exe = match std::env::current_exe() {
+        Ok(p) => p,
+        Err(e) => return err(StatusCode::INTERNAL_SERVER_ERROR, format!("current_exe: {e}")),
+    };
+    let staging = exe.with_file_name(".controller-upgrade");
+    if let Err(e) = std::fs::create_dir_all(&staging) {
+        return err(
+            StatusCode::CONFLICT,
+            format!(
+                "binary dir {} is not writable by the controller ({e}); \
+                 re-run install-controller.sh to migrate to the self-upgradable layout",
+                exe.parent().map(|p| p.display().to_string()).unwrap_or_default()
+            ),
+        );
+    }
+
+    let version = update.version.clone();
     tracing::info!(version = %version, "controller self-upgrade initiated");
 
-    // Spawn background task — sleep briefly so the HTTP response flushes,
-    // then download, verify, install, and restart.
+    // Spawn background task — sleep briefly so the HTTP response flushes.
+    let task_version = version.clone();
     tokio::spawn(async move {
         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
 
         let script = format!(
             r#"#!/usr/bin/env bash
 set -euo pipefail
-STAGING="/tmp/pillar-controller-upgrade"
-rm -rf "$STAGING" && mkdir -p "$STAGING"
-curl -sSL -o "$STAGING/binary" "{download_url}"
-echo "{sha256}  $STAGING/binary" | sha256sum -c
-sudo install -m 755 "$STAGING/binary" /usr/local/bin/controller
-rm -rf "$STAGING"
-sudo systemctl restart pillar-controller
+curl -sSL -o "{staging}/binary" "{download_url}"
+echo "{sha256}  {staging}/binary" | sha256sum -c
+chmod 755 "{staging}/binary"
+mv "{staging}/binary" "{exe}"
+rm -rf "{staging}"
 "#,
-            download_url = download_url,
-            sha256 = sha256,
+            staging = staging.display(),
+            exe = exe.display(),
+            download_url = update.download_url,
+            sha256 = update.sha256,
         );
 
         let output = tokio::process::Command::new("bash")
@@ -1462,7 +1502,8 @@ sudo systemctl restart pillar-controller
 
         match output {
             Ok(o) if o.status.success() => {
-                tracing::info!("controller upgrade script completed (process will restart)");
+                tracing::info!(version = %task_version, "new binary in place, exiting for systemd restart");
+                std::process::exit(0);
             }
             Ok(o) => {
                 let stderr = String::from_utf8_lossy(&o.stderr);
@@ -1788,6 +1829,18 @@ mod tests {
 
     fn req(json: &str) -> ProvisionRequest {
         serde_json::from_str(json).unwrap()
+    }
+
+    #[test]
+    fn manifest_entry_validation() {
+        let sha = "9720c8026b2ccee9614a66aea9dba1964f4f844c49fdad4fe506a6bac1f95dfd";
+        let url = "https://github.com/niks3089/pillar/releases/download/pillar-controller-v0.7.0/pillar-controller-linux-amd64";
+        assert!(valid_manifest_entry(sha, url));
+        assert!(!valid_manifest_entry("abc", url)); // short sha
+        assert!(!valid_manifest_entry(&sha.replace('9', "z"), url)); // non-hex
+        assert!(!valid_manifest_entry(sha, "http://github.com/x")); // not https
+        assert!(!valid_manifest_entry(sha, "https://evil.com/binary"));
+        assert!(!valid_manifest_entry(sha, "https://github.com/x\" ; rm -rf / #")); // shell metachars
     }
 
     #[test]

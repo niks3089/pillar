@@ -84,16 +84,32 @@ jobs:
         env:
           AGENT_VERSION: ${{ steps.versions.outputs.agent }}
           CTRL_VERSION: ${{ steps.versions.outputs.controller }}
-          GH_BASE: https://github.com/${{ github.repository }}/releases/latest/download
+          # Pin download URLs to the versioned tag: `releases/latest/...` floats to
+          # whatever is published next, so a cached manifest's sha256 would stop
+          # matching the binary the URL serves and upgrades would checksum-fail.
+          GH_DL: https://github.com/${{ github.repository }}/releases/download
+          AGENT_RELEASED: ${{ needs.release-please.outputs.agent_release_created }}
+          CTRL_RELEASED: ${{ needs.release-please.outputs.controller_release_created }}
         run: |
-          CTRL_SHA=$(sha256sum artifacts/pillar-controller-linux-amd64 | awk '{print $1}')
-          AGENT_SHA=$(sha256sum artifacts/pillar-agent-linux-amd64 | awk '{print $1}')
+          # For a component released this run the fresh build is what gets uploaded;
+          # otherwise the sha must match the asset already published at its tag
+          # (a rebuild of the same version is not byte-identical).
+          if [ "$CTRL_RELEASED" = "true" ]; then
+            CTRL_SHA=$(sha256sum artifacts/pillar-controller-linux-amd64 | awk '{print $1}')
+          else
+            CTRL_SHA=$(curl -sSfL "$GH_DL/pillar-controller-v$CTRL_VERSION/pillar-controller-linux-amd64" | sha256sum | awk '{print $1}')
+          fi
+          if [ "$AGENT_RELEASED" = "true" ]; then
+            AGENT_SHA=$(sha256sum artifacts/pillar-agent-linux-amd64 | awk '{print $1}')
+          else
+            AGENT_SHA=$(curl -sSfL "$GH_DL/pillar-agent-v$AGENT_VERSION/pillar-agent-linux-amd64" | sha256sum | awk '{print $1}')
+          fi
           jq -n \
             --arg cv "$CTRL_VERSION" \
-            --arg cu "$GH_BASE/pillar-controller-linux-amd64" \
+            --arg cu "$GH_DL/pillar-controller-v$CTRL_VERSION/pillar-controller-linux-amd64" \
             --arg cs "$CTRL_SHA" \
             --arg av "$AGENT_VERSION" \
-            --arg au "$GH_BASE/pillar-agent-linux-amd64" \
+            --arg au "$GH_DL/pillar-agent-v$AGENT_VERSION/pillar-agent-linux-amd64" \
             --arg ash "$AGENT_SHA" \
             '{controller:{version:$cv,download_url:$cu,sha256:$cs,release_notes:""},agent:{version:$av,download_url:$au,sha256:$ash,release_notes:""}}' \
             > artifacts/manifest.json

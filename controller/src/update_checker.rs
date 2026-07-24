@@ -73,6 +73,12 @@ pub async fn get_or_refresh(current_version: &str, update_info: &SharedUpdateInf
     info
 }
 
+/// Force a fresh manifest fetch. Used at upgrade time so the action targets
+/// the actual latest release rather than a cached (up to 1h stale) banner.
+pub async fn refresh_now(current_version: &str, update_info: &SharedUpdateInfo) {
+    do_check(current_version, update_info).await;
+}
+
 async fn do_check(current_version: &str, update_info: &SharedUpdateInfo) {
     match fetch_manifest(current_version).await {
         Ok(info) => {
@@ -112,10 +118,9 @@ async fn fetch_manifest(current_version: &str) -> Result<UpdateInfo, String> {
             release_notes: c.release_notes,
         });
 
-    let agent_update = manifest
-        .agent
-        .filter(|a| is_newer_version(&a.version, current_version))
-        .map(|a| AvailableUpdate {
+    // No version filter: agent and controller version independently, and the
+    // UI compares against each node's own reported version.
+    let agent_update = manifest.agent.map(|a| AvailableUpdate {
             version: a.version,
             download_url: a.download_url,
             sha256: a.sha256,
