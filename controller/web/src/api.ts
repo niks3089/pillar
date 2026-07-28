@@ -26,6 +26,15 @@ export interface ActiveScript {
   initiated_at: number
 }
 
+export interface ScriptOutcome {
+  script_id: string
+  description?: string
+  completed_at: number
+  exit_code: number
+  timed_out: boolean
+  error?: string
+}
+
 export interface Node {
   node_id: string
   lifecycle_state: string
@@ -40,6 +49,7 @@ export interface Node {
   provision_config_json?: string
   live_status?: NodeStatus
   active_script?: ActiveScript
+  last_script?: ScriptOutcome
 }
 
 export interface FleetOverview {

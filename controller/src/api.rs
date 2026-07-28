@@ -133,6 +133,8 @@ struct NodeWithStatus {
     live_status: Option<NodeStatus>,
     #[serde(skip_serializing_if = "Option::is_none")]
     active_script: Option<db::ActiveScript>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    last_script: Option<db::ScriptOutcome>,
 }
 
 // ---------------------------------------------------------------------------
@@ -272,6 +274,7 @@ async fn list_nodes(State(state): State<ApiState>) -> impl IntoResponse {
                     node,
                     live_status,
                     active_script,
+                    last_script: None,
                 });
             }
             Json(result).into_response()
@@ -289,10 +292,12 @@ async fn get_node(State(state): State<ApiState>, Path(id): Path<String>) -> impl
         Ok(Some(node)) => {
             let live_status = state.registry.get_status(&id).await;
             let active_script = db::get_active_script(&state.db, &id).await.unwrap_or(None);
+            let last_script = db::get_last_script(&state.db, &id).await.unwrap_or(None);
             Json(NodeWithStatus {
                 node,
                 live_status,
                 active_script,
+                last_script,
             })
             .into_response()
         }
@@ -987,8 +992,8 @@ fi"#,
         .collect::<Vec<_>>()
         .join(" ");
     // pillar-datadir is the allowlisted root helper installed by
-    // install-node.sh; the mkdir/chown fallback covers nodes still on the
-    // pre-helper blanket sudoers.
+    // install-node.sh; the fallback covers nodes still on the pre-helper
+    // blanket sudoers, which allows `install` but NOT `chown`.
     let data_dirs_section = if data_dirs.is_empty() {
         String::new()
     } else {
@@ -996,8 +1001,7 @@ fi"#,
             "if [ -x /usr/local/bin/pillar-datadir ]; then\n  \
              sudo /usr/local/bin/pillar-datadir ensure {data_dirs}\n\
              else\n  \
-             sudo mkdir -p {data_dirs}\n  \
-             sudo chown sol:sol {data_dirs}\n\
+             sudo install -d -o sol -g sol {data_dirs}\n\
              fi"
         )
     };
