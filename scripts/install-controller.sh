@@ -251,11 +251,16 @@ else
     esac
 fi
 
-# Write Prometheus config
+# Write Prometheus config (never clobber an existing one: operators add
+# remote_write/scrape blocks by hand, and a re-install silently losing them
+# means every downstream alert goes dark)
 PROM_CONFIG_DIR="/etc/prometheus"
 mkdir -p "$PROM_CONFIG_DIR"
 
-cat > "$PROM_CONFIG_DIR/prometheus.yml" <<EOF
+if [ -f "$PROM_CONFIG_DIR/prometheus.yml" ]; then
+    ok "kept existing $PROM_CONFIG_DIR/prometheus.yml (delete it and re-run to regenerate)"
+else
+    cat > "$PROM_CONFIG_DIR/prometheus.yml" <<EOF
 global:
   scrape_interval: 15s
   evaluation_interval: 15s
@@ -267,7 +272,8 @@ scrape_configs:
       - targets: ['localhost:${HTTP_PORT}']
     metrics_path: '/metrics'
 EOF
-ok "wrote $PROM_CONFIG_DIR/prometheus.yml (scraping localhost:${HTTP_PORT}/metrics)"
+    ok "wrote $PROM_CONFIG_DIR/prometheus.yml (scraping localhost:${HTTP_PORT}/metrics)"
+fi
 
 # Prometheus systemd service
 PROM_BIN=$(command -v prometheus)
