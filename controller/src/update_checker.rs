@@ -5,7 +5,7 @@ use tokio::sync::RwLock;
 
 const MANIFEST_URL: &str =
     "https://github.com/niks3089/pillar/releases/latest/download/manifest.json";
-const STALE_AFTER_MS: i64 = 3_600_000; // 1 hour
+const STALE_AFTER_MS: i64 = 300_000; // 5 minutes
 
 /// GitHub Releases manifest shape.
 #[derive(Debug, Deserialize)]
