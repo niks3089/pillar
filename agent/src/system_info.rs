@@ -8,6 +8,7 @@ pub use sysinfo::Pid as SysPid;
 pub struct ProcessStats {
     pub cpu_usage_percent: f32,
     pub memory_rss_bytes: u64,
+    pub start_time_epoch_secs: u64,
 }
 
 /// Wrapper around sysinfo for collecting system-level info.
@@ -52,6 +53,7 @@ impl SystemInfo {
         Some(ProcessStats {
             cpu_usage_percent: p.cpu_usage(),
             memory_rss_bytes: p.memory(),
+            start_time_epoch_secs: p.start_time(),
         })
     }
 
@@ -64,6 +66,7 @@ impl SystemInfo {
         Some(ProcessStats {
             cpu_usage_percent: p.cpu_usage(),
             memory_rss_bytes: p.memory(),
+            start_time_epoch_secs: p.start_time(),
         })
     }
 

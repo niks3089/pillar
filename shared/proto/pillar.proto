@@ -85,6 +85,10 @@ message NodeStatus {
     uint64 snapshot_download_bytes = 52;
     uint64 snapshot_download_total_bytes = 53;
     double snapshot_download_speed_bps = 54;
+
+    // Validator process start time (unix epoch; zero when the process is not
+    // found). Survives agent restarts, unlike state_duration_secs.
+    int64  validator_started_at_unix_secs = 55;
 }
 
 // Commands pushed from controller to agent.
