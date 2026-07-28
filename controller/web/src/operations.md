@@ -126,10 +126,10 @@ Create these in **Grafana → Alerting → Alert rules** (or provision them via
 | Alert | Expression | Meaning |
 |---|---|---|
 | Validator unhealthy/offline | `pillar_node_healthy == 0` | agent reports the node not healthy |
-| Lagging behind | `pillar_node_slots_behind > 5000` | falling behind the cluster tip |
-| Agent not reporting | `time() - pillar_node_last_seen_seconds > 60` (or Prometheus `up`/`absent`) | host stopped reporting |
+| Lagging behind | `pillar_node_slots_behind > 500` (for 10m) | falling behind the cluster tip; also covers slow catch-up after a restart |
+| Metrics pipeline dark | `absent(pillar_node_healthy)` | no metrics reaching Prometheus — agent, controller, or remote_write down; all other alerts are blind |
 | Frequent restarts | `increase(pillar_node_restarts_total[15m]) > 3` | crash-looping |
-| Disk filling | `pillar_node_disk_used_bytes / pillar_node_disk_total_bytes > 0.9` | low disk |
+| Disk filling | `pillar_system_disk_used_bytes / pillar_system_disk_total_bytes > 0.9` | low disk |
 
 Label each rule (e.g. `severity: page` vs `severity: warn`) so notification policies can route
 them differently. A starter set lives in `controller/dashboards/grafana/alert-rules.json`.

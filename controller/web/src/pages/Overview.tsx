@@ -105,7 +105,6 @@ function Overview() {
               <th className="px-6 py-4 text-xs font-semibold text-zinc-400 uppercase tracking-wider">Status</th>
               <th className="px-6 py-4 text-xs font-semibold text-zinc-400 uppercase tracking-wider">Software</th>
               <th className="px-6 py-4 text-xs font-semibold text-zinc-400 uppercase tracking-wider text-right">Slots Behind</th>
-              <th className="px-6 py-4 text-xs font-semibold text-zinc-400 uppercase tracking-wider text-right">Last Seen</th>
               <th className="px-6 py-4 text-xs font-semibold text-zinc-400 uppercase tracking-wider text-right">Actions</th>
             </tr>
           </thead>
@@ -140,9 +139,19 @@ function Overview() {
                 
                 {/* Status (Lifecycle) */}
                 <td className="px-6 py-4">
-                  <span className={`inline-flex items-center px-2 py-0.5 text-[11px] font-medium uppercase tracking-wider rounded border ${STATE_BADGE_CLASSES[node.lifecycle_state] || 'bg-zinc-500/10 text-zinc-400 border-zinc-500/20'}`}>
-                    {node.lifecycle_state}
-                  </span>
+                  {node.active_script ? (
+                    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 text-[11px] font-medium uppercase tracking-wider rounded border bg-purple-500/10 text-purple-300 border-purple-500/20" title={node.active_script.description}>
+                      <span className="w-3 h-3 border-[1.5px] border-purple-400 border-t-transparent rounded-full animate-spin"></span>
+                      deploying
+                    </span>
+                  ) : (
+                    <span className={`inline-flex items-center px-2 py-0.5 text-[11px] font-medium uppercase tracking-wider rounded border ${STATE_BADGE_CLASSES[node.lifecycle_state] || 'bg-zinc-500/10 text-zinc-400 border-zinc-500/20'}`}>
+                      {node.lifecycle_state}
+                    </span>
+                  )}
+                  {!node.live_status && node.last_seen_at && (
+                    <div className="text-xs text-zinc-500 mt-1">last seen {formatLastSeen(node.last_seen_at)}</div>
+                  )}
                 </td>
                 
                 {/* Software & Cluster */}
@@ -167,12 +176,7 @@ function Overview() {
                     <span className="text-zinc-600">-</span>
                   )}
                 </td>
-                
-                {/* Last Seen */}
-                <td className="px-6 py-4 text-sm text-zinc-400 text-right">
-                  {formatLastSeen(node.last_seen_at)}
-                </td>
-                
+
                 {/* Actions */}
                 <td className="px-6 py-4 text-sm text-right">
                   <a
@@ -189,7 +193,7 @@ function Overview() {
             )})}
             {nodes.length === 0 && (
               <tr>
-                <td colSpan={6} className="px-6 py-12 text-center text-sm text-zinc-500">
+                <td colSpan={5} className="px-6 py-12 text-center text-sm text-zinc-500">
                   No validators connected. Use the command below to add one.
                 </td>
               </tr>

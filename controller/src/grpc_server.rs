@@ -159,6 +159,17 @@ impl PillarController for GrpcServer {
 
         self.registry.register_node(&req.node_id).await;
 
+        // Scripts can't survive an agent restart (kill_on_drop) — close out any
+        // rows a previous agent incarnation left open so they don't block
+        // provisioning until the staleness cutoff.
+        match db::fail_incomplete_scripts(&self.db, &req.node_id).await {
+            Ok(n) if n > 0 => {
+                tracing::warn!(node_id = %req.node_id, count = n, "closed orphaned script executions on re-register");
+            }
+            Err(e) => tracing::warn!(error = %e, "failed to close orphaned script executions"),
+            _ => {}
+        }
+
         // Emit controller log for the node
         let msg = format!(
             "Node registered (agent {})",

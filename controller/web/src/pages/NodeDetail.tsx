@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { fetchNode, fetchNodeLogs, restartNode, recoverNode, deleteNode, stopNode, cancelDeployment, provisionNode, fetchVersionInfo, upgradeAgent } from '../api'
 import type { Node, LogEntry, ProvisionRequest, VersionInfo } from '../api'
+import { useConfirm, useToast } from '../components/dialogs'
 
 const STATE_BADGE_CLASSES: Record<string, string> = {
   unprovisioned: 'bg-zinc-500/10 text-zinc-400 border-zinc-500/20',
@@ -172,6 +173,8 @@ function NodeDetail() {
   const [showAdvanced, setShowAdvanced] = useState(false)
   const [showProvision, setShowProvision] = useState(false)
   const [versionInfo, setVersionInfo] = useState<VersionInfo | null>(null)
+  const { confirmDialog, confirmElement } = useConfirm()
+  const { showToast, toastElement } = useToast()
 
   const noVotingActive = provValidatorFlags.split('\n').some(l => l.trim() === 'no-voting')
 
@@ -224,11 +227,14 @@ function NodeDetail() {
     }
   }, [logs])
 
+  const scriptActive = !!node?.active_script
+
   useEffect(() => {
     refresh()
-    const interval = setInterval(refresh, 10000)
+    // Poll faster while a deployment script is running so the banner clears promptly
+    const interval = setInterval(refresh, scriptActive ? 3000 : 10000)
     return () => clearInterval(interval)
-  }, [refresh])
+  }, [refresh, scriptActive])
 
   useEffect(() => {
     fetchVersionInfo().then(setVersionInfo).catch(() => {})
@@ -292,61 +298,66 @@ function NodeDetail() {
   const handleUpgradeAgent = async () => {
     if (!id || !versionInfo?.agent_update) return
     const v = versionInfo.agent_update.version
-    if (!confirm(`Upgrade agent to v${v}?`)) return
+    if (!await confirmDialog({ title: 'Upgrade Agent', message: `Upgrade agent to v${v}?`, confirmLabel: 'Upgrade' })) return
     try {
       const result = await upgradeAgent(id)
       if (result.ok) {
+        showToast('success', 'Agent upgrade started.')
         refresh()
       } else {
-        alert(`Failed: ${result.message}`)
+        showToast('error', `Failed: ${result.message}`)
       }
     } catch (err) {
-      alert(`Error: ${err}`)
+      showToast('error', `Error: ${err}`)
     }
   }
 
   const handleRestart = async () => {
-    if (!id || !confirm('Restart this node?')) return
+    if (!id || !await confirmDialog({ title: 'Restart Validator', message: 'Restart the validator on this node?', confirmLabel: 'Restart' })) return
     await restartNode(id)
+    showToast('success', 'Restart command sent.')
     refresh()
   }
 
   const handleRecover = async () => {
-    if (!id || !confirm('Trigger snapshot recovery on this node? This will stop the validator and re-download a snapshot.')) return
+    if (!id || !await confirmDialog({ title: 'Snapshot Recovery', message: 'Trigger snapshot recovery on this node? This will stop the validator and re-download a snapshot.', confirmLabel: 'Recover', danger: true })) return
     await recoverNode(id)
+    showToast('success', 'Recovery command sent.')
     refresh()
   }
 
   const handleStop = async () => {
-    if (!id || !confirm('Stop the validator on this node? It will not restart automatically.')) return
+    if (!id || !await confirmDialog({ title: 'Stop Validator', message: 'Stop the validator on this node? It will not restart automatically.', confirmLabel: 'Stop', danger: true })) return
     try {
       const result = await stopNode(id)
       if (result.ok) {
+        showToast('success', 'Stop command sent.')
         refresh()
       } else {
-        alert(`Failed: ${result.message}`)
+        showToast('error', `Failed: ${result.message}`)
       }
     } catch (err) {
-      alert(`Error: ${err}`)
+      showToast('error', `Error: ${err}`)
     }
   }
 
   const handleCancel = async () => {
-    if (!id || !confirm('Cancel the in-progress deployment? The validator will be stopped.')) return
+    if (!id || !await confirmDialog({ title: 'Cancel Deployment', message: 'Cancel the in-progress deployment? The validator will be stopped.', confirmLabel: 'Cancel Deployment', danger: true })) return
     try {
       const result = await cancelDeployment(id)
       if (result.ok) {
+        showToast('success', 'Deployment cancelled.')
         refresh()
       } else {
-        alert(`Failed: ${result.message}`)
+        showToast('error', `Failed: ${result.message}`)
       }
     } catch (err) {
-      alert(`Error: ${err}`)
+      showToast('error', `Error: ${err}`)
     }
   }
 
   const handleDelete = async () => {
-    if (!id || !confirm('Remove this node from the fleet? This cannot be undone.')) return
+    if (!id || !await confirmDialog({ title: 'Remove Node', message: 'Remove this node from the fleet? This cannot be undone.', confirmLabel: 'Delete', danger: true })) return
     await deleteNode(id)
     window.location.href = '/'
   }
@@ -366,10 +377,14 @@ function NodeDetail() {
   const handleProvision = async () => {
     if (!id) return
     if (!provClient || !provVersion || !provCluster) {
-      alert('Client, version, and cluster are required.')
+      showToast('error', 'Client, version, and cluster are required.')
       return
     }
-    if (!confirm(`Install ${provClient} ${provVersion} on ${provCluster} for this node?`)) return
+    if (!await confirmDialog({
+      title: hasConfig ? 'Update Validator' : 'Install Validator',
+      message: `Install ${provClient} ${provVersion} on ${provCluster} for this node?`,
+      confirmLabel: 'Install',
+    })) return
 
     setProvSubmitting(true)
     try {
@@ -412,14 +427,14 @@ function NodeDetail() {
       }
       const result = await provisionNode(id, config)
       if (result.ok) {
-        alert('Provision command sent successfully.')
+        showToast('success', `Deployment started: ${provClient} ${provVersion} on ${provCluster}.`)
         setShowProvision(false)
         refresh()
       } else {
-        alert(`Failed: ${result.message}`)
+        showToast('error', `Failed: ${result.message}`)
       }
     } catch (err) {
-      alert(`Error: ${err}`)
+      showToast('error', `Error: ${err}`)
     } finally {
       setProvSubmitting(false)
     }
@@ -482,12 +497,12 @@ function NodeDetail() {
         </div>
         
         <div className="flex flex-wrap items-center gap-3">
-          <button className="px-3 py-1.5 text-sm font-medium text-zinc-300 bg-white/5 hover:bg-white/10 rounded-md border border-white/10 shadow-sm transition-all" onClick={handleRestart} title="Restart Validator">Restart</button>
-          <button className="px-3 py-1.5 text-sm font-medium text-zinc-300 bg-white/5 hover:bg-white/10 rounded-md border border-white/10 shadow-sm transition-all" onClick={handleStop} title="Stop Validator">Stop</button>
-          <button className="px-3 py-1.5 text-sm font-medium text-zinc-300 bg-white/5 hover:bg-white/10 rounded-md border border-white/10 shadow-sm transition-all" onClick={handleRecover} title="Recover from Snapshot">Recover</button>
-          
+          <button className="px-3 py-1.5 text-sm font-medium text-zinc-300 bg-white/5 hover:bg-white/10 rounded-md border border-white/10 shadow-sm transition-all disabled:opacity-40 disabled:pointer-events-none" onClick={handleRestart} disabled={scriptActive} title="Restart Validator">Restart</button>
+          <button className="px-3 py-1.5 text-sm font-medium text-zinc-300 bg-white/5 hover:bg-white/10 rounded-md border border-white/10 shadow-sm transition-all disabled:opacity-40 disabled:pointer-events-none" onClick={handleStop} disabled={scriptActive} title="Stop Validator">Stop</button>
+          <button className="px-3 py-1.5 text-sm font-medium text-zinc-300 bg-white/5 hover:bg-white/10 rounded-md border border-white/10 shadow-sm transition-all disabled:opacity-40 disabled:pointer-events-none" onClick={handleRecover} disabled={scriptActive} title="Recover from Snapshot">Recover</button>
+
           {versionInfo?.agent_update && node.agent_version && node.agent_version !== versionInfo.agent_update.version && (
-            <button className="px-3 py-1.5 text-sm font-medium text-white bg-green-600 hover:bg-green-500 rounded-md border border-green-500/50 shadow-sm transition-all" onClick={handleUpgradeAgent}>
+            <button className="px-3 py-1.5 text-sm font-medium text-white bg-green-600 hover:bg-green-500 rounded-md border border-green-500/50 shadow-sm transition-all disabled:opacity-40 disabled:pointer-events-none" onClick={handleUpgradeAgent} disabled={scriptActive}>
               Upgrade Agent (v{versionInfo.agent_update.version})
             </button>
           )}
@@ -495,8 +510,8 @@ function NodeDetail() {
           {(node.lifecycle_state === 'provisioning' || node.lifecycle_state === 'starting_up') && (
             <button className="px-3 py-1.5 text-sm font-medium text-red-400 bg-red-950/30 border border-red-900/50 rounded-md hover:bg-red-900/30 transition-all" onClick={handleCancel}>Cancel</button>
           )}
-          
-          <button className="px-3 py-1.5 text-sm font-medium text-red-400 bg-red-950/30 border border-red-900/50 rounded-md hover:bg-red-900/30 transition-all" onClick={handleDelete} title="Delete Node">Delete</button>
+
+          <button className="px-3 py-1.5 text-sm font-medium text-red-400 bg-red-950/30 border border-red-900/50 rounded-md hover:bg-red-900/30 transition-all disabled:opacity-40 disabled:pointer-events-none" onClick={handleDelete} disabled={scriptActive} title="Delete Node">Delete</button>
 
           <div className="w-px h-6 bg-white/10 mx-1"></div>
 
@@ -510,6 +525,21 @@ function NodeDetail() {
           </a>
         </div>
       </div>
+
+      {/* Deployment in progress */}
+      {node.active_script && (
+        <div className="flex items-center gap-4 bg-purple-500/10 border border-purple-500/30 rounded-xl p-5 shadow-sm">
+          <div className="w-5 h-5 shrink-0 border-2 border-purple-400 border-t-transparent rounded-full animate-spin"></div>
+          <div className="flex flex-col gap-0.5 min-w-0">
+            <span className="text-sm font-medium text-purple-200">
+              {node.active_script.description || 'Deployment in progress'}
+            </span>
+            <span className="text-xs text-purple-300/60">
+              Running for {formatDuration(Math.max(0, Math.floor(Date.now() / 1000 - node.active_script.initiated_at)))} — other actions are disabled until it completes. Progress appears in the Agent logs below.
+            </span>
+          </div>
+        </div>
+      )}
 
       {/* Performance Metrics */}
       <div className="bg-[#15131f] border border-white/10 rounded-xl p-6 shadow-sm">
@@ -557,9 +587,11 @@ function NodeDetail() {
             <h2 className="text-lg font-semibold text-zinc-100 m-0">System Configuration</h2>
             <p className="text-sm text-zinc-400 mt-1 m-0">Identity, software versions, and network role.</p>
           </div>
-          <button 
-            className="px-4 py-2 text-sm font-medium text-purple-300 bg-purple-500/10 hover:bg-purple-500/20 rounded-md border border-purple-500/20 shadow-sm transition-all whitespace-nowrap" 
+          <button
+            className="px-4 py-2 text-sm font-medium text-purple-300 bg-purple-500/10 hover:bg-purple-500/20 rounded-md border border-purple-500/20 shadow-sm transition-all whitespace-nowrap disabled:opacity-40 disabled:pointer-events-none"
             onClick={() => setShowProvision(true)}
+            disabled={scriptActive}
+            title={scriptActive ? 'A deployment is already in progress' : undefined}
           >
             {hasConfig ? 'Edit Config' : 'Setup Validator'}
           </button>
@@ -796,8 +828,8 @@ function NodeDetail() {
 
             <div className="flex items-center justify-end gap-3 mt-4 border-t border-white/5 pt-6">
               <button className="px-4 py-2 text-sm font-medium text-zinc-400 hover:text-zinc-200 transition-colors" onClick={() => setShowProvision(false)} disabled={provSubmitting}>Cancel</button>
-              <button className="px-5 py-2 text-sm font-medium text-white bg-purple-600 hover:bg-purple-500 rounded-md border border-purple-500/50 shadow-sm transition-all disabled:opacity-50" onClick={handleProvision} disabled={provSubmitting}>
-                {provSubmitting ? 'Sending...' : (hasConfig ? 'Update Validator' : 'Install Validator')}
+              <button className="px-5 py-2 text-sm font-medium text-white bg-purple-600 hover:bg-purple-500 rounded-md border border-purple-500/50 shadow-sm transition-all disabled:opacity-50" onClick={handleProvision} disabled={provSubmitting || scriptActive}>
+                {provSubmitting ? 'Sending...' : scriptActive ? 'Deployment in progress...' : (hasConfig ? 'Update Validator' : 'Install Validator')}
               </button>
             </div>
           </div>
@@ -861,6 +893,8 @@ function NodeDetail() {
         </div>
       </div>
 
+      {confirmElement}
+      {toastElement}
     </div>
   )
 }

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { fetchVersionInfo, upgradeController, fetchNodes, upgradeAgent } from "../api";
 import type { VersionInfo, Node } from "../api";
+import { useConfirm, useToast } from "./dialogs";
 
 function UpdateBanner() {
   const [info, setInfo] = useState<VersionInfo | null>(null);
@@ -9,6 +10,8 @@ function UpdateBanner() {
   const [picker, setPicker] = useState(false);
   const [selected, setSelected] = useState<Record<string, boolean>>({});
   const [agentBusy, setAgentBusy] = useState(false);
+  const { confirmDialog, confirmElement } = useConfirm();
+  const { showToast, toastElement } = useToast();
 
   const refresh = useCallback(() => {
     fetchVersionInfo().then(setInfo).catch(() => {});
@@ -35,14 +38,20 @@ function UpdateBanner() {
 
   const handleControllerUpgrade = async () => {
     if (!controllerUpdate) return;
-    if (!confirm(`Upgrade controller to v${controllerUpdate.version}? The controller will restart.`))
+    if (
+      !(await confirmDialog({
+        title: "Upgrade Controller",
+        message: `Upgrade controller to v${controllerUpdate.version}? The controller will restart.`,
+        confirmLabel: "Upgrade",
+      }))
+    )
       return;
     setUpgrading(true);
     try {
       await upgradeController();
       setTimeout(() => window.location.reload(), 5000);
     } catch (err) {
-      alert(`Upgrade failed: ${err}`);
+      showToast("error", `Upgrade failed: ${err}`);
       setUpgrading(false);
     }
   };
@@ -63,7 +72,12 @@ function UpdateBanner() {
     setAgentBusy(false);
     setPicker(false);
     if (failed > 0) {
-      alert(`${selectedIds.length - failed} agent upgrade(s) started; ${failed} failed to dispatch.`);
+      showToast(
+        "error",
+        `${selectedIds.length - failed} agent upgrade(s) started; ${failed} failed to dispatch.`,
+      );
+    } else {
+      showToast("success", `${selectedIds.length} agent upgrade(s) started.`);
     }
     setTimeout(refresh, 3000);
   };
@@ -177,6 +191,8 @@ function UpdateBanner() {
           </div>
         </div>
       )}
+      {confirmElement}
+      {toastElement}
     </div>
   );
 }
