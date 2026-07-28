@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.10.0](https://github.com/niks3089/pillar/compare/pillar-controller-v0.9.0...pillar-controller-v0.10.0) (2026-07-28)
+
+
+### Features
+
+* **controller:** show running version in nav, 5m update-check TTL ([cdfc94a](https://github.com/niks3089/pillar/commit/cdfc94a36bde4d81f2c40e61edfa97f1a241c376))
+* **controller:** show running version in nav, 5m update-check TTL ([fd64f34](https://github.com/niks3089/pillar/commit/fd64f34f7a9023cf0d5db914c455f63e3d1788ae))
+
 ## [0.9.0](https://github.com/niks3089/pillar/compare/pillar-controller-v0.8.0...pillar-controller-v0.9.0) (2026-07-28)
 
 
