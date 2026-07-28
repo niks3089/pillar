@@ -7,11 +7,13 @@ import Login from './pages/Login'
 import UpdateBanner from './components/UpdateBanner'
 import Grafana from './pages/Grafana'
 import { checkAuth, logout, changeCredentials } from './auth'
+import { fetchVersionInfo } from './api'
 
 function App() {
   const [authed, setAuthed] = useState<boolean | null>(null)
   const [username, setUsername] = useState('')
   const [showChangePassword, setShowChangePassword] = useState(false)
+  const [version, setVersion] = useState('')
 
   useEffect(() => {
     checkAuth().then(result => {
@@ -19,6 +21,11 @@ function App() {
       setUsername(result.username)
     })
   }, [])
+
+  useEffect(() => {
+    if (!authed) return
+    fetchVersionInfo().then(info => setVersion(info.current_version)).catch(() => {})
+  }, [authed])
 
   // Loading state
   if (authed === null) return null
@@ -45,6 +52,7 @@ function App() {
           <div className="flex items-center gap-8">
             <NavLink to="/" className="flex items-center gap-2 hover:opacity-80 transition-opacity">
               <img src="/pillar-logo.png" alt="Pillar" className="h-6 w-auto" />
+              {version && <span className="text-xs font-mono text-zinc-500">v{version}</span>}
             </NavLink>
             <div className="flex items-center gap-6 text-sm font-medium text-zinc-400">
               <NavLink to="/" end className={({isActive}) => isActive ? "text-zinc-100" : "hover:text-zinc-100 transition-colors"}>Overview</NavLink>
