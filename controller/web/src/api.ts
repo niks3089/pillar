@@ -20,6 +20,12 @@ export interface NodeStatus {
   hostname: string
 }
 
+export interface ActiveScript {
+  script_id: string
+  description?: string
+  initiated_at: number
+}
+
 export interface Node {
   node_id: string
   lifecycle_state: string
@@ -33,6 +39,7 @@ export interface Node {
   registered_at?: number
   provision_config_json?: string
   live_status?: NodeStatus
+  active_script?: ActiveScript
 }
 
 export interface FleetOverview {

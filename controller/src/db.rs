@@ -418,6 +418,66 @@ pub async fn complete_script_execution(
     .await?
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct ActiveScript {
+    pub script_id: String,
+    pub description: Option<String>,
+    pub initiated_at: i64,
+}
+
+/// Agent-enforced script timeout; snapshot-heavy upgrades can exceed 1h.
+pub const MAX_SCRIPT_RUNTIME_SECS: i64 = 4 * 3600;
+
+/// Rows older than the timeout are ignored so a dead agent can't wedge the node.
+pub async fn get_active_script(db: &Db, node_id: &str) -> Result<Option<ActiveScript>> {
+    let db = db.clone();
+    let node_id = node_id.to_owned();
+    tokio::task::spawn_blocking(move || {
+        let conn = db.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
+        let cutoff = now_epoch_secs() - (MAX_SCRIPT_RUNTIME_SECS + 300);
+        let row = conn
+            .query_row(
+                "SELECT script_id, description, initiated_at FROM script_executions
+                 WHERE node_id = ?1 AND completed_at IS NULL AND initiated_at > ?2
+                 ORDER BY initiated_at DESC LIMIT 1",
+                params![node_id, cutoff],
+                |row| {
+                    Ok(ActiveScript {
+                        script_id: row.get(0)?,
+                        description: row.get(1)?,
+                        initiated_at: row.get(2)?,
+                    })
+                },
+            )
+            .optional()
+            .context("get_active_script")?;
+        Ok(row)
+    })
+    .await?
+}
+
+/// Scripts don't survive an agent restart (kill_on_drop), so a fresh
+/// registration means any open rows are orphans.
+pub async fn fail_incomplete_scripts(db: &Db, node_id: &str) -> Result<usize> {
+    let db = db.clone();
+    let node_id = node_id.to_owned();
+    tokio::task::spawn_blocking(move || {
+        let conn = db.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
+        let now = now_epoch_secs();
+        let n = conn
+            .execute(
+                "UPDATE script_executions
+                 SET completed_at = ?1, exit_code = -1,
+                     error = 'agent restarted before script completed'
+                 WHERE node_id = ?2 AND completed_at IS NULL",
+                params![now, node_id],
+            )
+            .context("fail_incomplete_scripts")?;
+        Ok(n)
+    })
+    .await?
+}
+
 pub async fn insert_logs(db: &Db, node_id: &str, entries: &[LogEntry]) -> Result<u64> {
     let db = db.clone();
     let node_id = node_id.to_owned();
@@ -707,6 +767,26 @@ mod tests {
         assert_eq!(node.role.as_deref(), Some("rpc"));
         assert_eq!(node.client.as_deref(), Some("agave"));
         assert!(node.registered_at.is_some());
+    }
+
+    #[tokio::test]
+    async fn active_script_lifecycle() {
+        let db = test_db();
+        assert!(get_active_script(&db, "node-1").await.unwrap().is_none());
+
+        insert_script_execution(&db, "script-1", "node-1", "Provision agave v2.1.6")
+            .await
+            .unwrap();
+        let active = get_active_script(&db, "node-1").await.unwrap().unwrap();
+        assert_eq!(active.script_id, "script-1");
+        assert_eq!(active.description.as_deref(), Some("Provision agave v2.1.6"));
+
+        assert!(get_active_script(&db, "node-2").await.unwrap().is_none());
+
+        complete_script_execution(&db, "script-1", 0, false, "")
+            .await
+            .unwrap();
+        assert!(get_active_script(&db, "node-1").await.unwrap().is_none());
     }
 
     #[tokio::test]

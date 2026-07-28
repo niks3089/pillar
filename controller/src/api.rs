@@ -131,6 +131,8 @@ struct NodeWithStatus {
     node: NodeRow,
     #[serde(skip_serializing_if = "Option::is_none")]
     live_status: Option<NodeStatus>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    active_script: Option<db::ActiveScript>,
 }
 
 // ---------------------------------------------------------------------------
@@ -263,7 +265,14 @@ async fn list_nodes(State(state): State<ApiState>) -> impl IntoResponse {
             let mut result = Vec::with_capacity(nodes.len());
             for node in nodes {
                 let live_status = state.registry.get_status(&node.node_id).await;
-                result.push(NodeWithStatus { node, live_status });
+                let active_script = db::get_active_script(&state.db, &node.node_id)
+                    .await
+                    .unwrap_or(None);
+                result.push(NodeWithStatus {
+                    node,
+                    live_status,
+                    active_script,
+                });
             }
             Json(result).into_response()
         }
@@ -279,7 +288,13 @@ async fn get_node(State(state): State<ApiState>, Path(id): Path<String>) -> impl
     match db::get_node(&state.db, &id).await {
         Ok(Some(node)) => {
             let live_status = state.registry.get_status(&id).await;
-            Json(NodeWithStatus { node, live_status }).into_response()
+            let active_script = db::get_active_script(&state.db, &id).await.unwrap_or(None);
+            Json(NodeWithStatus {
+                node,
+                live_status,
+                active_script,
+            })
+            .into_response()
         }
         Ok(None) => (
             StatusCode::NOT_FOUND,
@@ -1029,6 +1044,21 @@ async fn provision_node(
             .into_response();
     }
 
+    // lifecycle_state can't guard this — agent status reports overwrite it within seconds
+    if let Ok(Some(active)) = db::get_active_script(&state.db, &id).await {
+        return (
+            StatusCode::CONFLICT,
+            Json(CommandResponse {
+                ok: false,
+                message: format!(
+                    "a deployment is already in progress: {}",
+                    active.description.unwrap_or_else(|| active.script_id.clone())
+                ),
+            }),
+        )
+            .into_response();
+    }
+
     // Reject if node is already provisioning or actively running a validator
     match db::get_lifecycle_state(&state.db, &id).await {
         Ok(Some(s)) if s == "provisioning" || s == "starting_up" => {
@@ -1099,8 +1129,8 @@ async fn provision_node(
     let cmd = wrap_script(ExecuteScript {
         script_id: script_id.clone(),
         script,
-        description,
-        timeout_secs: 3600,
+        description: description.clone(),
+        timeout_secs: db::MAX_SCRIPT_RUNTIME_SECS as u32,
     });
 
     match state.registry.send_command(&id, cmd).await {
@@ -1118,7 +1148,7 @@ async fn provision_node(
             }
             // Record script execution
             if let Err(e) =
-                db::insert_script_execution(&state.db, &script_id, &id, "provision").await
+                db::insert_script_execution(&state.db, &script_id, &id, &description).await
             {
                 tracing::warn!(error = %e, "failed to record script execution");
             }
