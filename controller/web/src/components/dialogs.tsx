@@ -1,9 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
 
-// Promise-based replacement for window.confirm, styled to match the app.
-// Usage: const { confirmDialog, confirmElement } = useConfirm()
-//        if (!await confirmDialog({ title: 'Restart', message: '...' })) return
-
 export interface ConfirmOptions {
   title: string
   message: string
@@ -57,8 +53,6 @@ export function useConfirm() {
 
   return { confirmDialog, confirmElement }
 }
-
-// Transient toast replacing window.alert. Auto-dismisses after 5s.
 
 export interface ToastState {
   kind: 'success' | 'error'

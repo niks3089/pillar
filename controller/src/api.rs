@@ -131,8 +131,6 @@ struct NodeWithStatus {
     node: NodeRow,
     #[serde(skip_serializing_if = "Option::is_none")]
     live_status: Option<NodeStatus>,
-    /// Still-running provision/upgrade script, if any. lifecycle_state is
-    /// unreliable for this — agent status reports overwrite it within seconds.
     #[serde(skip_serializing_if = "Option::is_none")]
     active_script: Option<db::ActiveScript>,
 }
@@ -1046,9 +1044,7 @@ async fn provision_node(
             .into_response();
     }
 
-    // Reject if a provision/upgrade script is still running on the node.
-    // This is the authoritative guard: lifecycle_state gets overwritten by
-    // agent status reports within seconds, so it can't be trusted alone.
+    // lifecycle_state can't guard this — agent status reports overwrite it within seconds
     if let Ok(Some(active)) = db::get_active_script(&state.db, &id).await {
         return (
             StatusCode::CONFLICT,

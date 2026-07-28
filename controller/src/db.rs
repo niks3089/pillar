@@ -425,13 +425,10 @@ pub struct ActiveScript {
     pub initiated_at: i64,
 }
 
-/// Upper bound on how long a provision/upgrade script may run. The agent
-/// enforces this as the script timeout; upgrades with snapshot downloads can
-/// legitimately take well over an hour.
+/// Agent-enforced script timeout; snapshot-heavy upgrades can exceed 1h.
 pub const MAX_SCRIPT_RUNTIME_SECS: i64 = 4 * 3600;
 
-/// Latest still-running script for a node, if any. Rows older than the script
-/// timeout (plus slack) are ignored so a dead agent can't wedge the node forever.
+/// Rows older than the timeout are ignored so a dead agent can't wedge the node.
 pub async fn get_active_script(db: &Db, node_id: &str) -> Result<Option<ActiveScript>> {
     let db = db.clone();
     let node_id = node_id.to_owned();
@@ -459,9 +456,8 @@ pub async fn get_active_script(db: &Db, node_id: &str) -> Result<Option<ActiveSc
     .await?
 }
 
-/// Mark any still-open script rows for a node as failed. Called when an agent
-/// (re)registers: scripts run inside the agent process with kill_on_drop, so a
-/// fresh registration means no script from a previous incarnation survived.
+/// Scripts don't survive an agent restart (kill_on_drop), so a fresh
+/// registration means any open rows are orphans.
 pub async fn fail_incomplete_scripts(db: &Db, node_id: &str) -> Result<usize> {
     let db = db.clone();
     let node_id = node_id.to_owned();
@@ -785,7 +781,6 @@ mod tests {
         assert_eq!(active.script_id, "script-1");
         assert_eq!(active.description.as_deref(), Some("Provision agave v2.1.6"));
 
-        // Other nodes are unaffected
         assert!(get_active_script(&db, "node-2").await.unwrap().is_none());
 
         complete_script_execution(&db, "script-1", 0, false, "")

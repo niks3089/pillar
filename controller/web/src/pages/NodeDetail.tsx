@@ -231,7 +231,6 @@ function NodeDetail() {
 
   useEffect(() => {
     refresh()
-    // Poll faster while a deployment script is running so the banner clears promptly
     const interval = setInterval(refresh, scriptActive ? 3000 : 10000)
     return () => clearInterval(interval)
   }, [refresh, scriptActive])
