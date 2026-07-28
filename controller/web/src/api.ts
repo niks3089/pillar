@@ -204,8 +204,8 @@ export interface VersionInfo {
   checked_at?: number
 }
 
-export async function fetchVersionInfo(): Promise<VersionInfo> {
-  return api('/api/version')
+export async function fetchVersionInfo(refresh = false): Promise<VersionInfo> {
+  return api(`/api/version${refresh ? '?refresh=true' : ''}`)
 }
 
 export async function upgradeController(): Promise<{ ok: boolean; message: string }> {

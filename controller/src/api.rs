@@ -1435,7 +1435,19 @@ struct VersionInfoResponse {
     checked_at: Option<i64>,
 }
 
-async fn version_info(State(state): State<ApiState>) -> impl IntoResponse {
+#[derive(Deserialize)]
+struct VersionQuery {
+    #[serde(default)]
+    refresh: bool,
+}
+
+async fn version_info(
+    State(state): State<ApiState>,
+    Query(q): Query<VersionQuery>,
+) -> impl IntoResponse {
+    if q.refresh {
+        crate::update_checker::refresh_now(VERSION, &state.update_info).await;
+    }
     let info = crate::update_checker::get_or_refresh(VERSION, &state.update_info).await;
     Json(VersionInfoResponse {
         current_version: VERSION.to_string(),
