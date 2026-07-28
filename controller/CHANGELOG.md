@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.9.0](https://github.com/niks3089/pillar/compare/pillar-controller-v0.8.0...pillar-controller-v0.9.0) (2026-07-28)
+
+
+### Features
+
+* **controller:** deployment progress UI + reliable in-progress guard ([743e901](https://github.com/niks3089/pillar/commit/743e90133609ffa199c217f3931996153a27dd85))
+* **controller:** deployment progress UI + reliable in-progress guard ([2fb8bfe](https://github.com/niks3089/pillar/commit/2fb8bfec97074e0dc7ee7f2e6eed1c2d4676a7bf))
+
 ## [0.8.0](https://github.com/niks3089/pillar/compare/pillar-controller-v0.7.0...pillar-controller-v0.8.0) (2026-07-24)
 
 
