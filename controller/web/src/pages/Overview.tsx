@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { fetchOverview, fetchNodes, fetchOnboardCommand } from '../api'
 import type { FleetOverview, Node } from '../api'
+import { copyText } from '../clipboard'
 
 const STATE_BADGE_CLASSES: Record<string, string> = {
   healthy: 'bg-green-500/10 text-green-400 border-green-500/20',
@@ -35,6 +36,7 @@ function Overview() {
   const [nodes, setNodes] = useState<Node[]>([])
   const [onboardCmd, setOnboardCmd] = useState('')
   const [copied, setCopied] = useState(false)
+  const [copiedIp, setCopiedIp] = useState<string | null>(null)
 
   const refresh = useCallback(async () => {
     try {
@@ -52,19 +54,17 @@ function Overview() {
     return () => clearInterval(interval)
   }, [refresh])
 
+  const [onboardCluster, setOnboardCluster] = useState('mainnet-beta')
   useEffect(() => {
-    fetchOnboardCommand()
+    fetchOnboardCommand(onboardCluster)
       .then((res) => setOnboardCmd(res.command))
       .catch(() => {})
-  }, [])
+  }, [onboardCluster])
 
   const handleCopy = async () => {
-    try {
-      await navigator.clipboard.writeText(onboardCmd)
+    if (await copyText(onboardCmd)) {
       setCopied(true)
       setTimeout(() => setCopied(false), 2000)
-    } catch {
-      // clipboard may not be available
     }
   }
 
@@ -132,6 +132,13 @@ function Overview() {
                       <>
                         {node.hostname && node.hostname !== node.node_id && <span className="text-zinc-700">•</span>}
                         <span>{node.ip_address}</span>
+                        <button
+                          className="text-zinc-600 hover:text-zinc-300 transition-colors"
+                          title="Copy IP"
+                          onClick={async e => { e.stopPropagation(); if (await copyText(node.ip_address!)) { setCopiedIp(node.ip_address!); setTimeout(() => setCopiedIp(null), 1500) } }}
+                        >
+                          {copiedIp === node.ip_address ? '✓' : '⧉'}
+                        </button>
                       </>
                     )}
                   </div>
@@ -206,6 +213,17 @@ function Overview() {
       <div className="bg-[#15131f] border border-purple-500/20 rounded-xl p-6 shadow-[0_0_20px_rgba(153,69,255,0.05)]">
         <h3 className="text-lg font-semibold text-zinc-100 mb-1">Add a Validator</h3>
         <p className="text-sm text-zinc-400 mb-4">Run this command on the validator host to add it to your fleet:</p>
+        <div className="flex items-center gap-2 mb-3">
+          {['mainnet-beta', 'testnet', 'devnet'].map(c => (
+            <button
+              key={c}
+              className={`px-3 py-1 text-xs font-medium rounded-md border transition-colors ${onboardCluster === c ? 'bg-purple-500/20 text-purple-300 border-purple-500/40' : 'bg-white/5 text-zinc-400 border-white/10 hover:text-zinc-200'}`}
+              onClick={() => setOnboardCluster(c)}
+            >
+              {c}
+            </button>
+          ))}
+        </div>
         <div className="flex items-center gap-3 bg-black/40 border border-white/10 rounded-lg p-3">
           <code className="flex-1 text-sm text-green-400 font-mono overflow-x-auto whitespace-nowrap scrollbar-hide">
             {onboardCmd || 'Loading...'}

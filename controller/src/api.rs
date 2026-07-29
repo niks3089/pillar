@@ -1335,7 +1335,15 @@ async fn cluster_defaults(Path(cluster): Path<String>) -> impl IntoResponse {
     })
 }
 
-async fn onboard_command(State(state): State<ApiState>) -> impl IntoResponse {
+#[derive(Deserialize)]
+struct OnboardQuery {
+    cluster: Option<String>,
+}
+
+async fn onboard_command(
+    State(state): State<ApiState>,
+    Query(q): Query<OnboardQuery>,
+) -> impl IntoResponse {
     let endpoint = if state.config.external_url.is_empty() {
         state.config.grpc_listen.clone()
     } else {
@@ -1347,7 +1355,7 @@ async fn onboard_command(State(state): State<ApiState>) -> impl IntoResponse {
     );
 
     if !state.auth_token.is_empty() {
-        cmd.push_str(&format!(" \\\n  --token {}", state.auth_token));
+        cmd.push_str(&format!(" --token {}", state.auth_token));
     }
 
     // When TLS is enabled, include the HTTP base URL so install script can fetch ca.pem
@@ -1379,14 +1387,15 @@ async fn onboard_command(State(state): State<ApiState>) -> impl IntoResponse {
                 .unwrap_or("8080");
             format!("http://{host}:{http_port}")
         };
-        cmd.push_str(&format!(" \\\n  --http-url {http_base}"));
+        cmd.push_str(&format!(" --http-url {http_base}"));
     }
 
-    // The installer requires --cluster on a fresh box (no running validator to
-    // auto-detect from). The controller can't know the operator's intended
-    // cluster, so emit a placeholder they must edit — a conscious choice beats
-    // a silent mainnet-beta default.
-    cmd.push_str(" \\\n  --cluster <mainnet-beta|testnet|devnet>");
+    match q.cluster.as_deref() {
+        Some(c) if ["mainnet-beta", "testnet", "devnet"].contains(&c) => {
+            cmd.push_str(&format!(" --cluster {c}"));
+        }
+        _ => cmd.push_str(" --cluster <mainnet-beta|testnet|devnet>"),
+    }
 
     Json(OnboardCommandResponse { command: cmd })
 }
