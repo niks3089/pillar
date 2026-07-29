@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.8.1](https://github.com/niks3089/pillar/compare/pillar-agent-v0.8.0...pillar-agent-v0.8.1) (2026-07-29)
+
+
+### Bug Fixes
+
+* **agent:** re-read surfpool binary version each reconcile ([022e090](https://github.com/niks3089/pillar/commit/022e090af9a01dd411a72f8b78589dc86ad37d39))
+* **agent:** re-read surfpool binary version each reconcile ([32f3df2](https://github.com/niks3089/pillar/commit/32f3df2bfeb6a182a51a95dac9d9be0aa643706c))
+
 ## [0.8.0](https://github.com/niks3089/pillar/compare/pillar-agent-v0.7.0...pillar-agent-v0.8.0) (2026-07-29)
 
 
