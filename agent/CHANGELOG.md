@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.8.5](https://github.com/niks3089/pillar/compare/pillar-agent-v0.8.4...pillar-agent-v0.8.5) (2026-07-29)
+
+
+### Bug Fixes
+
+* **agent:** treat systemd auto-restart as active so recovery cannot wipe a restarting validator ([803d510](https://github.com/niks3089/pillar/commit/803d5108bf38b33721fdddacf36d916aec6478e1))
+* bootstrap-safe recovery and unstarved firedancer snapshot sources ([6bb88df](https://github.com/niks3089/pillar/commit/6bb88df9bca5bfc9275d94db062cac87263dadc0))
+
 ## [0.8.4](https://github.com/niks3089/pillar/compare/pillar-agent-v0.8.3...pillar-agent-v0.8.4) (2026-07-29)
 
 
