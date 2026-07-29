@@ -216,6 +216,17 @@ impl Reconciler {
 
         self.last_check_duration_secs = start.elapsed().as_secs_f64();
 
+        // A node with no local slot reads as Off, but if the service is running it's
+        // bootstrapping (downloading snapshots, replaying) — report StartingUp, not
+        // Off, so the UI doesn't flap OFFLINE during a normal cold start.
+        let mut health = health;
+        if health.state == NodeState::Off
+            && matches!(self.service_manager.is_active().await, Ok(true))
+        {
+            health.state = NodeState::StartingUp;
+            self.consecutive_off_count = 0;
+        }
+
         // 2. Handle state transition — don't transition to Off until consecutive threshold met
         let effective_state = if health.state == NodeState::Off
             && self.consecutive_off_count < self.config.health.consecutive_off_threshold
