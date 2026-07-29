@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.13.12](https://github.com/niks3089/pillar/compare/pillar-controller-v0.13.11...pillar-controller-v0.13.12) (2026-07-29)
+
+
+### Bug Fixes
+
+* bootstrap-safe recovery and unstarved firedancer snapshot sources ([6bb88df](https://github.com/niks3089/pillar/commit/6bb88df9bca5bfc9275d94db062cac87263dadc0))
+* **controller:** firedancer only_known always false so snapshot sources are not starved ([30ce879](https://github.com/niks3089/pillar/commit/30ce8792af7acfda502dbb0b4fb5933f4d174fb8))
+
 ## [0.13.11](https://github.com/niks3089/pillar/compare/pillar-controller-v0.13.10...pillar-controller-v0.13.11) (2026-07-29)
 
 
