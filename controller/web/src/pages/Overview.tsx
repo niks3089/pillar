@@ -163,8 +163,9 @@ function Overview() {
                 
                 {/* Software & Cluster */}
                 <td className="px-6 py-4">
-                  <div className="text-sm font-medium text-zinc-300 capitalize flex items-center gap-2 mb-1">
-                    {client} {version !== '-' && <span className="text-zinc-500 font-mono text-xs lowercase">v{version}</span>}
+                  <div className="text-sm font-medium text-zinc-300 capitalize mb-1">
+                    {client}
+                    {version !== '-' && <span className="block text-zinc-500 font-mono text-xs lowercase normal-case">v{version}</span>}
                   </div>
                   {cluster ? (
                     <span className="inline-flex items-center px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider bg-zinc-800 text-zinc-400 rounded border border-zinc-700">
