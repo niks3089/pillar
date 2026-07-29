@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.13.1](https://github.com/niks3089/pillar/compare/pillar-controller-v0.13.0...pillar-controller-v0.13.1) (2026-07-29)
+
+
+### Bug Fixes
+
+* **controller:** install surfpool from versioned release tarball ([3e911ac](https://github.com/niks3089/pillar/commit/3e911acdb37dfb3fa15c24d21d4e2f9b25f0cdce))
+* **controller:** install surfpool from versioned release tarball ([aa26a66](https://github.com/niks3089/pillar/commit/aa26a66730013f112cbfff2d6954aa68f8033ef0))
+
 ## [0.13.0](https://github.com/niks3089/pillar/compare/pillar-controller-v0.12.1...pillar-controller-v0.13.0) (2026-07-29)
 
 
