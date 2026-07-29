@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.13.9](https://github.com/niks3089/pillar/compare/pillar-controller-v0.13.8...pillar-controller-v0.13.9) (2026-07-29)
+
+
+### Bug Fixes
+
+* **controller:** empty version string rendered a bare v ([a028b28](https://github.com/niks3089/pillar/commit/a028b2849e5d6e709bc10cf75f21705ec5670880))
+* **controller:** empty version string rendered a bare v ([b6acb68](https://github.com/niks3089/pillar/commit/b6acb6809bcc98d3a8e016dc56619af2736cecf1))
+
 ## [0.13.8](https://github.com/niks3089/pillar/compare/pillar-controller-v0.13.7...pillar-controller-v0.13.8) (2026-07-29)
 
 
