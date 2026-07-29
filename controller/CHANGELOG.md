@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.13.5](https://github.com/niks3089/pillar/compare/pillar-controller-v0.13.4...pillar-controller-v0.13.5) (2026-07-29)
+
+
+### Bug Fixes
+
+* **controller:** banner refreshes immediately after a manual update check ([d4588f4](https://github.com/niks3089/pillar/commit/d4588f490041e942c9e11cd9a9c1c6ac20f41a81))
+* **controller:** banner refreshes immediately after a manual update check ([5212464](https://github.com/niks3089/pillar/commit/5212464910eeeded75110daabbbd10d566dd10ef))
+* **controller:** firedancer build needs rustup + real error in failure banner ([18ff2c5](https://github.com/niks3089/pillar/commit/18ff2c572804f42bffb957cc023ed5f37f615e32))
+* **controller:** firedancer build needs rustup; surface script stderr in failure banner ([c38c3a4](https://github.com/niks3089/pillar/commit/c38c3a4e4f9d724daa91f63e73524c08095adab2))
+
 ## [0.13.4](https://github.com/niks3089/pillar/compare/pillar-controller-v0.13.3...pillar-controller-v0.13.4) (2026-07-29)
 
 
