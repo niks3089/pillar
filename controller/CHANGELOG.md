@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.13.10](https://github.com/niks3089/pillar/compare/pillar-controller-v0.13.9...pillar-controller-v0.13.10) (2026-07-29)
+
+
+### Bug Fixes
+
+* **controller:** firedancer known validators + dead testnet entrypoints ([bfeacda](https://github.com/niks3089/pillar/commit/bfeacda3c4c81ad473c9a9b073e8ba95a5562b4b))
+* **controller:** firedancer TOML known validators, drop dead testnet entrypoints ([f030139](https://github.com/niks3089/pillar/commit/f0301397edb189f16f4f6c5cfe19f732ee3b429b))
+
 ## [0.13.9](https://github.com/niks3089/pillar/compare/pillar-controller-v0.13.8...pillar-controller-v0.13.9) (2026-07-29)
 
 
