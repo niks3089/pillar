@@ -89,6 +89,9 @@ message NodeStatus {
     // Validator process start time (unix epoch; zero when the process is not
     // found). Survives agent restarts, unlike state_duration_secs.
     int64  validator_started_at_unix_secs = 55;
+
+    // Established TCP connections to the validator's RPC port.
+    uint32 rpc_connections = 56;
 }
 
 // Commands pushed from controller to agent.

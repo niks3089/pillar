@@ -108,3 +108,30 @@ impl SystemInfo {
         self.disks.list().iter().map(|d| d.total_space()).sum()
     }
 }
+
+/// Established TCP connections with the given local port, from /proc/net/tcp{,6}.
+/// Returns 0 on non-Linux hosts.
+pub fn established_connections(local_port: u16) -> u32 {
+    let mut count = 0u32;
+    for path in ["/proc/net/tcp", "/proc/net/tcp6"] {
+        let Ok(contents) = std::fs::read_to_string(path) else {
+            continue;
+        };
+        for line in contents.lines().skip(1) {
+            let mut fields = line.split_whitespace();
+            let (Some(local), Some(_remote), Some(state)) =
+                (fields.nth(1), fields.next(), fields.next())
+            else {
+                continue;
+            };
+            let port = local
+                .rsplit(':')
+                .next()
+                .and_then(|p| u16::from_str_radix(p, 16).ok());
+            if port == Some(local_port) && state == "01" {
+                count += 1;
+            }
+        }
+    }
+    count
+}

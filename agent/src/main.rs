@@ -150,11 +150,19 @@ async fn main() -> anyhow::Result<()> {
 
     // 2. Spawn metrics updater
     let sysinfo_interval = Duration::from_secs(config.sysinfo_refresh_interval_secs);
+    let rpc_port = config
+        .health
+        .local_rpc_url
+        .rsplit(':')
+        .next()
+        .and_then(|p| p.trim_end_matches('/').parse().ok())
+        .unwrap_or(8899);
     tokio::spawn(metrics_updater::run(
         shared_status.clone(),
         prom_metrics.clone(),
         agent_health.clone(),
         sysinfo_interval,
+        rpc_port,
         cancel.clone(),
     ));
 

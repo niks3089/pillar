@@ -21,7 +21,9 @@ fn enrich_status(
     sys: &SystemInfo,
     agent_pid: SysPid,
     agent_health: &AgentHealth,
+    rpc_port: u16,
 ) {
+    status.rpc_connections = crate::system_info::established_connections(rpc_port);
     // System metrics
     status.cpu_usage_percent = sys.cpu_usage_percent() as f64;
     status.memory_used_bytes = sys.memory_used_bytes();
@@ -63,6 +65,7 @@ pub async fn run(
     metrics: Arc<Metrics>,
     agent_health: Arc<AgentHealth>,
     interval: Duration,
+    rpc_port: u16,
     cancel: CancellationToken,
 ) {
     let mut sys = SystemInfo::new();
@@ -86,7 +89,7 @@ pub async fn run(
                 // 2. Take write lock, enrich, update prometheus
                 let mut guard = shared.write().await;
                 if let Some(ref mut status) = *guard {
-                    enrich_status(status, &sys, agent_pid, &agent_health);
+                    enrich_status(status, &sys, agent_pid, &agent_health, rpc_port);
                     metrics.update_from_state(status);
                 }
             }
