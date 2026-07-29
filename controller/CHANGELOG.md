@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.13.4](https://github.com/niks3089/pillar/compare/pillar-controller-v0.13.3...pillar-controller-v0.13.4) (2026-07-29)
+
+
+### Bug Fixes
+
+* **controller:** clipboard fallback for HTTP, single-line onboard command, cluster toggle ([4eb4a9a](https://github.com/niks3089/pillar/commit/4eb4a9ad7001dd3a4ae5485ec187f40ca7c8689a))
+* **controller:** clipboard on HTTP, pasteable onboard command, cluster toggle ([dcd7f7f](https://github.com/niks3089/pillar/commit/dcd7f7fbb8a57003beb1b7fd787f1ace0d26aefc))
+
 ## [0.13.3](https://github.com/niks3089/pillar/compare/pillar-controller-v0.13.2...pillar-controller-v0.13.3) (2026-07-29)
 
 
