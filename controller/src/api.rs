@@ -883,7 +883,7 @@ echo "Wrote /etc/pillar/yellowstone-grpc.json""#
             String::new()
         } else {
             format!(
-                "    known_public_key = [{}]\n",
+                "    known_validators = [{}]\n",
                 req.known_validators
                     .iter()
                     .map(|k| format!("\"{k}\""))
