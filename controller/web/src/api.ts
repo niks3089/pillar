@@ -105,8 +105,8 @@ export async function fetchNodeLogs(
   return api(`/api/nodes/${encodeURIComponent(id)}/logs${query ? '?' + query : ''}`)
 }
 
-export async function fetchOnboardCommand(): Promise<{ command: string }> {
-  return api('/api/onboard-command')
+export async function fetchOnboardCommand(cluster?: string): Promise<{ command: string }> {
+  return api(`/api/onboard-command${cluster ? `?cluster=${encodeURIComponent(cluster)}` : ''}`)
 }
 
 export async function restartNode(id: string): Promise<{ ok: boolean; message: string }> {

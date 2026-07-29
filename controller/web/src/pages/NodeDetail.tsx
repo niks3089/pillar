@@ -3,6 +3,7 @@ import { useParams, Link } from 'react-router-dom'
 import { fetchNode, fetchNodeLogs, restartNode, recoverNode, deleteNode, stopNode, cancelDeployment, provisionNode, fetchVersionInfo, upgradeAgent, fetchClientReleases } from '../api'
 import type { Node, LogEntry, ProvisionRequest, VersionInfo } from '../api'
 import { useConfirm, useToast } from '../components/dialogs'
+import { copyText } from '../clipboard'
 
 const STATE_BADGE_CLASSES: Record<string, string> = {
   unprovisioned: 'bg-zinc-500/10 text-zinc-400 border-zinc-500/20',
@@ -671,11 +672,11 @@ function NodeDetail() {
               <span className="text-xs font-medium text-zinc-400 uppercase tracking-wider mb-2">IP Address</span>
               {node.ip_address ? (
                 <button
-                  className="text-lg font-mono text-zinc-300 text-left hover:text-white transition-colors cursor-pointer"
+                  className="text-lg font-mono text-zinc-300 text-left hover:text-white transition-colors cursor-pointer inline-flex items-center gap-2"
                   title="Click to copy"
-                  onClick={() => { navigator.clipboard.writeText(node.ip_address!).then(() => showToast('success', `Copied ${node.ip_address}`)).catch(() => {}) }}
+                  onClick={async () => { if (await copyText(node.ip_address!)) showToast('success', `Copied ${node.ip_address}`); else showToast('error', 'Copy failed') }}
                 >
-                  {node.ip_address}
+                  {node.ip_address} <span className="text-zinc-500 text-sm">⧉</span>
                 </button>
               ) : (
                 <span className="text-lg font-mono text-zinc-300">-</span>
