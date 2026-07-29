@@ -111,7 +111,7 @@ function Overview() {
           <tbody className="divide-y divide-white/5">
             {nodes.map((node) => {
               const client = node.client ?? node.live_status?.client ?? '-';
-              const version = node.live_status?.version ?? node.last_version ?? '-';
+              const version = node.live_status?.version || node.last_version || '-';
               const cluster = node.cluster ?? node.live_status?.cluster;
               
               return (
