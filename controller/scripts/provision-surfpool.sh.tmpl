@@ -8,19 +8,12 @@ echo "=== Pillar: Provisioning Surfpool {{version}} on {{cluster}} ==="
 
 CURRENT_VERSION=$({{binary_path}} --version 2>/dev/null | awk '{print $2}' || true)
 if [ ! -x "{{binary_path}}" ] || [ "$CURRENT_VERSION" != "{{version}}" ]; then
-  echo "Installing surfpool..."
-  curl -sL https://run.surfpool.run/ | bash
-  SP=$(command -v surfpool 2>/dev/null || true)
-  [ -z "$SP" ] && SP="$HOME/.local/bin/surfpool"
-  if [ ! -x "$SP" ]; then
-    SP=$(find "$HOME/.local" -name surfpool -type f 2>/dev/null | head -1)
-  fi
-  if [ -z "$SP" ] || [ ! -x "$SP" ]; then
-    echo "ERROR: surfpool not found after install" >&2
-    exit 1
-  fi
-  # Promote to the system path used by the systemd unit.
-  sudo install -m 755 "$SP" {{binary_path}}
+  echo "Installing surfpool {{version}}..."
+  STAGING=$(mktemp -d)
+  curl -sSfL -o "$STAGING/surfpool.tar.gz" "https://github.com/solana-foundation/surfpool/releases/download/v{{version}}/surfpool-linux-x64.tar.gz"
+  tar -xzf "$STAGING/surfpool.tar.gz" -C "$STAGING"
+  sudo install -m 755 "$STAGING/surfpool" {{binary_path}}
+  rm -rf "$STAGING"
 fi
 echo "surfpool ready at {{binary_path}}"
 
