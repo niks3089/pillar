@@ -167,6 +167,12 @@ fn priority_to_level(priority: &str) -> &'static str {
 fn detect_level_from_message(message: &str) -> Option<&'static str> {
     let mut tokens = message.split_whitespace();
     if let Some(first) = tokens.next() {
+        match first {
+            "ERR" => return Some("error"),
+            "WARNING" => return Some("warn"),
+            "NOTICE" => return Some("info"),
+            _ => {}
+        }
         if first.len() > 10 && first.as_bytes()[0].is_ascii_digit() && first.contains('T') {
             if let Some(second) = tokens.next() {
                 match second {
@@ -405,6 +411,7 @@ pub async fn run(
     let mut client: Option<crate::grpc::LogClient> = None;
     let mut backoff = Duration::from_secs(1);
     let max_backoff = Duration::from_secs(30);
+    let mut suppressed: std::collections::VecDeque<LogEntry> = std::collections::VecDeque::new();
 
     loop {
         tokio::select! {
@@ -434,8 +441,17 @@ pub async fn run(
                                 &default_min_level
                             };
                             if !level_passes(&e.level, min) {
+                                if e.service == "validator" {
+                                    if suppressed.len() >= 20 {
+                                        suppressed.pop_front();
+                                    }
+                                    suppressed.push_back(e);
+                                }
                                 continue;
                             }
+                        }
+                        if e.service == "validator" && level_passes(&e.level, "warn") {
+                            buffer.extend(suppressed.drain(..));
                         }
                         buffer.push(e);
                         if buffer.len() >= buffer_size {
@@ -581,6 +597,13 @@ mod tests {
         assert_eq!(priority_to_level("5"), "info");
         assert_eq!(priority_to_level("6"), "info");
         assert_eq!(priority_to_level("7"), "debug");
+    }
+
+    #[test]
+    fn firedancer_level_tokens() {
+        assert_eq!(detect_level_from_message("ERR     src/app/fdctl/main.c(55): boot failed"), Some("error"));
+        assert_eq!(detect_level_from_message("WARNING src/disco/topo.c(10): hugepages"), Some("warn"));
+        assert_eq!(detect_level_from_message("NOTICE  src/app/fdctl/run.c(1): booting"), Some("info"));
     }
 
     #[test]
