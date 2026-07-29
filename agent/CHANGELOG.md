@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.6.0](https://github.com/niks3089/pillar/compare/pillar-agent-v0.5.0...pillar-agent-v0.6.0) (2026-07-29)
+
+
+### Features
+
+* **agent:** report validator process start time ([67b0f1f](https://github.com/niks3089/pillar/commit/67b0f1fdc61c332ee66d0f288ac42a603cb62e11))
+* real validator process uptime ([5a9441e](https://github.com/niks3089/pillar/commit/5a9441e3ec2e442a50c2e71cf7eb50ec24e6190d))
+
 ## [0.5.0](https://github.com/niks3089/pillar/compare/pillar-agent-v0.4.1...pillar-agent-v0.5.0) (2026-07-21)
 
 
