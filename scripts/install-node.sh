@@ -175,7 +175,8 @@ Cmnd_Alias PILLAR_SVC = \
     /usr/bin/systemctl start jito-validator, /usr/bin/systemctl stop jito-validator, /usr/bin/systemctl restart jito-validator, /usr/bin/systemctl enable --now jito-validator, \
     /usr/bin/systemctl start firedancer, /usr/bin/systemctl stop firedancer, /usr/bin/systemctl restart firedancer, /usr/bin/systemctl enable --now firedancer, \
     /usr/bin/systemctl start frankendancer, /usr/bin/systemctl stop frankendancer, /usr/bin/systemctl restart frankendancer, /usr/bin/systemctl enable --now frankendancer, \
-    /usr/bin/systemctl start surfpool, /usr/bin/systemctl stop surfpool, /usr/bin/systemctl restart surfpool, /usr/bin/systemctl enable --now surfpool
+    /usr/bin/systemctl start surfpool, /usr/bin/systemctl stop surfpool, /usr/bin/systemctl restart surfpool, /usr/bin/systemctl enable --now surfpool, \
+    /usr/bin/systemctl start mithril-validator, /usr/bin/systemctl stop mithril-validator, /usr/bin/systemctl restart mithril-validator, /usr/bin/systemctl enable --now mithril-validator
 
 Cmnd_Alias PILLAR_UNIT = \
     /usr/bin/tee /etc/systemd/system/solana-validator.service, \
@@ -183,6 +184,7 @@ Cmnd_Alias PILLAR_UNIT = \
     /usr/bin/tee /etc/systemd/system/firedancer.service, \
     /usr/bin/tee /etc/systemd/system/frankendancer.service, \
     /usr/bin/tee /etc/systemd/system/surfpool.service, \
+    /usr/bin/tee /etc/systemd/system/mithril-validator.service, \
     /usr/bin/tee /etc/pillar/yellowstone-grpc.json, \
     /usr/bin/tee /etc/pillar/validator.toml, \
     /usr/bin/mkdir -p /etc/pillar
@@ -192,6 +194,7 @@ Cmnd_Alias PILLAR_BIN = \
     /usr/bin/install -m 755 * /usr/local/bin/jito-validator, \
     /usr/bin/install -m 755 * /usr/local/bin/fdctl, \
     /usr/bin/install -m 755 * /usr/local/bin/surfpool, \
+    /usr/bin/install -m 755 * /usr/local/bin/mithril-validator, \
     /usr/bin/install -m 755 * /usr/local/bin/pillar-agent, \
     /usr/bin/install -d -o sol -g sol /home/sol/surfpool
 

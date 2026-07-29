@@ -52,6 +52,8 @@ if [ -z "${CURRENT:-}" ]; then
 fi
 echo "Binary ready at {{binary_path}}"
 
+{{data_dirs_section}}
+
 # Stop existing service if running
 sudo systemctl stop {{old_service_name}} 2>/dev/null || true
 
@@ -91,4 +93,4 @@ rm -rf "$STAGING"
 echo "=== Provision complete ==="
 
 # Restart agent for config reload (deferred so script result can be reported)
-(sleep 3 && sudo systemctl restart pillar-agent) &
+(sleep 3 && sudo systemctl restart pillar-agent) >/dev/null 2>&1 &
