@@ -1609,9 +1609,10 @@ async fn upgrade_agent(State(state): State<ApiState>, Path(id): Path<String>) ->
 
     let script = templates::render(templates::scripts::UPGRADE_AGENT, &vars);
     let description = format!("Upgrade agent to v{}", update.version);
+    let script_id = generate_script_id();
 
     let cmd = wrap_script(ExecuteScript {
-        script_id: generate_script_id(),
+        script_id: script_id.clone(),
         script,
         description: description.clone(),
         timeout_secs: 300,
@@ -1619,6 +1620,11 @@ async fn upgrade_agent(State(state): State<ApiState>, Path(id): Path<String>) ->
 
     match state.registry.send_command(&id, cmd).await {
         Ok(()) => {
+            if let Err(e) =
+                db::insert_script_execution(&state.db, &script_id, &id, &description).await
+            {
+                tracing::warn!(error = %e, "failed to record script execution");
+            }
             emit_controller_log(
                 &state.registry,
                 &state.db,

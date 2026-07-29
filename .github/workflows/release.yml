@@ -91,6 +91,9 @@ jobs:
           AGENT_RELEASED: ${{ needs.release-please.outputs.agent_release_created }}
           CTRL_RELEASED: ${{ needs.release-please.outputs.controller_release_created }}
         run: |
+          # A failed curl must fail the step: without pipefail it hashes empty
+          # output and publishes sha256("") — every upgrade then checksum-fails.
+          set -o pipefail
           # For a component released this run the fresh build is what gets uploaded;
           # otherwise the sha must match the asset already published at its tag
           # (a rebuild of the same version is not byte-identical).
