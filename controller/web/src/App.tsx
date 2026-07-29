@@ -26,7 +26,7 @@ function App() {
       if (info.controller_update) {
         showToast('success', `Controller v${info.controller_update.version} is available — see the banner to upgrade.`)
       } else {
-        showToast('success', `Up to date: controller v${info.current_version}${info.agent_update ? `, latest agent v${info.agent_update.version}` : ''}.`)
+        showToast('success', `Controller v${info.current_version} is the latest release.${info.agent_update ? ` Latest agent release: v${info.agent_update.version} — the banner shows if any nodes are behind.` : ''}`)
       }
     } catch (err) {
       showToast('error', `Update check failed: ${err}`)

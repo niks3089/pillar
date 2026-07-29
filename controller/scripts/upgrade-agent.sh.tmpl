@@ -9,9 +9,11 @@ echo "Downloading binary..."
 curl -sSL -o "$STAGING/binary" "{{download_url}}"
 echo "{{sha256}}  $STAGING/binary" | sha256sum -c
 
-# Install new binary and restart (systemd Restart=always will pick up new binary)
+# Install new binary
 sudo install -m 755 "$STAGING/binary" /usr/local/bin/pillar-agent
-sudo systemctl restart pillar-agent
 
 rm -rf "$STAGING"
 echo "=== Agent upgrade complete ==="
+
+# Restart agent
+(sleep 3 && sudo systemctl restart pillar-agent) >/dev/null 2>&1 &
