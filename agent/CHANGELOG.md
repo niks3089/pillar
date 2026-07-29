@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.8.4](https://github.com/niks3089/pillar/compare/pillar-agent-v0.8.3...pillar-agent-v0.8.4) (2026-07-29)
+
+
+### Bug Fixes
+
+* **agent:** surface validator crash context through the log filter ([0291b74](https://github.com/niks3089/pillar/commit/0291b740ff8e29c4bddc8ce7201c366d8257bca4))
+* **agent:** surface validator crash context through the log filter ([957627b](https://github.com/niks3089/pillar/commit/957627bca619e60dff6c43976662f7b55f8d1f46))
+
 ## [0.8.3](https://github.com/niks3089/pillar/compare/pillar-agent-v0.8.2...pillar-agent-v0.8.3) (2026-07-29)
 
 
