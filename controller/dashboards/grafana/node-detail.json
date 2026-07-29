@@ -731,12 +731,71 @@
       "type": "timeseries"
     },
     {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisLabel": "",
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "lineWidth": 1,
+            "pointSize": 5,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "none"
+            }
+          },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 30
+      },
+      "id": 103,
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": null,
+          "expr": "pillar_node_rpc_connections{node_id=\"$node_id\"}",
+          "legendFormat": "connections",
+          "refId": "A"
+        }
+      ],
+      "title": "RPC Connections",
+      "type": "timeseries"
+    },
+    {
       "collapsed": false,
       "gridPos": {
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 30
+        "y": 38
       },
       "id": 102,
       "title": "Snapshot Download",
@@ -779,7 +838,7 @@
         "h": 6,
         "w": 8,
         "x": 0,
-        "y": 31
+        "y": 39
       },
       "id": 30,
       "options": {
@@ -835,7 +894,7 @@
         "h": 6,
         "w": 8,
         "x": 8,
-        "y": 31
+        "y": 39
       },
       "id": 31,
       "options": {
@@ -890,7 +949,7 @@
         "h": 6,
         "w": 8,
         "x": 16,
-        "y": 31
+        "y": 39
       },
       "id": 32,
       "options": {

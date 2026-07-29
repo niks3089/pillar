@@ -123,6 +123,10 @@ const METRIC_HEADERS: &[(&str, &str)] = &[
         "pillar_snapshot_download_speed_bps",
         "Snapshot download speed in bytes/s",
     ),
+    (
+        "pillar_node_rpc_connections",
+        "Established TCP connections to the validator RPC port",
+    ),
 ];
 
 fn emit_node_metrics(out: &mut String, node_id: &str, status: &NodeStatus) {
@@ -174,6 +178,10 @@ fn emit_node_metrics(out: &mut String, node_id: &str, status: &NodeStatus) {
         (
             "pillar_system_network_tx_bytes",
             status.network_tx_bytes as f64,
+        ),
+        (
+            "pillar_node_rpc_connections",
+            status.rpc_connections as f64,
         ),
     ];
 
