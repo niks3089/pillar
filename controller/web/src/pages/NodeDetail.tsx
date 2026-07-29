@@ -741,6 +741,9 @@ function NodeDetail() {
                     </div>
                   )}
                 </div>
+                {s?.version && provVersion && s.version !== provVersion && (
+                  <span className="text-xs text-yellow-500/80">node is currently running v{s.version}</span>
+                )}
               </div>
             </div>
 
