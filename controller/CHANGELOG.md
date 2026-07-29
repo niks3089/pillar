@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.13.8](https://github.com/niks3089/pillar/compare/pillar-controller-v0.13.7...pillar-controller-v0.13.8) (2026-07-29)
+
+
+### Bug Fixes
+
+* **controller:** hide version suffix when no version is known ([9475c49](https://github.com/niks3089/pillar/commit/9475c4947a0ca044b9f57b72810e49c4353c0084))
+* **controller:** hide version suffix when no version is known ([9b79367](https://github.com/niks3089/pillar/commit/9b79367b0fe2ee7766bf0f49594963b7cb083c3c))
+
 ## [0.13.7](https://github.com/niks3089/pillar/compare/pillar-controller-v0.13.6...pillar-controller-v0.13.7) (2026-07-29)
 
 
