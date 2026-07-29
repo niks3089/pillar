@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.0](https://github.com/niks3089/pillar/compare/pillar-agent-v0.7.0...pillar-agent-v0.8.0) (2026-07-29)
+
+
+### Features
+
+* add Mithril as a fourth validator client ([0d43e67](https://github.com/niks3089/pillar/commit/0d43e67ef42851423f55ec84017304a6ac917433))
+
 ## [0.7.0](https://github.com/niks3089/pillar/compare/pillar-agent-v0.6.0...pillar-agent-v0.7.0) (2026-07-29)
 
 
