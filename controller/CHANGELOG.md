@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.13.13](https://github.com/niks3089/pillar/compare/pillar-controller-v0.13.12...pillar-controller-v0.13.13) (2026-07-29)
+
+
+### Bug Fixes
+
+* **controller:** wrap validator version under client name so long versions don't push the row ([04ee77c](https://github.com/niks3089/pillar/commit/04ee77c9c059b4b5b6f3ac51454ffdb79b105bf3))
+
 ## [0.13.12](https://github.com/niks3089/pillar/compare/pillar-controller-v0.13.11...pillar-controller-v0.13.12) (2026-07-29)
 
 
