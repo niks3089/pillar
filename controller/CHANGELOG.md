@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.13.6](https://github.com/niks3089/pillar/compare/pillar-controller-v0.13.5...pillar-controller-v0.13.6) (2026-07-29)
+
+
+### Bug Fixes
+
+* **controller:** persist last reported version across restarts ([6242716](https://github.com/niks3089/pillar/commit/6242716e27754e43b19d532b8a345f965a030a06))
+* **controller:** persist last reported version so restarts don't blank the fleet table ([1684d33](https://github.com/niks3089/pillar/commit/1684d336344c9efb24da43378fb1d769b9fbaa7e))
+
 ## [0.13.5](https://github.com/niks3089/pillar/compare/pillar-controller-v0.13.4...pillar-controller-v0.13.5) (2026-07-29)
 
 
