@@ -53,7 +53,9 @@ echo "Service {{service_name}} started"
 CONFIG="${PILLAR_AGENT_CONFIG:-/etc/pillar/agent.yaml}"
 {{agent_config_sed_commands}}
 
-# Restart agent for config reload
-sudo systemctl restart pillar-agent
 rm -rf "$STAGING"
 echo "=== Provision complete ==="
+
+# Restart agent for config reload (deferred + detached so the script result
+# is reported before the agent dies)
+(sleep 3 && sudo systemctl restart pillar-agent) >/dev/null 2>&1 &
