@@ -160,7 +160,11 @@ async fn main() -> anyhow::Result<()> {
 
     // 3. Spawn log collector (if enabled)
     if config.log_collector.enabled {
-        let lc_config = config.log_collector.clone();
+        let mut lc_config = config.log_collector.clone();
+        let validator_unit = format!("{}.service", validator_client.service_name());
+        if !lc_config.units.contains(&validator_unit) {
+            lc_config.units.push(validator_unit);
+        }
         let lc_controller = config.controller.clone();
         let lc_health = agent_health.clone();
         let lc_shared = shared_status.clone();
