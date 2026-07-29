@@ -1048,11 +1048,18 @@ fi"#,
     vars
 }
 
+const DEAD_ENTRYPOINTS: &[&str] = &[
+    "entrypoint4.testnet.solana.com:8001",
+    "entrypoint5.testnet.solana.com:8001",
+];
+
 async fn provision_node(
     State(state): State<ApiState>,
     Path(id): Path<String>,
-    Json(req): Json<ProvisionRequest>,
+    Json(mut req): Json<ProvisionRequest>,
 ) -> impl IntoResponse {
+    req.entrypoints
+        .retain(|e| !DEAD_ENTRYPOINTS.contains(&e.as_str()));
     // Validate every operator-supplied field BEFORE it is interpolated into a shell
     // script the agent runs as `sol` with sudo. Blocks command/template injection.
     if let Err(msg) = validate_provision_request(&req) {
