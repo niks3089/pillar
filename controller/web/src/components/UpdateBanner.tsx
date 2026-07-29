@@ -21,7 +21,11 @@ function UpdateBanner() {
   useEffect(() => {
     refresh();
     const interval = setInterval(refresh, 60_000);
-    return () => clearInterval(interval);
+    window.addEventListener("pillar:recheck-updates", refresh);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener("pillar:recheck-updates", refresh);
+    };
   }, [refresh]);
 
   const agentUpdate = info?.agent_update;

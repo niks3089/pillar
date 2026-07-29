@@ -23,8 +23,9 @@ function App() {
     try {
       const info = await fetchVersionInfo(true)
       setVersion(info.current_version)
+      window.dispatchEvent(new Event('pillar:recheck-updates'))
       if (info.controller_update) {
-        showToast('success', `Controller v${info.controller_update.version} is available — see the banner to upgrade.`)
+        showToast('success', `Controller v${info.controller_update.version} is available — upgrade from the banner above.`)
       } else {
         showToast('success', `Controller v${info.current_version} is the latest release.${info.agent_update ? ` Latest agent release: v${info.agent_update.version} — the banner shows if any nodes are behind.` : ''}`)
       }
