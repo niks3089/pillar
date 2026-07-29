@@ -13,7 +13,7 @@ fn repo_for_client(client: &str) -> Option<&'static str> {
         "agave" => Some("anza-xyz/agave"),
         "jito" => Some("jito-foundation/jito-solana"),
         "firedancer" | "frankendancer" => Some("firedancer-io/firedancer"),
-        "surfpool" => Some("txtx/surfpool"),
+        "surfpool" => Some("solana-foundation/surfpool"),
         _ => None,
     }
 }
