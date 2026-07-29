@@ -192,10 +192,16 @@ function NodeDetail() {
 
   useEffect(() => {
     if (!id) return
-    fetchNodeLogs(id, { limit: 200 })
-      .then(entries => setLogs(entries.reverse()))
+    fetchNodeLogs(id, { service: logFilter, limit: 200 })
+      .then(entries => {
+        const fetched = entries.reverse()
+        setLogs(prev => {
+          const keep = prev.filter(e => e.service !== logFilter && e.timestamp_ms > 0)
+          return [...keep, ...fetched].sort((a, b) => a.timestamp_ms - b.timestamp_ms)
+        })
+      })
       .catch(() => {})
-  }, [id])
+  }, [id, logFilter])
 
   useEffect(() => {
     if (!id) return
