@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.12.1](https://github.com/niks3089/pillar/compare/pillar-controller-v0.12.0...pillar-controller-v0.12.1) (2026-07-29)
+
+
+### Bug Fixes
+
+* **controller:** include prereleases in version suggestions, show live version hint ([2ad64bb](https://github.com/niks3089/pillar/commit/2ad64bbd51fe84194d1e482687d4a79c3a8f8867))
+* **controller:** real version dropdown, surfpool repo moved, drop button ellipsis ([018a4fb](https://github.com/niks3089/pillar/commit/018a4fbcca9b97df90945c8a804fe2c8635be57f))
+* **controller:** version dropdown lists all releases ([5d64b04](https://github.com/niks3089/pillar/commit/5d64b04cb09d893f0df8a8b9e6cf1d0c760e39ae))
+
 ## [0.12.0](https://github.com/niks3089/pillar/compare/pillar-controller-v0.11.0...pillar-controller-v0.12.0) (2026-07-29)
 
 
