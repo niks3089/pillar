@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.13.14](https://github.com/niks3089/pillar/compare/pillar-controller-v0.13.13...pillar-controller-v0.13.14) (2026-07-29)
+
+
+### Bug Fixes
+
+* **agent:** bootstrap shows StartingUp; re-land fdctl dedup ([d8881f1](https://github.com/niks3089/pillar/commit/d8881f157cf258befa161287cc493542c03cc1a3))
+
 ## [0.13.13](https://github.com/niks3089/pillar/compare/pillar-controller-v0.13.12...pillar-controller-v0.13.13) (2026-07-29)
 
 
