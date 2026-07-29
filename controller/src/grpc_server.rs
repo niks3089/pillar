@@ -266,9 +266,6 @@ impl PillarController for GrpcServer {
             );
         }
 
-        // Update script execution record in DB
-        // The 'provisioning' badge must not outlive the script: the agent
-        // restarts after provisioning and can take a minute to report again.
         if let Ok(Some(s)) = db::get_lifecycle_state(&self.db, &result.node_id).await {
             if s == "provisioning" {
                 let next = if result.exit_code == 0 {
@@ -282,12 +279,27 @@ impl PillarController for GrpcServer {
             }
         }
 
+        let failure_detail = if result.exit_code == 0 {
+            String::new()
+        } else if !result.error.is_empty() {
+            result.error.clone()
+        } else {
+            let source = if !result.stderr.is_empty() {
+                &result.stderr
+            } else {
+                &result.stdout
+            };
+            let lines: Vec<&str> = source.trim().lines().collect();
+            let start = lines.len().saturating_sub(10);
+            lines[start..].join("\n")
+        };
+
         if let Err(e) = db::complete_script_execution(
             &self.db,
             &result.script_id,
             result.exit_code,
             result.timed_out,
-            &result.error,
+            &failure_detail,
         )
         .await
         {
@@ -309,21 +321,9 @@ impl PillarController for GrpcServer {
         } else if result.timed_out {
             format!("Script {} timed out", result.script_id)
         } else {
-            let detail = if !result.error.is_empty() {
-                result.error.clone()
-            } else {
-                let source = if !result.stderr.is_empty() {
-                    &result.stderr
-                } else {
-                    &result.stdout
-                };
-                let lines: Vec<&str> = source.trim().lines().collect();
-                let start = lines.len().saturating_sub(10);
-                lines[start..].join("\n")
-            };
             format!(
                 "Script {} failed (exit code {}):\n{}",
-                result.script_id, result.exit_code, detail
+                result.script_id, result.exit_code, failure_detail
             )
         };
 
