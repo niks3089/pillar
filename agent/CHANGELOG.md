@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.8.3](https://github.com/niks3089/pillar/compare/pillar-agent-v0.8.2...pillar-agent-v0.8.3) (2026-07-29)
+
+
+### Bug Fixes
+
+* **agent:** tail the active client's systemd unit and label it validator ([1f887d6](https://github.com/niks3089/pillar/commit/1f887d6729fe1b9407f2ee65b7f91c6874901660))
+* **agent:** validator logs for firedancer/surfpool units ([790c862](https://github.com/niks3089/pillar/commit/790c862c82561a65a45ae28bd47ebcedfcb8b3ca))
+
 ## [0.8.2](https://github.com/niks3089/pillar/compare/pillar-agent-v0.8.1...pillar-agent-v0.8.2) (2026-07-29)
 
 
