@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.10.1](https://github.com/niks3089/pillar/compare/pillar-controller-v0.10.0...pillar-controller-v0.10.1) (2026-07-29)
+
+
+### Bug Fixes
+
+* **controller:** provision data-dirs fallback used sudo chown, not in blanket sudoers ([b7538d3](https://github.com/niks3089/pillar/commit/b7538d3bec715105eeae81aeca80d4d7265541e5))
+* **controller:** provision sudo fallback + surface last deployment outcome ([a287fae](https://github.com/niks3089/pillar/commit/a287fae8297d2b98377d37ce21997d9a0dbbb4df))
+
 ## [0.10.0](https://github.com/niks3089/pillar/compare/pillar-controller-v0.9.0...pillar-controller-v0.10.0) (2026-07-28)
 
 
