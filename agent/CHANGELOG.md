@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.7.0](https://github.com/niks3089/pillar/compare/pillar-agent-v0.6.0...pillar-agent-v0.7.0) (2026-07-29)
+
+
+### Features
+
+* **agent:** report surfpool's own release version, exempt it from mismatch ([3f5884b](https://github.com/niks3089/pillar/commit/3f5884becb6e3779c8ede1357d5fa0fed37f9e19))
+* config UX — version suggestions, dismissible outcome, surfpool version fix ([ba73593](https://github.com/niks3089/pillar/commit/ba7359341060f44e99378c54e0a5c5bd6d1577ef))
+
 ## [0.6.0](https://github.com/niks3089/pillar/compare/pillar-agent-v0.5.0...pillar-agent-v0.6.0) (2026-07-29)
 
 
