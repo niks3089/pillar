@@ -241,9 +241,11 @@ function NodeDetail() {
 
   // Recent releases for the selected client, as version suggestions
   const [versionOptions, setVersionOptions] = useState<string[]>([])
+  const [showVersions, setShowVersions] = useState(false)
   useEffect(() => {
     if (!showProvision) return
     setVersionOptions([])
+    setShowVersions(false)
     fetchClientReleases(provClient).then(r => setVersionOptions(r.versions)).catch(() => {})
   }, [showProvision, provClient])
 
@@ -724,10 +726,24 @@ function NodeDetail() {
               </div>
               <div className="flex flex-col gap-1.5">
                 <label className="text-xs font-medium text-zinc-400 uppercase tracking-wider">Version</label>
-                <input className="w-full px-3 py-2 bg-black/40 border border-white/10 rounded-md text-zinc-100 text-sm focus:outline-none focus:border-purple-500/50 transition-all placeholder:text-zinc-600" type="text" value={provVersion} onChange={e => setProvVersion(e.target.value)} placeholder="e.g. 2.1.6" list="version-options" />
-                <datalist id="version-options">
-                  {versionOptions.map(v => <option key={v} value={v} />)}
-                </datalist>
+                <div className="relative">
+                  <input className="w-full px-3 py-2 pr-8 bg-black/40 border border-white/10 rounded-md text-zinc-100 text-sm focus:outline-none focus:border-purple-500/50 transition-all placeholder:text-zinc-600" type="text" value={provVersion} onChange={e => setProvVersion(e.target.value)} placeholder="e.g. 2.1.6" />
+                  {versionOptions.length > 0 && (
+                    <button type="button" className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-200 transition-colors" onClick={() => setShowVersions(v => !v)} title="Recent releases">▾</button>
+                  )}
+                  {showVersions && (
+                    <div className="absolute z-20 mt-1 w-full max-h-48 overflow-y-auto bg-[#1a1826] border border-white/10 rounded-md shadow-2xl">
+                      {versionOptions.map(v => (
+                        <button key={v} type="button" className="block w-full text-left px-3 py-1.5 text-sm text-zinc-200 hover:bg-purple-500/20 transition-colors" onClick={() => { setProvVersion(v); setShowVersions(false) }}>
+                          {v}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                {s?.version && provVersion && s.version !== provVersion && (
+                  <span className="text-xs text-yellow-500/80">node is currently running v{s.version}</span>
+                )}
               </div>
             </div>
 

@@ -13,7 +13,7 @@ fn repo_for_client(client: &str) -> Option<&'static str> {
         "agave" => Some("anza-xyz/agave"),
         "jito" => Some("jito-foundation/jito-solana"),
         "firedancer" | "frankendancer" => Some("firedancer-io/firedancer"),
-        "surfpool" => Some("txtx/surfpool"),
+        "surfpool" => Some("solana-foundation/surfpool"),
         _ => None,
     }
 }
@@ -63,11 +63,11 @@ async fn fetch_versions(repo: &str) -> Result<Vec<String>, String> {
     }
     let releases: Vec<serde_json::Value> =
         resp.json().await.map_err(|e| format!("parse error: {e}"))?;
+    // Prereleases are included: agave marks betas/rcs as prerelease, and
+    // testnet nodes typically run exactly those.
     Ok(releases
         .iter()
-        .filter(|r| {
-            !r["prerelease"].as_bool().unwrap_or(false) && !r["draft"].as_bool().unwrap_or(false)
-        })
+        .filter(|r| !r["draft"].as_bool().unwrap_or(false))
         .filter_map(|r| r["tag_name"].as_str())
         .map(|t| t.trim_start_matches('v').to_string())
         .collect())

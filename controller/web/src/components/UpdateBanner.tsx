@@ -110,7 +110,7 @@ function UpdateBanner() {
               className="px-4 py-1.5 text-sm font-medium text-white bg-purple-600 hover:bg-purple-500 rounded-md border border-purple-500/50 shadow-sm transition-all whitespace-nowrap"
               onClick={openPicker}
             >
-              Upgrade Agents…
+              Upgrade Agents
             </button>
           </div>
         )}
