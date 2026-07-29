@@ -56,7 +56,7 @@ function clusterLabel(cluster?: string): string {
 
 const CLUSTER_ENTRYPOINTS: Record<string, string> = {
   'mainnet-beta': 'entrypoint.mainnet-beta.solana.com:8001\nentrypoint2.mainnet-beta.solana.com:8001\nentrypoint3.mainnet-beta.solana.com:8001\nentrypoint4.mainnet-beta.solana.com:8001\nentrypoint5.mainnet-beta.solana.com:8001',
-  'testnet': 'entrypoint.testnet.solana.com:8001\nentrypoint2.testnet.solana.com:8001\nentrypoint3.testnet.solana.com:8001\nentrypoint4.testnet.solana.com:8001\nentrypoint5.testnet.solana.com:8001',
+  'testnet': 'entrypoint.testnet.solana.com:8001\nentrypoint2.testnet.solana.com:8001\nentrypoint3.testnet.solana.com:8001',
   'devnet': 'entrypoint.devnet.solana.com:8001\nentrypoint2.devnet.solana.com:8001\nentrypoint3.devnet.solana.com:8001\nentrypoint4.devnet.solana.com:8001\nentrypoint5.devnet.solana.com:8001',
 }
 

@@ -63,9 +63,7 @@ entrypoint3.mainnet-beta.solana.com:8001
 entrypoint4.mainnet-beta.solana.com:8001
 entrypoint5.mainnet-beta.solana.com:8001`,testnet:`entrypoint.testnet.solana.com:8001
 entrypoint2.testnet.solana.com:8001
-entrypoint3.testnet.solana.com:8001
-entrypoint4.testnet.solana.com:8001
-entrypoint5.testnet.solana.com:8001`,devnet:`entrypoint.devnet.solana.com:8001
+entrypoint3.testnet.solana.com:8001`,devnet:`entrypoint.devnet.solana.com:8001
 entrypoint2.devnet.solana.com:8001
 entrypoint3.devnet.solana.com:8001
 entrypoint4.devnet.solana.com:8001

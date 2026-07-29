@@ -879,6 +879,19 @@ echo "Wrote /etc/pillar/yellowstone-grpc.json""#
         } else {
             "hugetlbfs sysctl"
         };
+        let known_keys_line = if req.known_validators.is_empty() {
+            String::new()
+        } else {
+            format!(
+                "    known_public_key = [{}]\n",
+                req.known_validators
+                    .iter()
+                    .map(|k| format!("\"{k}\""))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )
+        };
+        let only_known = !req.known_validators.is_empty();
         let vote_line = if req.vote_account_keypair_path.is_empty() {
             String::new()
         } else {
@@ -896,8 +909,8 @@ echo "Wrote /etc/pillar/yellowstone-grpc.json""#
                 "user = \"sol\"\n\n\
                  [log]\n    level_stderr = \"INFO\"\n\n\
                  [gossip]\n    entrypoints = [{ep}]\n    port_check = {port_check}\n\n\
-                 [consensus]\n    identity_path = \"{identity}\"\n{vote_line}    expected_genesis_hash = \"{genesis}\"\n\n\
-                 [rpc]\n    port = {rpc}\n\n\
+                 [consensus]\n    identity_path = \"{identity}\"\n{vote_line}{known_keys_line}    expected_genesis_hash = \"{genesis}\"\n\n\
+                 [rpc]\n    port = {rpc}\n    only_known = {only_known}\n\n\
                  [ledger]\n    path = \"{ledger}\"\n    accounts_path = \"{accounts}\"\n\n\
                  [snapshots]\n    path = \"{snapshot}\"\n\n\
                  [net]\n    provider = \"{net_provider}\"\n{iface_line}\n\
@@ -905,6 +918,8 @@ echo "Wrote /etc/pillar/yellowstone-grpc.json""#
                  [layout]\n    affinity = \"auto\"\n    agave_affinity = \"auto\"\n",
                 ep = entrypoints_toml,
                 port_check = !req.no_port_check,
+                known_keys_line = known_keys_line,
+                only_known = only_known,
                 identity = req.identity_keypair_path,
                 vote_line = vote_line,
                 genesis = templates::genesis_hash_for_cluster(&req.cluster),
@@ -1291,8 +1306,6 @@ async fn cluster_defaults(Path(cluster): Path<String>) -> impl IntoResponse {
                     "entrypoint.testnet.solana.com:8001".to_string(),
                     "entrypoint2.testnet.solana.com:8001".to_string(),
                     "entrypoint3.testnet.solana.com:8001".to_string(),
-                    "entrypoint4.testnet.solana.com:8001".to_string(),
-                    "entrypoint5.testnet.solana.com:8001".to_string(),
                 ],
                 vec![
                     "5D1fNXzvv5NjV1ysLjirC4WY92RNsVH18vjmcszZd8on".to_string(),
