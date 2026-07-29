@@ -657,7 +657,7 @@ function NodeDetail() {
             <div className="flex flex-col bg-white/[0.02] border border-white/10 rounded-xl p-5 shadow-sm">
               <span className="text-xs font-medium text-zinc-400 uppercase tracking-wider mb-2">Client</span>
               <span className="text-lg text-zinc-200 capitalize">
-                {node.client ?? s?.client ?? '-'} <span className="text-zinc-500 font-mono text-sm lowercase ml-1">v{s?.version || node.last_version || '-'}</span>
+                {node.client ?? s?.client ?? '-'} {(s?.version || node.last_version) && <span className="text-zinc-500 font-mono text-sm lowercase ml-1">v{s?.version || node.last_version}</span>}
               </span>
             </div>
             <div className="flex flex-col bg-white/[0.02] border border-white/10 rounded-xl p-5 shadow-sm">
