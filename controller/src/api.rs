@@ -891,7 +891,6 @@ echo "Wrote /etc/pillar/yellowstone-grpc.json""#
                     .join(", ")
             )
         };
-        let only_known = !req.known_validators.is_empty();
         let vote_line = if req.vote_account_keypair_path.is_empty() {
             String::new()
         } else {
@@ -910,7 +909,7 @@ echo "Wrote /etc/pillar/yellowstone-grpc.json""#
                  [log]\n    level_stderr = \"INFO\"\n\n\
                  [gossip]\n    entrypoints = [{ep}]\n    port_check = {port_check}\n\n\
                  [consensus]\n    identity_path = \"{identity}\"\n{vote_line}{known_keys_line}    expected_genesis_hash = \"{genesis}\"\n\n\
-                 [rpc]\n    port = {rpc}\n    only_known = {only_known}\n\n\
+                 [rpc]\n    port = {rpc}\n    only_known = false\n\n\
                  [ledger]\n    path = \"{ledger}\"\n    accounts_path = \"{accounts}\"\n\n\
                  [snapshots]\n    path = \"{snapshot}\"\n\n\
                  [net]\n    provider = \"{net_provider}\"\n{iface_line}\n\
@@ -919,7 +918,6 @@ echo "Wrote /etc/pillar/yellowstone-grpc.json""#
                 ep = entrypoints_toml,
                 port_check = !req.no_port_check,
                 known_keys_line = known_keys_line,
-                only_known = only_known,
                 identity = req.identity_keypair_path,
                 vote_line = vote_line,
                 genesis = templates::genesis_hash_for_cluster(&req.cluster),
