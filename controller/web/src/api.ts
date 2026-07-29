@@ -47,6 +47,7 @@ export interface Node {
   agent_version?: string
   last_seen_at?: number
   registered_at?: number
+  last_version?: string
   provision_config_json?: string
   live_status?: NodeStatus
   active_script?: ActiveScript
