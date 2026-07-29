@@ -215,3 +215,7 @@ export async function upgradeController(): Promise<{ ok: boolean; message: strin
 export async function upgradeAgent(id: string): Promise<{ ok: boolean; message: string }> {
   return api(`/api/nodes/${encodeURIComponent(id)}/upgrade-agent`, { method: 'POST' })
 }
+
+export async function fetchClientReleases(client: string): Promise<{ versions: string[] }> {
+  return api(`/api/client-releases/${encodeURIComponent(client)}`)
+}

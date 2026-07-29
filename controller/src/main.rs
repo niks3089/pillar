@@ -1,6 +1,7 @@
 mod api;
 mod auth;
 mod certs;
+mod client_releases;
 mod config;
 mod db;
 mod grpc_server;
@@ -235,6 +236,7 @@ async fn main() -> anyhow::Result<()> {
         api_token: api_token.clone(),
         update_info: update_info.clone(),
         sessions,
+        release_cache: client_releases::ReleaseCache::new(),
     };
 
     let grafana_state = api_state.clone();
