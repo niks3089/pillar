@@ -1022,7 +1022,26 @@ fi"#,
         )
     };
 
+    let fdctl_install_section = if req.client == "firedancer" || req.client == "frankendancer" {
+        let label = if req.client == "frankendancer" {
+            "Frankendancer"
+        } else {
+            "Firedancer"
+        };
+        let snip = HashMap::from([
+            ("binary_path".to_string(), binary_path.clone()),
+            ("version".to_string(), req.version.clone()),
+            ("download_url".to_string(), req.download_url.clone()),
+            ("sha256".to_string(), req.sha256.clone()),
+            ("client_label".to_string(), label.to_string()),
+        ]);
+        templates::render(templates::scripts::FDCTL_INSTALL, &snip)
+    } else {
+        String::new()
+    };
+
     let mut vars = HashMap::new();
+    vars.insert("fdctl_install_section".to_string(), fdctl_install_section);
     vars.insert("data_dirs_section".to_string(), data_dirs_section);
     vars.insert("version".to_string(), req.version.clone());
     vars.insert("cluster".to_string(), req.cluster.clone());
