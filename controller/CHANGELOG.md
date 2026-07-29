@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.11.0](https://github.com/niks3089/pillar/compare/pillar-controller-v0.10.1...pillar-controller-v0.11.0) (2026-07-29)
+
+
+### Features
+
+* **controller:** show real validator uptime in node detail ([e57d6f6](https://github.com/niks3089/pillar/commit/e57d6f6f4d60824e4fd6a0001e7d631717b6d877))
+* real validator process uptime ([5a9441e](https://github.com/niks3089/pillar/commit/5a9441e3ec2e442a50c2e71cf7eb50ec24e6190d))
+
 ## [0.10.1](https://github.com/niks3089/pillar/compare/pillar-controller-v0.10.0...pillar-controller-v0.10.1) (2026-07-29)
 
 
