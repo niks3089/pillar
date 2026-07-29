@@ -1,6 +1,6 @@
 [package]
 name = "pillar-controller"
-version = "0.13.13"
+version = "0.13.14"
 edition.workspace = true
 authors.workspace = true
 

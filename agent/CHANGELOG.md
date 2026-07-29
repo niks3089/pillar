@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.8.6](https://github.com/niks3089/pillar/compare/pillar-agent-v0.8.5...pillar-agent-v0.8.6) (2026-07-29)
+
+
+### Bug Fixes
+
+* **agent:** bootstrap shows StartingUp; re-land fdctl dedup ([d8881f1](https://github.com/niks3089/pillar/commit/d8881f157cf258befa161287cc493542c03cc1a3))
+* **agent:** report StartingUp not Off while the validator is bootstrapping ([ec67721](https://github.com/niks3089/pillar/commit/ec67721b5739930f0a9913fad84690640cfd826b))
+
 ## [0.8.5](https://github.com/niks3089/pillar/compare/pillar-agent-v0.8.4...pillar-agent-v0.8.5) (2026-07-29)
 
 
