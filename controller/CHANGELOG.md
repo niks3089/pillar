@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.13.3](https://github.com/niks3089/pillar/compare/pillar-controller-v0.13.2...pillar-controller-v0.13.3) (2026-07-29)
+
+
+### Bug Fixes
+
+* **controller:** clear provisioning state when the script result arrives ([de6d556](https://github.com/niks3089/pillar/commit/de6d556d820ff30ecd5afe2599a35a254074f8ca))
+
 ## [0.13.2](https://github.com/niks3089/pillar/compare/pillar-controller-v0.13.1...pillar-controller-v0.13.2) (2026-07-29)
 
 
