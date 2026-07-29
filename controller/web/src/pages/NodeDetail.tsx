@@ -540,6 +540,30 @@ function NodeDetail() {
         </div>
       )}
 
+      {/* Last deployment outcome */}
+      {!node.active_script && node.last_script && (
+        node.last_script.exit_code !== 0 ? (
+          <div className="flex items-center gap-4 bg-red-950/30 border border-red-900/50 rounded-xl p-5 shadow-sm">
+            <span className="text-red-400 text-lg shrink-0">✕</span>
+            <div className="flex flex-col gap-0.5 min-w-0">
+              <span className="text-sm font-medium text-red-300">
+                {node.last_script.description || 'Last deployment'} failed{node.last_script.timed_out ? ' (timed out)' : ` (exit code ${node.last_script.exit_code})`} — {formatLastSeen(node.last_script.completed_at)}
+              </span>
+              <span className="text-xs text-red-400/60">
+                {node.last_script.error || 'See the Agent logs below for details.'}
+              </span>
+            </div>
+          </div>
+        ) : (
+          <div className="flex items-center gap-3 bg-green-500/5 border border-green-500/20 rounded-xl px-5 py-3 shadow-sm">
+            <span className="text-green-400 shrink-0">✓</span>
+            <span className="text-sm text-green-300/80">
+              {node.last_script.description || 'Last deployment'} completed successfully {formatLastSeen(node.last_script.completed_at)}
+            </span>
+          </div>
+        )
+      )}
+
       {/* Performance Metrics */}
       <div className="bg-[#15131f] border border-white/10 rounded-xl p-6 shadow-sm">
         <h2 className="text-lg font-semibold text-zinc-100 mb-6">Performance</h2>

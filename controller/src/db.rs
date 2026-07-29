@@ -456,6 +456,47 @@ pub async fn get_active_script(db: &Db, node_id: &str) -> Result<Option<ActiveSc
     .await?
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct ScriptOutcome {
+    pub script_id: String,
+    pub description: Option<String>,
+    pub completed_at: i64,
+    pub exit_code: i64,
+    pub timed_out: bool,
+    pub error: Option<String>,
+}
+
+/// Most recently completed script for a node, if any.
+pub async fn get_last_script(db: &Db, node_id: &str) -> Result<Option<ScriptOutcome>> {
+    let db = db.clone();
+    let node_id = node_id.to_owned();
+    tokio::task::spawn_blocking(move || {
+        let conn = db.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
+        let row = conn
+            .query_row(
+                "SELECT script_id, description, completed_at, exit_code, timed_out, error
+                 FROM script_executions
+                 WHERE node_id = ?1 AND completed_at IS NOT NULL
+                 ORDER BY completed_at DESC LIMIT 1",
+                params![node_id],
+                |row| {
+                    Ok(ScriptOutcome {
+                        script_id: row.get(0)?,
+                        description: row.get(1)?,
+                        completed_at: row.get(2)?,
+                        exit_code: row.get(3)?,
+                        timed_out: row.get(4)?,
+                        error: row.get(5)?,
+                    })
+                },
+            )
+            .optional()
+            .context("get_last_script")?;
+        Ok(row)
+    })
+    .await?
+}
+
 /// Scripts don't survive an agent restart (kill_on_drop), so a fresh
 /// registration means any open rows are orphans.
 pub async fn fail_incomplete_scripts(db: &Db, node_id: &str) -> Result<usize> {
@@ -787,6 +828,11 @@ mod tests {
             .await
             .unwrap();
         assert!(get_active_script(&db, "node-1").await.unwrap().is_none());
+
+        let last = get_last_script(&db, "node-1").await.unwrap().unwrap();
+        assert_eq!(last.script_id, "script-1");
+        assert_eq!(last.exit_code, 0);
+        assert!(get_last_script(&db, "node-2").await.unwrap().is_none());
     }
 
     #[tokio::test]
