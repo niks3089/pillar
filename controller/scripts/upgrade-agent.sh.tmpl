@@ -15,7 +15,5 @@ sudo install -m 755 "$STAGING/binary" /usr/local/bin/pillar-agent
 rm -rf "$STAGING"
 echo "=== Agent upgrade complete ==="
 
-# Deferred + detached restart: an inline restart kills the agent (this script's
-# parent) before the script result is reported; the redirects release the
-# script's stdout/stderr pipes so the executor sees EOF at script exit.
+# Restart agent (deferred so the script result can be reported)
 (sleep 3 && sudo systemctl restart pillar-agent) >/dev/null 2>&1 &

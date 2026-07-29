@@ -6,8 +6,9 @@ echo "=== Pillar: Provisioning Surfpool {{version}} on {{cluster}} ==="
 # solana-test-validator). It serves standard Solana JSON-RPC locally and does NOT need
 # gossip/turbine/snapshot sync, so it comes up instantly healthy — ideal for testing/demos.
 
-# Install surfpool if not already at the target path.
-if [ ! -x "{{binary_path}}" ]; then
+# Install surfpool unless the target path already has the requested version.
+CURRENT_VERSION=$({{binary_path}} --version 2>/dev/null | awk '{print $2}' || true)
+if [ ! -x "{{binary_path}}" ] || [ "$CURRENT_VERSION" != "{{version}}" ]; then
   echo "Installing surfpool..."
   curl -sL https://run.surfpool.run/ | bash
   SP=$(command -v surfpool 2>/dev/null || true)
