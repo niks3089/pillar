@@ -597,7 +597,11 @@ function NodeDetail() {
           </div>
           <div className="flex flex-col gap-1.5">
             <span className="text-xs font-medium text-zinc-400 uppercase tracking-wider">Uptime</span>
-            <span className="text-lg font-mono text-zinc-300">{s?.state_duration_secs != null ? formatDuration(s.state_duration_secs) : '-'}</span>
+            <span className="text-lg font-mono text-zinc-300" title="Validator process uptime">
+              {s?.validator_started_at_unix_secs
+                ? formatDuration(Math.max(0, Math.floor(Date.now() / 1000) - s.validator_started_at_unix_secs))
+                : s?.state_duration_secs != null ? formatDuration(s.state_duration_secs) : '-'}
+            </span>
             <span className="text-xs text-zinc-500">{s?.restart_count !== undefined ? `${s.restart_count} restarts` : ''}</span>
           </div>
         </div>

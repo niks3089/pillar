@@ -36,6 +36,9 @@ fn enrich_status(
         if let Some(stats) = sys.find_process_by_name(&status.validator_process) {
             status.validator_cpu_percent = stats.cpu_usage_percent as f64;
             status.validator_memory_bytes = stats.memory_rss_bytes;
+            status.validator_started_at_unix_secs = stats.start_time_epoch_secs as i64;
+        } else {
+            status.validator_started_at_unix_secs = 0;
         }
     }
 

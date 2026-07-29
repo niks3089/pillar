@@ -17,6 +17,7 @@ export interface NodeStatus {
   disk_total_bytes: number
   updated_at_unix_secs: number
   state_duration_secs: number
+  validator_started_at_unix_secs?: number
   hostname: string
 }
 
