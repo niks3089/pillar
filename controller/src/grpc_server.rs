@@ -267,6 +267,21 @@ impl PillarController for GrpcServer {
         }
 
         // Update script execution record in DB
+        // The 'provisioning' badge must not outlive the script: the agent
+        // restarts after provisioning and can take a minute to report again.
+        if let Ok(Some(s)) = db::get_lifecycle_state(&self.db, &result.node_id).await {
+            if s == "provisioning" {
+                let next = if result.exit_code == 0 {
+                    "starting_up"
+                } else {
+                    "registered"
+                };
+                if let Err(e) = db::set_lifecycle_state(&self.db, &result.node_id, next).await {
+                    tracing::warn!(error = %e, "failed to update lifecycle_state after script");
+                }
+            }
+        }
+
         if let Err(e) = db::complete_script_execution(
             &self.db,
             &result.script_id,
