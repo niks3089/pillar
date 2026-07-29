@@ -563,7 +563,7 @@ function NodeDetail() {
       {!node.active_script && node.last_script && node.last_script.script_id !== dismissedScript && (
         node.last_script.exit_code !== 0 ? (
           <div className="flex items-center gap-4 bg-red-950/30 border border-red-900/50 rounded-xl p-5 shadow-sm">
-            <span className="text-red-400 text-lg shrink-0">✕</span>
+            <span className="text-red-400 text-lg shrink-0">⚠</span>
             <div className="flex flex-col gap-0.5 min-w-0 flex-1">
               <span className="text-sm font-medium text-red-300">
                 {node.last_script.description || 'Last deployment'} failed{node.last_script.timed_out ? ' (timed out)' : ` (exit code ${node.last_script.exit_code})`} — {formatLastSeen(node.last_script.completed_at)}
