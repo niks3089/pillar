@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.8.2](https://github.com/niks3089/pillar/compare/pillar-agent-v0.8.1...pillar-agent-v0.8.2) (2026-07-29)
+
+
+### Bug Fixes
+
+* script results survive reconnects, per-service logs, firedancer cargo deps ([104524d](https://github.com/niks3089/pillar/commit/104524d0513e605ba507c3b98b1c64cc1b33853e))
+* script results survive reconnects; per-service log fetch; firedancer cargo deps ([baa0021](https://github.com/niks3089/pillar/commit/baa002151be76d25ceb71bb1eea6bab3e54355d0))
+
 ## [0.8.1](https://github.com/niks3089/pillar/compare/pillar-agent-v0.8.0...pillar-agent-v0.8.1) (2026-07-29)
 
 
