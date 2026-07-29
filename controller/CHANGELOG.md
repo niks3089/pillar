@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.12.0](https://github.com/niks3089/pillar/compare/pillar-controller-v0.11.0...pillar-controller-v0.12.0) (2026-07-29)
+
+
+### Features
+
+* config UX — version suggestions, dismissible outcome, surfpool version fix ([ba73593](https://github.com/niks3089/pillar/commit/ba7359341060f44e99378c54e0a5c5bd6d1577ef))
+* **controller:** check-for-updates button in nav ([ef65cf2](https://github.com/niks3089/pillar/commit/ef65cf26dc6ec32fc6af716af8d4d3138cff1622))
+* **controller:** version suggestions, dismissible outcome banner, config UX ([5bbee60](https://github.com/niks3089/pillar/commit/5bbee60f80022ade18815b02fe0babc4f138e658))
+
 ## [0.11.0](https://github.com/niks3089/pillar/compare/pillar-controller-v0.10.1...pillar-controller-v0.11.0) (2026-07-29)
 
 
