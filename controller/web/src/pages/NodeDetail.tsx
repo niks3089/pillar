@@ -669,7 +669,17 @@ function NodeDetail() {
             </div>
             <div className="flex flex-col bg-white/[0.02] border border-white/10 rounded-xl p-5 shadow-sm">
               <span className="text-xs font-medium text-zinc-400 uppercase tracking-wider mb-2">IP Address</span>
-              <span className="text-lg font-mono text-zinc-300">{node.ip_address || '-'}</span>
+              {node.ip_address ? (
+                <button
+                  className="text-lg font-mono text-zinc-300 text-left hover:text-white transition-colors cursor-pointer"
+                  title="Click to copy"
+                  onClick={() => { navigator.clipboard.writeText(node.ip_address!).then(() => showToast('success', `Copied ${node.ip_address}`)).catch(() => {}) }}
+                >
+                  {node.ip_address}
+                </button>
+              ) : (
+                <span className="text-lg font-mono text-zinc-300">-</span>
+              )}
             </div>
             <div className="flex flex-col bg-white/[0.02] border border-white/10 rounded-xl p-5 shadow-sm">
               <span className="text-xs font-medium text-zinc-400 uppercase tracking-wider mb-2">Agent Version</span>
