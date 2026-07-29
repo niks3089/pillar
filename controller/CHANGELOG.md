@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.13.7](https://github.com/niks3089/pillar/compare/pillar-controller-v0.13.6...pillar-controller-v0.13.7) (2026-07-29)
+
+
+### Bug Fixes
+
+* script results survive reconnects, per-service logs, firedancer cargo deps ([104524d](https://github.com/niks3089/pillar/commit/104524d0513e605ba507c3b98b1c64cc1b33853e))
+
 ## [0.13.6](https://github.com/niks3089/pillar/compare/pillar-controller-v0.13.5...pillar-controller-v0.13.6) (2026-07-29)
 
 
