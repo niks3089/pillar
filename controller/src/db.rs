@@ -80,6 +80,8 @@ fn init_schema(conn: &Connection) -> Result<()> {
     // Migration: track last raw state for transition detection (replaces status_history)
     let _ = conn.execute_batch("ALTER TABLE nodes ADD COLUMN last_raw_state TEXT;");
 
+    let _ = conn.execute_batch("ALTER TABLE nodes ADD COLUMN last_version TEXT;");
+
     // Migration: drop status_history table if it exists (data now redundant with Prometheus)
     let _ = conn.execute_batch("DROP TABLE IF EXISTS status_history;");
 
@@ -126,6 +128,7 @@ pub struct NodeRow {
     pub ip_address: Option<String>,
     pub last_seen_at: Option<i64>,
     pub registered_at: Option<i64>,
+    pub last_version: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub provision_config_json: Option<String>,
     /// Populated at runtime from the in-memory NodeRegistry, not from SQLite.
@@ -227,8 +230,11 @@ pub async fn update_node_status(
 
         // Update lifecycle, heartbeat, and last_raw_state
         conn.execute(
-            "UPDATE nodes SET lifecycle_state = ?1, last_seen_at = ?2, last_raw_state = ?3 WHERE node_id = ?4",
-            params![lifecycle, now, status.state, node_id],
+            "UPDATE nodes SET lifecycle_state = ?1, last_seen_at = ?2, last_raw_state = ?3,
+                 last_version = COALESCE(NULLIF(?4, ''), last_version),
+                 client = COALESCE(client, NULLIF(?5, ''))
+             WHERE node_id = ?6",
+            params![lifecycle, now, status.state, status.version, status.client, node_id],
         )
         .context("update node status")?;
 
@@ -735,7 +741,7 @@ fn map_state_to_lifecycle(state: &str) -> &str {
 use rusqlite::OptionalExtension;
 
 const NODE_SELECT_COLUMNS: &str = "node_id, lifecycle_state, role, client, cluster, hostname,
-     agent_version, ip_address, last_seen_at, registered_at, provision_config_json";
+     agent_version, ip_address, last_seen_at, registered_at, last_version, provision_config_json";
 
 fn row_to_node(row: &rusqlite::Row) -> rusqlite::Result<NodeRow> {
     Ok(NodeRow {
@@ -749,7 +755,8 @@ fn row_to_node(row: &rusqlite::Row) -> rusqlite::Result<NodeRow> {
         ip_address: row.get(7)?,
         last_seen_at: row.get(8)?,
         registered_at: row.get(9)?,
-        provision_config_json: row.get(10)?,
+        last_version: row.get(10)?,
+        provision_config_json: row.get(11)?,
         live_status: None,
     })
 }
