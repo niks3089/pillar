@@ -44,7 +44,7 @@ impl SystemdManager {
             })?;
 
         let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        Ok(stdout == "active")
+        Ok(stdout == "active" || stdout == "activating" || stdout == "reloading")
     }
 
     /// Check whether the systemd unit file exists (i.e. the service has been installed).
