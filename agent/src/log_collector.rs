@@ -208,14 +208,12 @@ pub fn level_passes(entry_level: &str, min_level: &str) -> bool {
 
 /// Derive a service name from a systemd unit name.
 fn unit_to_service(unit: &str) -> &str {
-    if unit.contains("validator") {
-        "validator"
-    } else if unit.contains("agent") || unit.contains("operator") || unit.contains("link") {
+    if unit.contains("agent") || unit.contains("operator") || unit.contains("link") {
         "agent"
     } else if unit.contains("controller") {
         "controller"
     } else {
-        unit.strip_suffix(".service").unwrap_or(unit)
+        "validator"
     }
 }
 
@@ -528,6 +526,9 @@ mod tests {
         let entry = parse_journal_line(line).unwrap();
         assert_eq!(entry.service, "validator");
         assert_eq!(entry.level, "info");
+        assert_eq!(unit_to_service("firedancer.service"), "validator");
+        assert_eq!(unit_to_service("surfpool.service"), "validator");
+        assert_eq!(unit_to_service("pillar-agent.service"), "agent");
         assert_eq!(entry.message, "hello world");
         assert_eq!(entry.timestamp_unix_ms, 1700000000000);
         assert_eq!(entry.unit, "solana-validator.service");
@@ -587,7 +588,7 @@ mod tests {
         assert_eq!(unit_to_service("solana-validator.service"), "validator");
         assert_eq!(unit_to_service("pillar-agent.service"), "agent");
         assert_eq!(unit_to_service("controller.service"), "controller");
-        assert_eq!(unit_to_service("custom.service"), "custom");
+        assert_eq!(unit_to_service("custom.service"), "validator");
     }
 
     #[test]
