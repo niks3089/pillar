@@ -119,4 +119,4 @@ rm -rf "$STAGING"
 echo "=== Provision complete ==="
 
 # Restart agent for config reload (deferred so script result can be reported)
-(sleep 3 && sudo systemctl restart pillar-agent) &
+(sleep 3 && sudo systemctl restart pillar-agent) >/dev/null 2>&1 &
