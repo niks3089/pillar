@@ -6,7 +6,6 @@ echo "=== Pillar: Provisioning Surfpool {{version}} on {{cluster}} ==="
 # solana-test-validator). It serves standard Solana JSON-RPC locally and does NOT need
 # gossip/turbine/snapshot sync, so it comes up instantly healthy — ideal for testing/demos.
 
-# Install surfpool unless the target path already has the requested version.
 CURRENT_VERSION=$({{binary_path}} --version 2>/dev/null | awk '{print $2}' || true)
 if [ ! -x "{{binary_path}}" ] || [ "$CURRENT_VERSION" != "{{version}}" ]; then
   echo "Installing surfpool..."
@@ -66,5 +65,5 @@ CONFIG="${PILLAR_AGENT_CONFIG:-/etc/pillar/agent.yaml}"
 
 echo "=== Provision complete ==="
 
-# Restart agent for config reload (deferred so script result can be reported)
+# Restart agent for config reload
 (sleep 3 && sudo systemctl restart pillar-agent) >/dev/null 2>&1 &

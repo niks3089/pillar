@@ -15,5 +15,5 @@ sudo install -m 755 "$STAGING/binary" /usr/local/bin/pillar-agent
 rm -rf "$STAGING"
 echo "=== Agent upgrade complete ==="
 
-# Restart agent (deferred so the script result can be reported)
+# Restart agent
 (sleep 3 && sudo systemctl restart pillar-agent) >/dev/null 2>&1 &
