@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.13.0](https://github.com/niks3089/pillar/compare/pillar-controller-v0.12.1...pillar-controller-v0.13.0) (2026-07-29)
+
+
+### Features
+
+* add Mithril as a fourth validator client ([0d43e67](https://github.com/niks3089/pillar/commit/0d43e67ef42851423f55ec84017304a6ac917433))
+
+
+### Bug Fixes
+
+* bring mithril up to current provision architecture ([53c7b61](https://github.com/niks3089/pillar/commit/53c7b61f8344dd8b55ea45ee944a69ffd843a988))
+* **controller:** agent-restarting scripts must not hold stdout open past exit ([748fa3c](https://github.com/niks3089/pillar/commit/748fa3c97e8c31d742401a5fa00aaa8bb4c262a9))
+* **controller:** clarify check-for-updates toast — 'up to date' meant controller only ([2bf43de](https://github.com/niks3089/pillar/commit/2bf43decdc2a8f00a99a8d091aeb358c44990745))
+* **controller:** failure banner status icon was identical to dismiss button ([0ba923a](https://github.com/niks3089/pillar/commit/0ba923a900371a6c429691155ebbb00eab99b85f))
+* **controller:** re-land stranded [#65](https://github.com/niks3089/pillar/issues/65) fixes — script-result race, surfpool reinstall, upgrade tracking ([a646d9d](https://github.com/niks3089/pillar/commit/a646d9d7b5ea3065f06ac9a76f7755b82bd84f96))
+* **controller:** surfpool provision skipped install when any version present ([5adb275](https://github.com/niks3089/pillar/commit/5adb27547ceceee0eb27dc040be00bfa30abec1a))
+* **controller:** track agent-upgrade scripts, fail release manifest step on bad download ([341c8b3](https://github.com/niks3089/pillar/commit/341c8b3b4e8390e59d19cbb7363f47c06e49475e))
+
 ## [0.12.1](https://github.com/niks3089/pillar/compare/pillar-controller-v0.12.0...pillar-controller-v0.12.1) (2026-07-29)
 
 
