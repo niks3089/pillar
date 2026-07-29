@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.13.2](https://github.com/niks3089/pillar/compare/pillar-controller-v0.13.1...pillar-controller-v0.13.2) (2026-07-29)
+
+
+### Bug Fixes
+
+* **controller:** agave 4.2 capability grant + copyable IP ([9b737df](https://github.com/niks3089/pillar/commit/9b737df1060949bcfeaa5ecb200adc49211921d2))
+* **controller:** grant CAP_NET_RAW/CAP_NET_ADMIN in agave/jito units, copyable IP ([5bd9310](https://github.com/niks3089/pillar/commit/5bd93104ae62fed0e129836cd0f3ee7610e72bb1))
+
 ## [0.13.1](https://github.com/niks3089/pillar/compare/pillar-controller-v0.13.0...pillar-controller-v0.13.1) (2026-07-29)
 
 
