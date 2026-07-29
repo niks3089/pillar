@@ -216,6 +216,14 @@ impl Reconciler {
 
         self.last_check_duration_secs = start.elapsed().as_secs_f64();
 
+        let mut health = health;
+        if health.state == NodeState::Off
+            && matches!(self.service_manager.is_active().await, Ok(true))
+        {
+            health.state = NodeState::StartingUp;
+            self.consecutive_off_count = 0;
+        }
+
         // 2. Handle state transition — don't transition to Off until consecutive threshold met
         let effective_state = if health.state == NodeState::Off
             && self.consecutive_off_count < self.config.health.consecutive_off_threshold

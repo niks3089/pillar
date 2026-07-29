@@ -18,6 +18,7 @@ pub mod scripts {
     pub const PROVISION_FRANKENDANCER: &str =
         include_str!("../scripts/provision-frankendancer.sh.tmpl");
     pub const PROVISION_SURFPOOL: &str = include_str!("../scripts/provision-surfpool.sh.tmpl");
+    pub const FDCTL_INSTALL: &str = include_str!("../scripts/fdctl-install.sh.inc");
     pub const PROVISION_MITHRIL: &str = include_str!("../scripts/provision-mithril.sh.tmpl");
     pub const UPGRADE_VALIDATOR: &str = include_str!("../scripts/upgrade-validator.sh.tmpl");
     pub const UPGRADE_AGENT: &str = include_str!("../scripts/upgrade-agent.sh.tmpl");
