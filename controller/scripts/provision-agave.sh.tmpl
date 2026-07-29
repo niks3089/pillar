@@ -100,6 +100,7 @@ Restart=on-failure
 RestartSec={{restart_sec}}
 LimitNOFILE=1000000
 LimitMEMLOCK=infinity
+AmbientCapabilities=CAP_NET_RAW CAP_NET_ADMIN
 {{log_rate_limit_line}}
 {{environment_lines}}
 
