@@ -71,6 +71,7 @@ pub struct ControllerLink {
     agent_health: Arc<AgentHealth>,
     cmd_tx: mpsc::Sender<AgentCommand>,
     result_rx: mpsc::Receiver<ScriptResult>,
+    pending_result: Option<ScriptResult>,
 }
 
 impl ControllerLink {
@@ -93,6 +94,7 @@ impl ControllerLink {
             agent_health,
             cmd_tx,
             result_rx,
+            pending_result: None,
         }
     }
 
@@ -156,67 +158,46 @@ impl ControllerLink {
             }
         }
 
-        let report_cancel = cancel.clone();
         let mut report_client = client.clone();
         let report_node_id = self.config.node_id.clone();
         let report_shared = self.shared_status.clone();
         let report_interval = Duration::from_secs(self.config.report_interval_secs);
         let report_health = self.agent_health.clone();
 
-        let report_handle = tokio::spawn(async move {
-            run_report_loop(
-                &mut report_client,
-                &report_node_id,
-                report_shared,
-                report_interval,
-                report_health,
-                report_cancel,
-            )
-            .await
-        });
-
-        let cmd_cancel = cancel.clone();
         let mut cmd_client = client.clone();
         let cmd_node_id = self.config.node_id.clone();
         let cmd_health = self.agent_health.clone();
         let cmd_tx = self.cmd_tx.clone();
 
-        let cmd_handle = tokio::spawn(async move {
-            run_command_stream(
+        let mut result_client = client;
+
+        tokio::select! {
+            _ = run_report_loop(
+                &mut report_client,
+                &report_node_id,
+                report_shared,
+                report_interval,
+                report_health,
+                cancel.clone(),
+            ) => {
+                tracing::warn!("report_status loop exited, will reconnect");
+            }
+            _ = run_command_stream(
                 &mut cmd_client,
                 &cmd_node_id,
                 cmd_health,
                 cmd_tx,
-                cmd_cancel,
-            )
-            .await
-        });
-
-        // Spawn result reporter — drains result_rx and sends to controller
-        let result_cancel = cancel.clone();
-        let mut result_client = client;
-        // Take the receiver temporarily using a swap with an empty channel
-        let (dummy_tx, dummy_rx) = mpsc::channel(1);
-        let mut rx = std::mem::replace(&mut self.result_rx, dummy_rx);
-        drop(dummy_tx);
-        let result_handle = tokio::spawn(async move {
-            run_result_reporter(&mut result_client, &mut rx, result_cancel).await;
-            rx
-        });
-
-        tokio::select! {
-            _ = report_handle => {
-                tracing::warn!("report_status loop exited, will reconnect");
-            }
-            _ = cmd_handle => {
+                cancel.clone(),
+            ) => {
                 tracing::warn!("command_stream exited, will reconnect");
             }
-            returned_rx = result_handle => {
+            _ = run_result_reporter(
+                &mut result_client,
+                &mut self.result_rx,
+                &mut self.pending_result,
+                cancel.clone(),
+            ) => {
                 tracing::warn!("result_reporter exited, will reconnect");
-                // Restore the receiver for the next connection
-                if let Ok(rx) = returned_rx {
-                    self.result_rx = rx;
-                }
             }
             _ = cancel.cancelled() => {}
         }
@@ -338,28 +319,35 @@ async fn handle_command(cmd: ControllerCommand, cmd_tx: &mpsc::Sender<AgentComma
 async fn run_result_reporter(
     client: &mut AuthClient,
     result_rx: &mut mpsc::Receiver<ScriptResult>,
+    pending: &mut Option<ScriptResult>,
     cancel: CancellationToken,
 ) {
     loop {
-        tokio::select! {
-            _ = cancel.cancelled() => return,
-            Some(result) = result_rx.recv() => {
-                tracing::info!(
-                    script_id = %result.script_id,
-                    exit_code = result.exit_code,
-                    timed_out = result.timed_out,
-                    "reporting script result to controller"
-                );
-                let request = tonic::Request::new(result);
-                match client.report_script_result(request).await {
-                    Ok(_) => {
-                        tracing::debug!("script result reported successfully");
-                    }
-                    Err(e) => {
-                        tracing::warn!(error = %e, "failed to report script result");
-                        return;
-                    }
-                }
+        let result = match pending.take() {
+            Some(r) => r,
+            None => tokio::select! {
+                _ = cancel.cancelled() => return,
+                r = result_rx.recv() => match r {
+                    Some(r) => r,
+                    None => return,
+                },
+            },
+        };
+        tracing::info!(
+            script_id = %result.script_id,
+            exit_code = result.exit_code,
+            timed_out = result.timed_out,
+            "reporting script result to controller"
+        );
+        let request = tonic::Request::new(result.clone());
+        match client.report_script_result(request).await {
+            Ok(_) => {
+                tracing::debug!("script result reported successfully");
+            }
+            Err(e) => {
+                *pending = Some(result);
+                tracing::warn!(error = %e, "failed to report script result, will retry after reconnect");
+                return;
             }
         }
     }
