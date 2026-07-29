@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import { fetchNode, fetchNodeLogs, restartNode, recoverNode, deleteNode, stopNode, cancelDeployment, provisionNode, fetchVersionInfo, upgradeAgent } from '../api'
+import { fetchNode, fetchNodeLogs, restartNode, recoverNode, deleteNode, stopNode, cancelDeployment, provisionNode, fetchVersionInfo, upgradeAgent, fetchClientReleases } from '../api'
 import type { Node, LogEntry, ProvisionRequest, VersionInfo } from '../api'
 import { useConfirm, useToast } from '../components/dialogs'
 
@@ -238,6 +238,23 @@ function NodeDetail() {
   useEffect(() => {
     fetchVersionInfo().then(setVersionInfo).catch(() => {})
   }, [])
+
+  // Recent releases for the selected client, as version suggestions
+  const [versionOptions, setVersionOptions] = useState<string[]>([])
+  useEffect(() => {
+    if (!showProvision) return
+    setVersionOptions([])
+    fetchClientReleases(provClient).then(r => setVersionOptions(r.versions)).catch(() => {})
+  }, [showProvision, provClient])
+
+  // Dismissed last-deployment banner, remembered per script across reloads
+  const [dismissedScript, setDismissedScript] = useState<string | null>(
+    () => localStorage.getItem('pillar-dismissed-script')
+  )
+  const dismissOutcome = (scriptId: string) => {
+    localStorage.setItem('pillar-dismissed-script', scriptId)
+    setDismissedScript(scriptId)
+  }
 
   // Populate provision form from saved config or live node data when panel is opened
   useEffect(() => {
@@ -541,11 +558,11 @@ function NodeDetail() {
       )}
 
       {/* Last deployment outcome */}
-      {!node.active_script && node.last_script && (
+      {!node.active_script && node.last_script && node.last_script.script_id !== dismissedScript && (
         node.last_script.exit_code !== 0 ? (
           <div className="flex items-center gap-4 bg-red-950/30 border border-red-900/50 rounded-xl p-5 shadow-sm">
             <span className="text-red-400 text-lg shrink-0">✕</span>
-            <div className="flex flex-col gap-0.5 min-w-0">
+            <div className="flex flex-col gap-0.5 min-w-0 flex-1">
               <span className="text-sm font-medium text-red-300">
                 {node.last_script.description || 'Last deployment'} failed{node.last_script.timed_out ? ' (timed out)' : ` (exit code ${node.last_script.exit_code})`} — {formatLastSeen(node.last_script.completed_at)}
               </span>
@@ -553,13 +570,15 @@ function NodeDetail() {
                 {node.last_script.error || 'See the Agent logs below for details.'}
               </span>
             </div>
+            <button className="text-red-400/60 hover:text-red-300 transition-colors shrink-0" title="Dismiss" onClick={() => dismissOutcome(node.last_script!.script_id)}>✕</button>
           </div>
         ) : (
           <div className="flex items-center gap-3 bg-green-500/5 border border-green-500/20 rounded-xl px-5 py-3 shadow-sm">
             <span className="text-green-400 shrink-0">✓</span>
-            <span className="text-sm text-green-300/80">
+            <span className="text-sm text-green-300/80 flex-1">
               {node.last_script.description || 'Last deployment'} completed successfully {formatLastSeen(node.last_script.completed_at)}
             </span>
+            <button className="text-green-400/50 hover:text-green-300 transition-colors shrink-0" title="Dismiss" onClick={() => dismissOutcome(node.last_script!.script_id)}>✕</button>
           </div>
         )
       )}
@@ -611,7 +630,7 @@ function NodeDetail() {
       <div className="bg-[#15131f] border border-white/10 rounded-xl p-6 shadow-sm">
         <div className="flex items-center justify-between gap-4 mb-6">
           <div>
-            <h2 className="text-lg font-semibold text-zinc-100 m-0">System Configuration</h2>
+            <h2 className="text-lg font-semibold text-zinc-100 m-0">Validator Configuration</h2>
             <p className="text-sm text-zinc-400 mt-1 m-0">Identity, software versions, and network role.</p>
           </div>
           <button
@@ -705,7 +724,10 @@ function NodeDetail() {
               </div>
               <div className="flex flex-col gap-1.5">
                 <label className="text-xs font-medium text-zinc-400 uppercase tracking-wider">Version</label>
-                <input className="w-full px-3 py-2 bg-black/40 border border-white/10 rounded-md text-zinc-100 text-sm focus:outline-none focus:border-purple-500/50 transition-all placeholder:text-zinc-600" type="text" value={provVersion} onChange={e => setProvVersion(e.target.value)} placeholder="e.g. 2.1.6" />
+                <input className="w-full px-3 py-2 bg-black/40 border border-white/10 rounded-md text-zinc-100 text-sm focus:outline-none focus:border-purple-500/50 transition-all placeholder:text-zinc-600" type="text" value={provVersion} onChange={e => setProvVersion(e.target.value)} placeholder="e.g. 2.1.6" list="version-options" />
+                <datalist id="version-options">
+                  {versionOptions.map(v => <option key={v} value={v} />)}
+                </datalist>
               </div>
             </div>
 

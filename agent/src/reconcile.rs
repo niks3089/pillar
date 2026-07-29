@@ -231,17 +231,29 @@ impl Reconciler {
 
         self.last_health = health;
 
-        // 2b. Track local validator version
-        if let Some(ref lv) = self.last_health.local_version {
+        // 2b. Track local validator version. Surfpool's RPC getVersion reports
+        // the emulated solana-core version, not surfpool's own release — read
+        // the binary's --version instead.
+        if self.config.client == crate::client::ClientKind::Surfpool {
+            if self.local_validator_version.is_none() {
+                // ponytail: cached until agent restart; provision restarts the agent anyway
+                self.local_validator_version = surfpool_binary_version().await;
+            }
+        } else if let Some(ref lv) = self.last_health.local_version {
             self.local_validator_version = Some(lv.clone());
         }
 
-        // 2c. Version mismatch detection
+        // 2c. Version mismatch detection. Surfpool is exempt: it versions
+        // independently of the cluster it simulates.
         if let Some(ref cv) = self.last_health.cluster_version {
             self.cluster_version = Some(cv.clone());
         }
-        if let (Some(local), Some(cluster)) = (&self.local_validator_version, &self.cluster_version)
-        {
+        let mismatch_applicable = self.config.client != crate::client::ClientKind::Surfpool;
+        if let (true, Some(local), Some(cluster)) = (
+            mismatch_applicable,
+            &self.local_validator_version,
+            &self.cluster_version,
+        ) {
             let local_major = parse_major_version(local);
             let cluster_major = parse_major_version(cluster);
             if local_major != cluster_major {
@@ -496,9 +508,36 @@ fn parse_major_version(version: &str) -> Option<u32> {
     version.split('.').next()?.parse().ok()
 }
 
+/// Run `surfpool --version` and extract the semver token (e.g. "surfpool 1.4.0" → "1.4.0").
+async fn surfpool_binary_version() -> Option<String> {
+    let out = tokio::process::Command::new("/usr/local/bin/surfpool")
+        .arg("--version")
+        .output()
+        .await
+        .ok()?;
+    parse_version_token(&String::from_utf8_lossy(&out.stdout))
+}
+
+fn parse_version_token(output: &str) -> Option<String> {
+    output
+        .split_whitespace()
+        .find(|tok| {
+            let t = tok.trim_start_matches('v');
+            t.split('.').count() >= 2 && t.chars().next().is_some_and(|c| c.is_ascii_digit())
+        })
+        .map(|tok| tok.trim_start_matches('v').to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn parse_version_token_formats() {
+        assert_eq!(parse_version_token("surfpool 1.4.0"), Some("1.4.0".into()));
+        assert_eq!(parse_version_token("surfpool v1.4.0\n"), Some("1.4.0".into()));
+        assert_eq!(parse_version_token("no version here"), None);
+    }
 
     #[test]
     fn parse_major_version_basic() {

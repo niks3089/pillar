@@ -39,6 +39,7 @@ pub struct ApiState {
     pub api_token: String,
     pub update_info: SharedUpdateInfo,
     pub sessions: SessionStore,
+    pub release_cache: crate::client_releases::ReleaseCache,
 }
 
 pub fn router(state: ApiState) -> Router {
@@ -72,6 +73,7 @@ pub fn router(state: ApiState) -> Router {
         .route("/api/cluster-defaults/{cluster}", get(cluster_defaults))
         .route("/api/onboard-command", get(onboard_command))
         .route("/api/version", get(version_info))
+        .route("/api/client-releases/{client}", get(client_releases))
         .route("/api/upgrade-controller", post(upgrade_controller))
         .route("/api/nodes/{id}/upgrade-agent", post(upgrade_agent))
         .route("/api/nodes/{id}/issue-cert", post(issue_node_cert))
@@ -1435,7 +1437,33 @@ struct VersionInfoResponse {
     checked_at: Option<i64>,
 }
 
-async fn version_info(State(state): State<ApiState>) -> impl IntoResponse {
+async fn client_releases(
+    State(state): State<ApiState>,
+    Path(client): Path<String>,
+) -> impl IntoResponse {
+    match state.release_cache.versions_for(&client).await {
+        Ok(versions) => Json(serde_json::json!({ "versions": versions })).into_response(),
+        Err(e) => (
+            StatusCode::BAD_GATEWAY,
+            Json(serde_json::json!({ "error": e })),
+        )
+            .into_response(),
+    }
+}
+
+#[derive(Deserialize)]
+struct VersionQuery {
+    #[serde(default)]
+    refresh: bool,
+}
+
+async fn version_info(
+    State(state): State<ApiState>,
+    Query(q): Query<VersionQuery>,
+) -> impl IntoResponse {
+    if q.refresh {
+        crate::update_checker::refresh_now(VERSION, &state.update_info).await;
+    }
     let info = crate::update_checker::get_or_refresh(VERSION, &state.update_info).await;
     Json(VersionInfoResponse {
         current_version: VERSION.to_string(),

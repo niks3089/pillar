@@ -8,12 +8,32 @@ import UpdateBanner from './components/UpdateBanner'
 import Grafana from './pages/Grafana'
 import { checkAuth, logout, changeCredentials } from './auth'
 import { fetchVersionInfo } from './api'
+import { useToast } from './components/dialogs'
 
 function App() {
   const [authed, setAuthed] = useState<boolean | null>(null)
   const [username, setUsername] = useState('')
   const [showChangePassword, setShowChangePassword] = useState(false)
   const [version, setVersion] = useState('')
+  const [checking, setChecking] = useState(false)
+  const { showToast, toastElement } = useToast()
+
+  const handleCheckUpdates = async () => {
+    setChecking(true)
+    try {
+      const info = await fetchVersionInfo(true)
+      setVersion(info.current_version)
+      if (info.controller_update) {
+        showToast('success', `Controller v${info.controller_update.version} is available — see the banner to upgrade.`)
+      } else {
+        showToast('success', `Up to date: controller v${info.current_version}${info.agent_update ? `, latest agent v${info.agent_update.version}` : ''}.`)
+      }
+    } catch (err) {
+      showToast('error', `Update check failed: ${err}`)
+    } finally {
+      setChecking(false)
+    }
+  }
 
   useEffect(() => {
     checkAuth().then(result => {
@@ -50,10 +70,21 @@ function App() {
       <nav className="sticky top-0 z-50 bg-[#0a0911]/80 backdrop-blur-md border-b border-white/5">
         <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-8">
-            <NavLink to="/" className="flex items-center gap-2 hover:opacity-80 transition-opacity">
-              <img src="/pillar-logo.png" alt="Pillar" className="h-6 w-auto" />
-              {version && <span className="text-xs font-mono text-zinc-500">v{version}</span>}
-            </NavLink>
+            <div className="flex items-center gap-2">
+              <NavLink to="/" className="flex items-center hover:opacity-80 transition-opacity">
+                <img src="/pillar-logo.png" alt="Pillar" className="h-6 w-auto" />
+              </NavLink>
+              {version && (
+                <button
+                  className="text-xs font-mono text-zinc-500 hover:text-zinc-300 transition-colors disabled:opacity-50"
+                  onClick={handleCheckUpdates}
+                  disabled={checking}
+                  title="Check for updates"
+                >
+                  v{version} {checking ? '…' : '↻'}
+                </button>
+              )}
+            </div>
             <div className="flex items-center gap-6 text-sm font-medium text-zinc-400">
               <NavLink to="/" end className={({isActive}) => isActive ? "text-zinc-100" : "hover:text-zinc-100 transition-colors"}>Overview</NavLink>
               <a href="/grafana/d/pillar-fleet-overview" target="_blank" rel="noopener noreferrer" className="hover:text-zinc-100 transition-colors">Metrics</a>
@@ -77,6 +108,7 @@ function App() {
           <Route path="/grafana/*" element={<Grafana />} />
         </Routes>
       </main>
+      {toastElement}
       {showChangePassword && (
         <ChangePasswordModal
           onClose={() => setShowChangePassword(false)}

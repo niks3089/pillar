@@ -204,8 +204,8 @@ export interface VersionInfo {
   checked_at?: number
 }
 
-export async function fetchVersionInfo(): Promise<VersionInfo> {
-  return api('/api/version')
+export async function fetchVersionInfo(refresh = false): Promise<VersionInfo> {
+  return api(`/api/version${refresh ? '?refresh=true' : ''}`)
 }
 
 export async function upgradeController(): Promise<{ ok: boolean; message: string }> {
@@ -214,4 +214,8 @@ export async function upgradeController(): Promise<{ ok: boolean; message: strin
 
 export async function upgradeAgent(id: string): Promise<{ ok: boolean; message: string }> {
   return api(`/api/nodes/${encodeURIComponent(id)}/upgrade-agent`, { method: 'POST' })
+}
+
+export async function fetchClientReleases(client: string): Promise<{ versions: string[] }> {
+  return api(`/api/client-releases/${encodeURIComponent(client)}`)
 }
