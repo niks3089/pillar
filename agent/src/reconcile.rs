@@ -235,9 +235,8 @@ impl Reconciler {
         // the emulated solana-core version, not surfpool's own release — read
         // the binary's --version instead.
         if self.config.client == crate::client::ClientKind::Surfpool {
-            if self.local_validator_version.is_none() {
-                // ponytail: cached until agent restart; provision restarts the agent anyway
-                self.local_validator_version = surfpool_binary_version().await;
+            if let Some(v) = surfpool_binary_version().await {
+                self.local_validator_version = Some(v);
             }
         } else if let Some(ref lv) = self.last_health.local_version {
             self.local_validator_version = Some(lv.clone());
