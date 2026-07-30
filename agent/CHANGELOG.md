@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.8.7](https://github.com/niks3089/pillar/compare/pillar-agent-v0.8.6...pillar-agent-v0.8.7) (2026-07-30)
+
+
+### Bug Fixes
+
+* **agent:** exempt firedancer and frankendancer from version mismatch check ([043922c](https://github.com/niks3089/pillar/commit/043922c87d0872eb7b43386419a106d39b046432))
+* **agent:** exempt firedancer and frankendancer from version mismatch check ([be07a93](https://github.com/niks3089/pillar/commit/be07a93af15e1553274433ffda2dd9401828a0c5))
+
 ## [0.8.6](https://github.com/niks3089/pillar/compare/pillar-agent-v0.8.5...pillar-agent-v0.8.6) (2026-07-29)
 
 
