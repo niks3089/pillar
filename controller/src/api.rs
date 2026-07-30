@@ -812,7 +812,8 @@ fn build_provision_vars(req: &ProvisionRequest) -> HashMap<String, String> {
         format!(
             "{binary_path} start --no-tui --no-studio --host 0.0.0.0 --port {rpc_port} --network {network}"
         )
-    } else if req.client == "firedancer" || req.client == "frankendancer" {
+    } else if req.client == "firedancer" || req.client == "frankendancer" || req.client == "mithril"
+    {
         format!("{binary_path} run --config /etc/pillar/validator.toml")
     } else {
         templates::build_exec_start(
@@ -859,6 +860,32 @@ echo "Wrote /etc/pillar/yellowstone-grpc.json""#
     // Schema validated against fdctl 1.0: explicit genesis hash (no "auto"), 2 MB huge
     // pages (gigantic/1 GB pages need GRUB + reboot), a configurable net provider, and
     // `[gossip] port_check` as the equivalent of Agave's --no-port-check.
+    let mithril_toml = if req.client == "mithril" {
+        let cluster = if req.cluster == "mainnet" {
+            "mainnet-beta"
+        } else {
+            &req.cluster
+        };
+        format!(
+            "name = \"mithril\"\n\n\
+             [bootstrap]\n    mode = \"auto\"\n\n\
+             [storage]\n    accounts = \"{accounts}\"\n    snapshots = \"{snapshot}\"\n    shredstore = \"{ledger}/shredstore\"\n    logs = \"{ledger}/logs\"\n\n\
+             [network]\n    cluster = \"{cluster}\"\n    rpc = [\"{reference_rpc}\"]\n\n\
+             [block]\n    source = \"rpc\"\n\n\
+             [rpc]\n    port = {rpc}\n\n\
+             [validator]\n    identity_keypair = \"{identity}\"\n",
+            accounts = req.accounts_path,
+            snapshot = req.snapshot_path,
+            ledger = req.ledger_path,
+            cluster = cluster,
+            reference_rpc = templates::reference_rpc_for_cluster(&req.cluster),
+            rpc = rpc_port,
+            identity = req.identity_keypair_path,
+        )
+    } else {
+        String::new()
+    };
+
     let (firedancer_toml, fd_configure_stages) = if req.client == "firedancer"
         || req.client == "frankendancer"
     {
@@ -1054,6 +1081,7 @@ fi"#,
     vars.insert("restart_sec".to_string(), restart_sec.to_string());
     vars.insert("yellowstone_section".to_string(), yellowstone_section);
     vars.insert("firedancer_toml".to_string(), firedancer_toml);
+    vars.insert("mithril_toml".to_string(), mithril_toml);
     vars.insert("configure_stages".to_string(), fd_configure_stages);
     vars.insert("start_limit_line".to_string(), start_limit_line);
     vars.insert("log_rate_limit_line".to_string(), log_rate_limit_line);
