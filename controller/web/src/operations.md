@@ -32,41 +32,54 @@ enables TLS on the gRPC port. Then:
 ## 2. Add a validator (onboard a host)
 
 **Overview → "Add a Validator"** shows the exact one-line command (it embeds the controller
-URL + auth token). Run it on the validator host:
+URL + auth token). Pick the target cluster with the **mainnet-beta / testnet / devnet** toggle
+above the command — it fills in `--cluster` for you — then copy and run it on the host:
 
 ```bash
-curl -sSL https://github.com/niks3089/pillar/releases/latest/download/install-node.sh \
-  | sudo bash -s -- --controller https://<controller-host>:50051 \
-      --token <token> --http-url http://<controller-host>:8080
+curl -sSL https://github.com/niks3089/pillar/releases/latest/download/install-node.sh | sudo bash -s -- --controller https://<controller-host>:50051 --token <token> --http-url http://<controller-host>:8080 --cluster testnet
 ```
 
+The command is a single line — paste it as-is (line continuations break when pasted).
 `install-node.sh` creates the `sol` user + sudoers, applies sysctl/limits tuning, installs
-the Solana CLI + Rust toolchain, generates validator/vote keypairs, installs the agent, and
-starts it. Within ~10s the host appears in **Overview** as a node.
+the Solana CLI + Rust + Go toolchains, generates validator/vote keypairs, installs the agent,
+and starts it. Within ~10s the host appears in **Overview** as a node. It's **idempotent** —
+safe to re-run to pick up new toolchains or sudoers.
 
 ### Onboarding an *existing* validator
-If the host already runs a validator:
-1. Run `install-node.sh` as above (it's idempotent and won't disturb a running validator).
-2. In the node's detail page, open **Update Validator → Configure** and set the **client**,
-   **cluster**, **service name**, and **paths** to match the existing setup, then save —
-   this points the agent at the running service for health/lifecycle without re-provisioning.
-   (If the systemd unit/paths already match Pillar's conventions, the agent picks it up from
-   the config update alone.)
+If the host already runs a validator you don't want Pillar to rebuild:
+1. Run `install-node.sh` as above — it won't disturb a running validator.
+2. In the node's detail page, **Edit Config** and set the **client**, **cluster**,
+   **service name**, and **paths** to match the existing setup, then save. This points the
+   agent at the running service for health/lifecycle **without re-provisioning**. If the
+   systemd unit and paths already match Pillar's conventions, the config update alone is enough.
 
 ---
 
 ## 3. Create / provision a validator
 
-In a node's detail page: **Setup Validator → Configure**. Pick a **client**, **cluster**,
-paths/keypairs, ports, and submit. The controller renders a provisioning script and pushes it
-to the agent, which runs it (download/build → systemd unit → start → report).
+On a freshly onboarded node the Validator Configuration card shows **Setup Validator**; open it
+and:
+
+1. **Client** — pick from the dropdown (see the table below).
+2. **Cluster** — mainnet-beta / testnet / devnet. This seeds entrypoints, known validators, and
+   the reference RPC.
+3. **Version** — type it, or click the **▾** to pick from the client's recent GitHub releases
+   (fetched live). A yellow hint shows the version the node is currently running when it differs.
+4. **Node type** — Validator / RPC / Archival (adjusts the flag preset).
+5. **Paths / keypairs / ports** — defaults suit a standard `/mnt` layout; override as needed.
+6. Submit. The controller renders a provisioning script and pushes it to the agent, which runs
+   it as `sol`: download or build → write the systemd unit → start → report. A spinner banner
+   tracks progress and disables other actions until it finishes; the outcome (success/failure
+   with the real error) is shown when it completes. Follow live output in the **Validator** and
+   **Agent** log tabs.
 
 | Client | Notes |
 |---|---|
-| **Agave** | Production path. v2.x ships the binary in the release tarball; **v3.x/v4.x build from source** (no validator binary in tarballs) — allow 10–30 min on first provision. |
+| **Agave** | Production path. v2.x ships the binary in the release tarball; **v3.x/v4.x build from source** (no validator binary in tarballs) — allow 10–30 min on first provision. v4.2+ needs raw-socket capabilities (granted in the unit). |
 | **Jito** | Builds `jito-solana` from source. MEV flags are **cluster-aware** (block-engine + tip programs auto-filled per cluster); set relayer/shred-receiver if you run them. |
-| **Firedancer / Frankendancer** | Builds `fdctl` from source. Needs an **AF_XDP-capable NIC** (or `net_provider=socket`) + hugepages; runs as root (drops to `sol`). |
-| **Surfpool** | **Local test validator / mainnet-fork** (drop-in for `solana-test-validator`). No gossip/snapshot sync → instantly healthy. Ideal for testing + demos. |
+| **Firedancer / Frankendancer** | Builds `fdctl` from source (Rust). Needs an **AF_XDP-capable NIC** (or `net_provider=socket`) + hugepages; **starts as root** and drops to `sol`. |
+| **Surfpool** | **Local test validator / mainnet-fork** (drop-in for `solana-test-validator`). No gossip/snapshot sync → instantly healthy. Ideal for testing + demos. Installed from the versioned release tarball. |
+| **Mithril** | Go full/verifying node (`Overclock-Validator/mithril`). **Builds from source with Go** when no download URL is given. Bootstraps by downloading a snapshot and building AccountsDB, then serves Solana RPC on `:8899`. Needs ample fast NVMe (AccountsDB ~500 GB on mainnet). |
 
 After provisioning, the same panel becomes **"Update Validator"** — use it to change version,
 flags, or cluster.
@@ -102,15 +115,23 @@ itself upgrades with `POST /api/upgrade-controller` (or re-run `install-controll
 ## 5. Day-to-day operations
 
 - **Health at a glance:** Overview shows each validator's state (healthy / behind / offline /
-  unhealthy) + slots-behind. The node detail page shows live metrics (CPU/mem/disk, slots
-  behind, restarts, uptime).
+  unhealthy, or a **deploying** spinner while a provision runs) + slots-behind. A bootstrapping
+  node (downloading a snapshot / replaying) reads as **starting up**, not offline. The node
+  detail page shows live metrics: CPU/mem/disk, slots behind, restarts, and **validator process
+  uptime** (real process start time, so an out-of-band restart is visible). IP addresses are
+  click-to-copy.
 - **Logs:** node detail → Logs (Controller / Validator / Agent tabs), with **level + text
-  filtering** and live streaming.
+  filtering** and live streaming. Each tab fetches its own service history.
 - **Metrics:** the nav's **Metrics** link opens the global fleet dashboard; each node-detail
   page and Overview row has a **Metrics** link that opens the per-node dashboard scoped to
-  that validator (`var-node_id`). (These are Grafana dashboards under the hood.)
-- **Lifecycle actions** (bottom of node detail): **Restart**, **Recover** (snapshot
-  recovery), **Stop**, **Delete**.
+  that validator (`var-node_id`). Per-node panels include CPU/mem/disk, slots behind, and
+  **RPC connections** (established TCP connections to the validator's RPC port). (Grafana
+  dashboards under the hood.)
+- **Versions & upgrades:** the running controller version shows in the nav; click it (**↻**)
+  to force an update check. When a newer controller or agent release exists, an upgrade banner
+  appears.
+- **Lifecycle actions** (top of node detail): **Restart**, **Recover** (snapshot
+  recovery), **Stop**, **Delete** — disabled while a deployment is in progress.
 
 ---
 
