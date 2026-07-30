@@ -250,12 +250,18 @@ impl Reconciler {
             self.local_validator_version = Some(lv.clone());
         }
 
-        // 2c. Version mismatch detection. Surfpool is exempt: it versions
-        // independently of the cluster it simulates.
+        // 2c. Version mismatch detection. Surfpool, Firedancer, and
+        // Frankendancer are exempt: they version independently of the
+        // agave release the cluster runs.
         if let Some(ref cv) = self.last_health.cluster_version {
             self.cluster_version = Some(cv.clone());
         }
-        let mismatch_applicable = self.config.client != crate::client::ClientKind::Surfpool;
+        let mismatch_applicable = !matches!(
+            self.config.client,
+            crate::client::ClientKind::Surfpool
+                | crate::client::ClientKind::Firedancer
+                | crate::client::ClientKind::Frankendancer
+        );
         if let (true, Some(local), Some(cluster)) = (
             mismatch_applicable,
             &self.local_validator_version,
