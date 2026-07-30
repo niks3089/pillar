@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.14.0](https://github.com/niks3089/pillar/compare/pillar-controller-v0.13.15...pillar-controller-v0.14.0) (2026-07-30)
+
+
+### Features
+
+* **controller:** provision mithril from source ([b85e8e6](https://github.com/niks3089/pillar/commit/b85e8e67da2f0f817e3723e1a6a0023f9eb3704e))
+* **controller:** provision mithril from source (Go build) ([1126779](https://github.com/niks3089/pillar/commit/11267796fd4670ca6c929996969006ff99e8f83a))
+
 ## [0.13.15](https://github.com/niks3089/pillar/compare/pillar-controller-v0.13.14...pillar-controller-v0.13.15) (2026-07-30)
 
 
