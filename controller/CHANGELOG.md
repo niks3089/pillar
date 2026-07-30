@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.13.15](https://github.com/niks3089/pillar/compare/pillar-controller-v0.13.14...pillar-controller-v0.13.15) (2026-07-30)
+
+
+### Bug Fixes
+
+* **controller:** add mithril to the version-release dropdown map ([895e52f](https://github.com/niks3089/pillar/commit/895e52f1e34dd0f913841d851df6b4ccea5828d6))
+* **controller:** mithril version dropdown ([5afcd4c](https://github.com/niks3089/pillar/commit/5afcd4ce839fbb6f60b09549587c2ea1a0919498))
+
 ## [0.13.14](https://github.com/niks3089/pillar/compare/pillar-controller-v0.13.13...pillar-controller-v0.13.14) (2026-07-29)
 
 
