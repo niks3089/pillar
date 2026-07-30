@@ -25,11 +25,10 @@ After=network.target
 
 [Service]
 Type=simple
-User=sol
 ExecStart={{exec_start}}
 Restart=on-failure
 RestartSec={{restart_sec}}
-LimitNOFILE=1000000
+LimitNOFILE=1024000
 LimitMEMLOCK=infinity
 {{log_rate_limit_line}}
 {{environment_lines}}
