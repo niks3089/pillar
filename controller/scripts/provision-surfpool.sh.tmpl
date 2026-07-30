@@ -21,6 +21,7 @@ echo "surfpool ready at {{binary_path}}"
 
 # Stop existing service if running
 sudo systemctl stop {{old_service_name}} 2>/dev/null || true
+sudo systemctl disable {{old_service_name}} 2>/dev/null || true
 
 # Working directory for surfpool state
 sudo install -d -o sol -g sol /home/sol/surfpool
