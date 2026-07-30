@@ -774,8 +774,9 @@ fn validate_provision_request(req: &ProvisionRequest) -> Result<(), String> {
 }
 
 /// Build template variables from a ProvisionRequest.
-fn build_provision_vars(req: &ProvisionRequest) -> HashMap<String, String> {
+fn build_provision_vars(req: &ProvisionRequest, prev_client: Option<&str>) -> HashMap<String, String> {
     let service_name = templates::service_name_for_client(&req.client).to_string();
+    let client_changed = prev_client.is_some_and(|p| p != req.client);
     let binary_path = templates::binary_path_for_client(&req.client).to_string();
     let rpc_port = if req.rpc_port == 0 {
         8899
@@ -1024,9 +1025,9 @@ fi"#,
         reference_rpc = reference_rpc,
     );
 
-    // Look up the old service name (might differ if switching clients).
-    // We use the new service name as fallback since we don't have DB access here.
-    let old_service_name = service_name.clone();
+    let old_service_name = prev_client
+        .map(|c| templates::service_name_for_client(c).to_string())
+        .unwrap_or_else(|| service_name.clone());
 
     let data_dirs = [&req.ledger_path, &req.snapshot_path, &req.accounts_path]
         .iter()
@@ -1034,11 +1035,17 @@ fi"#,
         .map(|p| p.as_str())
         .collect::<Vec<_>>()
         .join(" ");
-    // pillar-datadir is the allowlisted root helper installed by
-    // install-node.sh; the fallback covers nodes still on the pre-helper
-    // blanket sudoers, which allows `install` but NOT `chown`.
     let data_dirs_section = if data_dirs.is_empty() {
         String::new()
+    } else if client_changed {
+        format!(
+            "echo \"Client changed — wiping stale on-disk state for a fresh start\"\n\
+             if [ -x /usr/local/bin/pillar-datadir ]; then\n  \
+             sudo /usr/local/bin/pillar-datadir recreate {data_dirs}\n\
+             else\n  \
+             for d in {data_dirs}; do sudo rm -rf \"$d\"/* 2>/dev/null || true; sudo install -d -o sol -g sol \"$d\"; done\n\
+             fi"
+        )
     } else {
         format!(
             "if [ -x /usr/local/bin/pillar-datadir ]; then\n  \
@@ -1188,8 +1195,15 @@ async fn provision_node(
     // Save provision config JSON for the node record
     let provision_json = serde_json::to_string(&req).unwrap_or_default();
 
+    let prev_client = db::get_provision_config(&state.db, &id)
+        .await
+        .ok()
+        .flatten()
+        .and_then(|j| serde_json::from_str::<serde_json::Value>(&j).ok())
+        .and_then(|v| v.get("client").and_then(|c| c.as_str()).map(String::from));
+
     // Build template variables and render script
-    let vars = build_provision_vars(&req);
+    let vars = build_provision_vars(&req, prev_client.as_deref());
     let script = templates::render(template, &vars);
     let script_id = generate_script_id();
 
@@ -2026,7 +2040,7 @@ mod tests {
 
     #[test]
     fn injects_solana_metrics_config_for_agave_and_jito_only() {
-        let env = |json| build_provision_vars(&req(json))["environment_lines"].clone();
+        let env = |json| build_provision_vars(&req(json), None)["environment_lines"].clone();
 
         let agave = env(r#"{"client":"agave","version":"2.1.6","cluster":"testnet"}"#);
         assert!(agave.contains("Environment=SOLANA_METRICS_CONFIG=host=https://metrics.solana.com:8086,db=tds"));
