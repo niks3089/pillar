@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.14.2](https://github.com/niks3089/pillar/compare/pillar-controller-v0.14.1...pillar-controller-v0.14.2) (2026-07-30)
+
+
+### Bug Fixes
+
+* **controller:** fresh start on validator client change ([30720a5](https://github.com/niks3089/pillar/commit/30720a5572f53af842b12c10f46933be02d3ae2e))
+* **controller:** wipe stale on-disk state when the validator client changes ([cbe1674](https://github.com/niks3089/pillar/commit/cbe16746098bea12670d3253c6ba6dac2d32d49e))
+
 ## [0.14.1](https://github.com/niks3089/pillar/compare/pillar-controller-v0.14.0...pillar-controller-v0.14.1) (2026-07-30)
 
 
