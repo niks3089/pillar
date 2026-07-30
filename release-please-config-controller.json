@@ -1,0 +1,9 @@
+{
+  "packages": {
+    "controller": {
+      "release-type": "rust",
+      "component": "pillar-controller",
+      "bump-minor-pre-major": true
+    }
+  }
+}

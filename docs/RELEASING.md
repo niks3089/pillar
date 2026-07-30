@@ -9,12 +9,13 @@ and CHANGELOG.
 ## How a release happens
 
 1. Merge conventional commits to `main`.
-2. release-please routes each commit to a component **by the files it changed**:
-   a commit touching `agent/**` bumps the agent; `controller/**` bumps the
-   controller. It opens a **single combined release PR** covering every
-   component with pending commits (`separate-pull-requests: false`); merging
-   it tags each included component separately, and a controller change never
-   bumps the agent or vice-versa.
+2. Each component runs its **own** release-please with its own config and
+   manifest (`release-please-config-<c>.json` + `.release-please-manifest-<c>.json`),
+   as two steps in the Release workflow. A commit touching `agent/**` bumps
+   only the agent; `controller/**` only the controller. Each opens its own
+   release PR against its own manifest file — the two never share state, so
+   merging one never conflicts with or bumps the other. No coupling, no
+   cross-PR rebase.
 3. Merging a release PR tags that component and the CI `build`/`publish` jobs
    attach the rebuilt binaries, install scripts, and `manifest.json` to the
    GitHub release. The controller reads `manifest.json` to offer upgrades.
@@ -22,8 +23,7 @@ and CHANGELOG.
 ## Rules that keep the two trains from thrashing
 
 - **Never use empty marker commits.** An empty commit (`--allow-empty`) changes
-  no files, so release-please cannot route it to a component and attributes it
-  to *both* — polluting both CHANGELOGs and bumping both versions. If a PR was
+  no files, so neither component's release-please can route it. If a PR was
   merged with a non-conventional message and needs a release, land a real
   follow-up commit that touches the relevant component's files, not an empty
   marker.
