@@ -36,5 +36,6 @@ post_rule "Validator unhealthy / offline" "pillar_node_healthy" "lt" "1" "critic
 post_rule "Validator lagging behind" "pillar_node_slots_behind" "gt" "500" "warning" "Validator {{ \$labels.node_id }} is more than 500 slots behind (catch-up after a restart also fires this)" "10m"
 post_rule "Validator restart loop" "increase(pillar_node_restarts_total[15m])" "gt" "3" "warning" "Validator {{ \$labels.node_id }} is restarting repeatedly" "5m"
 post_rule "Validator disk almost full" "pillar_system_disk_used_bytes / pillar_system_disk_total_bytes" "gt" "0.9" "warning" "Validator {{ \$labels.node_id }} disk is over 90% full" "10m"
+post_rule "Validator memory high (OOM predictor)" "pillar_system_memory_used_bytes / pillar_system_memory_total_bytes" "gt" "0.85" "warning" "Validator {{ \$labels.node_id }} memory is above 85% for 15m and heading for an OOM kill" "15m"
 post_rule "Pillar metrics pipeline dark" "absent(pillar_node_healthy)" "gt" "0" "warning" "No pillar metrics reaching Prometheus - agent, controller, or remote_write is down; every other pillar alert is blind until this clears" "10m"
 echo "DONE"
