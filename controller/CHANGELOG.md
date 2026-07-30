@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.15.1](https://github.com/niks3089/pillar/compare/pillar-controller-v0.15.0...pillar-controller-v0.15.1) (2026-07-30)
+
+
+### Bug Fixes
+
+* **controller:** disable old validator service when switching clients ([753e30e](https://github.com/niks3089/pillar/commit/753e30ed7fd94e549a5e252c17309c2e353e31b8))
+* **controller:** disable old validator service when switching clients ([f994a75](https://github.com/niks3089/pillar/commit/f994a75560ab6db92e9152b69dc68292b69f3228))
+
 ## [0.15.0](https://github.com/niks3089/pillar/compare/pillar-controller-v0.14.2...pillar-controller-v0.15.0) (2026-07-30)
 
 
