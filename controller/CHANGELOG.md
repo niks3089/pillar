@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.15.0](https://github.com/niks3089/pillar/compare/pillar-controller-v0.14.2...pillar-controller-v0.15.0) (2026-07-30)
+
+
+### Features
+
+* **controller:** expose firedancer network provider (socket/xdp) in the UI ([118a984](https://github.com/niks3089/pillar/commit/118a98412fcf21afff3e7e14f2b1f86bccc97485))
+* **controller:** network provider (socket/xdp) selector for firedancer ([f23e89b](https://github.com/niks3089/pillar/commit/f23e89b20369d66eb2bc41e79c828c29391ddcad))
+
+
+### Bug Fixes
+
+* **controller:** reclaim firedancer hugepage workspace on every start ([9e92204](https://github.com/niks3089/pillar/commit/9e92204e7a6e162b41b1a755f94970289167a46b))
+* **controller:** reclaim firedancer workspace on every start ([9672921](https://github.com/niks3089/pillar/commit/967292126935ec94165fc00d49f6c9b6e147f128))
+
 ## [0.14.2](https://github.com/niks3089/pillar/compare/pillar-controller-v0.14.1...pillar-controller-v0.14.2) (2026-07-30)
 
 
