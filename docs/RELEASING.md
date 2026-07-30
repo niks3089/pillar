@@ -11,10 +11,15 @@ and CHANGELOG.
 1. Merge conventional commits to `main`.
 2. release-please routes each commit to a component **by the files it changed**:
    a commit touching `agent/**` bumps the agent; `controller/**` bumps the
-   controller. It opens a **single combined release PR** covering every
-   component with pending commits (`separate-pull-requests: false`); merging
-   it tags each included component separately, and a controller change never
-   bumps the agent or vice-versa.
+   controller. It opens a **separate release PR per component**
+   (`separate-pull-requests: true`) so each component releases on its own
+   cadence — a controller release never forces an agent release. When both
+   have pending commits, two release PRs are open at once. They share
+   `.release-please-manifest.json`, so merging the first briefly marks the
+   second as conflicting — do **not** rebase it by hand. The Release workflow
+   re-runs on the merge and release-please force-updates the second PR to
+   resolve the manifest automatically; wait for that run (~1-2 min), then
+   merge it. Merging only one PR releases only that component.
 3. Merging a release PR tags that component and the CI `build`/`publish` jobs
    attach the rebuilt binaries, install scripts, and `manifest.json` to the
    GitHub release. The controller reads `manifest.json` to offer upgrades.
