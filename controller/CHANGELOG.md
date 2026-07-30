@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.14.1](https://github.com/niks3089/pillar/compare/pillar-controller-v0.14.0...pillar-controller-v0.14.1) (2026-07-30)
+
+
+### Bug Fixes
+
+* **controller:** frankendancer must start as root like firedancer ([ecff7b0](https://github.com/niks3089/pillar/commit/ecff7b007cf2ea9c6198d7c7404a16382d702a1b))
+* **controller:** frankendancer must start as root like firedancer ([e93c387](https://github.com/niks3089/pillar/commit/e93c3879d3828356f90fb3570e43daae73655cb9))
+
 ## [0.14.0](https://github.com/niks3089/pillar/compare/pillar-controller-v0.13.15...pillar-controller-v0.14.0) (2026-07-30)
 
 
