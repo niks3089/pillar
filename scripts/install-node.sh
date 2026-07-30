@@ -598,6 +598,37 @@ if ! grep -qF "$SOL_CARGO_PATH" "$SOL_PROFILE" 2>/dev/null; then
 fi
 
 # ------------------------------------------------------------------------------
+# Phase 3e2: Go toolchain (Mithril builds from source with Go)
+# ------------------------------------------------------------------------------
+
+section "Go toolchain"
+
+GO_VERSION="1.26.4"
+case "$(uname -m)" in
+    x86_64) GO_ARCH="amd64" ;;
+    aarch64|arm64) GO_ARCH="arm64" ;;
+    *) GO_ARCH="" ;;
+esac
+
+if [[ -z "$GO_ARCH" ]]; then
+    warn "unsupported arch for Go toolchain; Mithril provisioning will install Go on demand"
+elif /usr/local/go/bin/go version 2>/dev/null | grep -q "go$GO_VERSION"; then
+    ok "Go $GO_VERSION already installed"
+else
+    info "installing Go $GO_VERSION"
+    GO_TGZ="/tmp/go${GO_VERSION}.linux-${GO_ARCH}.tar.gz"
+    if curl -sSL -o "$GO_TGZ" "https://go.dev/dl/go${GO_VERSION}.linux-${GO_ARCH}.tar.gz"; then
+        rm -rf /usr/local/go
+        tar -C /usr/local -xzf "$GO_TGZ" && ok "Go installed to /usr/local/go"
+        rm -f "$GO_TGZ"
+        GO_PATH_LINE='export PATH="/usr/local/go/bin:$PATH"'
+        grep -qF "$GO_PATH_LINE" "$SOL_PROFILE" 2>/dev/null || echo "$GO_PATH_LINE" >> "$SOL_PROFILE"
+    else
+        warn "failed to download Go — Mithril provisioning will install it on demand"
+    fi
+fi
+
+# ------------------------------------------------------------------------------
 # Phase 3f: Generate validator keypairs
 # ------------------------------------------------------------------------------
 

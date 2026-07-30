@@ -2,17 +2,13 @@
 set -euo pipefail
 echo "=== Pillar: Provisioning Mithril {{version}} on {{cluster}} ==="
 
-# Mithril is the fourth Solana validator client (live on mainnet). This installs
-# from a prebuilt download_url (tarball or standalone binary) — provide
-# download_url + sha256 in the provision request. Source build is not wired up
-# here yet; add it once the repo layout is confirmed.
-
 DOWNLOAD_URL="{{download_url}}"
 STAGING="/tmp/pillar-staging"
 rm -rf "$STAGING"
 
 if [ -x "{{binary_path}}" ]; then
-  CURRENT=$("{{binary_path}}" --version 2>/dev/null | grep -oP '\d+\.\d+\.\d+(-[a-zA-Z0-9.]+)?' | head -1 || true)
+  CURRENT=$({{binary_path}} --version 2>/dev/null || {{binary_path}} version 2>/dev/null || true)
+  CURRENT=$(echo "$CURRENT" | grep -oP '\d+\.\d+\.\d+(-[a-zA-Z0-9.]+)?' | head -1 || true)
   if [ "$CURRENT" = "{{version}}" ]; then
     echo "Binary {{binary_path}} already at v{{version}}, skipping install"
   else
@@ -22,32 +18,66 @@ if [ -x "{{binary_path}}" ]; then
 fi
 
 if [ -z "${CURRENT:-}" ]; then
-  if [ -z "$DOWNLOAD_URL" ]; then
-    echo "ERROR: Mithril requires a download_url (prebuilt binary or tarball)." >&2
-    exit 1
-  fi
-  mkdir -p "$STAGING"
-  echo "Downloading from $DOWNLOAD_URL..."
-  curl -sSL -o "$STAGING/download" "$DOWNLOAD_URL"
-
-  SHA="{{sha256}}"
-  if [ -n "$SHA" ]; then
-    echo "$SHA  $STAGING/download" | sha256sum -c
-    echo "SHA256 verified"
-  fi
-
-  if file "$STAGING/download" | grep -q "bzip2\|gzip\|tar"; then
-    echo "Extracting tarball..."
-    mkdir -p "$STAGING/extract"
-    tar -xf "$STAGING/download" -C "$STAGING/extract"
-    BINARY=$(find "$STAGING/extract" -name "mithril-validator" -type f | head -1)
-    if [ -z "$BINARY" ]; then
-      echo "ERROR: mithril-validator binary not found in tarball" >&2
-      exit 1
+  if [ -n "$DOWNLOAD_URL" ]; then
+    mkdir -p "$STAGING"
+    echo "Downloading from $DOWNLOAD_URL..."
+    curl -sSL -o "$STAGING/download" "$DOWNLOAD_URL"
+    SHA="{{sha256}}"
+    if [ -n "$SHA" ]; then
+      echo "$SHA  $STAGING/download" | sha256sum -c
+      echo "SHA256 verified"
     fi
-    sudo install -m 755 "$BINARY" {{binary_path}}
+    if file "$STAGING/download" | grep -q "bzip2\|gzip\|tar"; then
+      mkdir -p "$STAGING/extract"
+      tar -xf "$STAGING/download" -C "$STAGING/extract"
+      BINARY=$(find "$STAGING/extract" \( -name "mithril" -o -name "mithril-validator" \) -type f | head -1)
+      [ -z "$BINARY" ] && { echo "ERROR: mithril binary not found in tarball" >&2; exit 1; }
+      sudo install -m 755 "$BINARY" {{binary_path}}
+    else
+      sudo install -m 755 "$STAGING/download" {{binary_path}}
+    fi
   else
-    sudo install -m 755 "$STAGING/download" {{binary_path}}
+    echo "No download_url provided, building Mithril v{{version}} from source..."
+    mkdir -p "$STAGING"
+    BUILD_DIR="/tmp/mithril-build"
+    rm -rf "$BUILD_DIR"
+
+    if ! dpkg -s build-essential >/dev/null 2>&1; then
+      sudo apt-get update -qq
+      sudo apt-get install -y -qq build-essential clang cmake gcc make pkg-config
+    fi
+
+    GO_VERSION=1.26.4
+    case "$(uname -m)" in
+      x86_64) GOARCH=amd64 ;;
+      aarch64|arm64) GOARCH=arm64 ;;
+      *) echo "ERROR: unsupported arch $(uname -m)" >&2; exit 1 ;;
+    esac
+    GO=""
+    for cand in /usr/local/go/bin/go "$(command -v go 2>/dev/null || true)" "$HOME/.pillar-go/go/bin/go"; do
+      if [ -n "$cand" ] && "$cand" version 2>/dev/null | grep -q "go$GO_VERSION"; then
+        GO="$cand"; break
+      fi
+    done
+    if [ -z "$GO" ]; then
+      echo "Installing Go $GO_VERSION under \$HOME (no sudo)..."
+      rm -rf "$HOME/.pillar-go" && mkdir -p "$HOME/.pillar-go"
+      curl -sSL -o "$STAGING/go.tar.gz" "https://go.dev/dl/go${GO_VERSION}.linux-${GOARCH}.tar.gz"
+      tar -C "$HOME/.pillar-go" -xzf "$STAGING/go.tar.gz"
+      GO="$HOME/.pillar-go/go/bin/go"
+    fi
+    export PATH="$(dirname "$GO"):$PATH"
+    export GOPATH="$HOME/.pillar-go/path"
+
+    git clone --depth 1 --branch v{{version}} https://github.com/Overclock-Validator/mithril.git "$BUILD_DIR"
+    cd "$BUILD_DIR"
+    echo "Building mithril..."
+    "$GO" build -ldflags "-s -w -X github.com/Overclock-Validator/mithril/pkg/version.Version=v{{version}}" -o mithril ./cmd/mithril
+    [ -x "$BUILD_DIR/mithril" ] || { echo "ERROR: mithril not found after build" >&2; exit 1; }
+    sudo install -m 755 "$BUILD_DIR/mithril" {{binary_path}}
+    cd /
+    rm -rf "$BUILD_DIR"
+    echo "Built and installed mithril v{{version}}"
   fi
 fi
 echo "Binary ready at {{binary_path}}"
@@ -57,7 +87,12 @@ echo "Binary ready at {{binary_path}}"
 # Stop existing service if running
 sudo systemctl stop {{old_service_name}} 2>/dev/null || true
 
-{{yellowstone_section}}
+# Write Mithril config
+sudo mkdir -p /etc/pillar
+sudo tee /etc/pillar/validator.toml > /dev/null <<'TOML'
+{{mithril_toml}}
+TOML
+echo "Wrote /etc/pillar/validator.toml"
 
 # Write systemd unit
 sudo tee /etc/systemd/system/{{service_name}}.service > /dev/null <<'UNIT'
