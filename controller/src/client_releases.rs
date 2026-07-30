@@ -14,6 +14,7 @@ fn repo_for_client(client: &str) -> Option<&'static str> {
         "jito" => Some("jito-foundation/jito-solana"),
         "firedancer" | "frankendancer" => Some("firedancer-io/firedancer"),
         "surfpool" => Some("solana-foundation/surfpool"),
+        "mithril" => Some("Overclock-Validator/mithril"),
         _ => None,
     }
 }
@@ -84,6 +85,7 @@ mod tests {
             repo_for_client("frankendancer"),
             Some("firedancer-io/firedancer")
         );
+        assert_eq!(repo_for_client("mithril"), Some("Overclock-Validator/mithril"));
         assert_eq!(repo_for_client("nope"), None);
     }
 }
