@@ -159,6 +159,7 @@ function NodeDetail() {
   const [provJitoShredReceiverAddr, setProvJitoShredReceiverAddr] = useState('')
   const [provYellowstoneGrpc, setProvYellowstoneGrpc] = useState(false)
   const [provNoPortCheck, setProvNoPortCheck] = useState(false)
+  const [provNetProvider, setProvNetProvider] = useState('socket')
   const [provRpcPort, setProvRpcPort] = useState('8899')
   const [provDynamicPortRange, setProvDynamicPortRange] = useState('8000-8030')
   const [provSubmitting, setProvSubmitting] = useState(false)
@@ -290,6 +291,7 @@ function NodeDetail() {
         if (cfg.jito_shred_receiver_addr !== undefined) setProvJitoShredReceiverAddr(cfg.jito_shred_receiver_addr)
         if (cfg.yellowstone_grpc !== undefined) setProvYellowstoneGrpc(cfg.yellowstone_grpc)
         if (cfg.no_port_check !== undefined) setProvNoPortCheck(cfg.no_port_check)
+        if (cfg.net_provider) setProvNetProvider(cfg.net_provider)
         if (cfg.rpc_port) setProvRpcPort(String(cfg.rpc_port))
         if (cfg.dynamic_port_range) setProvDynamicPortRange(cfg.dynamic_port_range)
         if (cfg.node_type) setProvNodeType(cfg.node_type)
@@ -438,6 +440,7 @@ function NodeDetail() {
         jito_shred_receiver_addr: provJitoShredReceiverAddr,
         yellowstone_grpc: provYellowstoneGrpc,
         no_port_check: provNoPortCheck,
+        net_provider: provNetProvider,
         rpc_port: parseInt(provRpcPort) || 8899,
         dynamic_port_range: provDynamicPortRange,
         node_type: provNodeType,
@@ -848,6 +851,16 @@ function NodeDetail() {
                   Skip port check (NAT/firewall)
                 </label>
               </div>
+              {(provClient === 'firedancer' || provClient === 'frankendancer') && (
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-xs font-medium text-zinc-400 uppercase tracking-wider">Network Provider</label>
+                  <select className="w-full px-3 py-2 bg-black/40 border border-white/10 rounded-md text-zinc-100 text-sm focus:outline-none focus:border-purple-500/50 transition-all appearance-none" value={provNetProvider} onChange={e => setProvNetProvider(e.target.value)}>
+                    <option value="socket">Socket (no XDP)</option>
+                    <option value="xdp">XDP (AF_XDP)</option>
+                  </select>
+                  <span className="text-[11px] text-zinc-500">XDP needs a dedicated physical NIC; use Socket on bonded/virtual interfaces.</span>
+                </div>
+              )}
             </div>
 
             {/* Advanced Settings */}
