@@ -4,6 +4,10 @@ on:
   push:
     branches: [main]
 
+concurrency:
+  group: release
+  cancel-in-progress: false
+
 permissions:
   contents: write
   pull-requests: write
@@ -34,7 +38,12 @@ jobs:
     needs: release-please
     runs-on: ubuntu-latest
     steps:
+      # release-please reads current main, so a release created by this run can
+      # postdate the trigger commit — build from main or the binary bakes in the
+      # pre-bump version.
       - uses: actions/checkout@v4
+        with:
+          ref: main
 
       - name: Install protoc
         run: |
@@ -102,13 +111,13 @@ jobs:
           # (a rebuild of the same version is not byte-identical).
           if [ "$CTRL_RELEASED" = "true" ]; then
             CTRL_SHA=$(sha256sum artifacts/pillar-controller-linux-amd64 | awk '{print $1}')
-          else
-            CTRL_SHA=$(curl -sSfL "$GH_DL/pillar-controller-v$CTRL_VERSION/pillar-controller-linux-amd64" | sha256sum | awk '{print $1}')
+          elif ! CTRL_SHA=$(curl -sSfL "$GH_DL/pillar-controller-v$CTRL_VERSION/pillar-controller-linux-amd64" | sha256sum | awk '{print $1}'); then
+            CTRL_SHA=$(sha256sum artifacts/pillar-controller-linux-amd64 | awk '{print $1}')
           fi
           if [ "$AGENT_RELEASED" = "true" ]; then
             AGENT_SHA=$(sha256sum artifacts/pillar-agent-linux-amd64 | awk '{print $1}')
-          else
-            AGENT_SHA=$(curl -sSfL "$GH_DL/pillar-agent-v$AGENT_VERSION/pillar-agent-linux-amd64" | sha256sum | awk '{print $1}')
+          elif ! AGENT_SHA=$(curl -sSfL "$GH_DL/pillar-agent-v$AGENT_VERSION/pillar-agent-linux-amd64" | sha256sum | awk '{print $1}'); then
+            AGENT_SHA=$(sha256sum artifacts/pillar-agent-linux-amd64 | awk '{print $1}')
           fi
           jq -n \
             --arg cv "$CTRL_VERSION" \
