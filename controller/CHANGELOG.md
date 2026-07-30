@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.15.2](https://github.com/niks3089/pillar/compare/pillar-controller-v0.15.1...pillar-controller-v0.15.2) (2026-07-30)
+
+
+### Bug Fixes
+
+* **controller:** version dropdown shows stale client releases after client switch ([57852e7](https://github.com/niks3089/pillar/commit/57852e7250af4105548b612ed8d50ea1d6ba07de))
+* **controller:** version dropdown shows stale client releases after client switch ([6c4bdee](https://github.com/niks3089/pillar/commit/6c4bdeeab7a06e698a01b36bba26319a1079adde))
+
 ## [0.15.1](https://github.com/niks3089/pillar/compare/pillar-controller-v0.15.0...pillar-controller-v0.15.1) (2026-07-30)
 
 
