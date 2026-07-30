@@ -8,6 +8,7 @@ echo "=== Pillar: Provisioning Frankendancer {{version}} on {{cluster}} ==="
 
 # Stop existing service if running
 sudo systemctl stop {{old_service_name}} 2>/dev/null || true
+sudo systemctl disable {{old_service_name}} 2>/dev/null || true
 
 # Write Frankendancer TOML config
 sudo mkdir -p /etc/pillar

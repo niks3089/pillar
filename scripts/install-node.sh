@@ -171,12 +171,12 @@ write_sudoers() {
 Cmnd_Alias PILLAR_SVC = \
     /usr/bin/systemctl daemon-reload, \
     /usr/bin/systemctl restart pillar-agent, \
-    /usr/bin/systemctl start solana-validator, /usr/bin/systemctl stop solana-validator, /usr/bin/systemctl restart solana-validator, /usr/bin/systemctl enable --now solana-validator, \
-    /usr/bin/systemctl start jito-validator, /usr/bin/systemctl stop jito-validator, /usr/bin/systemctl restart jito-validator, /usr/bin/systemctl enable --now jito-validator, \
-    /usr/bin/systemctl start firedancer, /usr/bin/systemctl stop firedancer, /usr/bin/systemctl restart firedancer, /usr/bin/systemctl enable --now firedancer, \
-    /usr/bin/systemctl start frankendancer, /usr/bin/systemctl stop frankendancer, /usr/bin/systemctl restart frankendancer, /usr/bin/systemctl enable --now frankendancer, \
-    /usr/bin/systemctl start surfpool, /usr/bin/systemctl stop surfpool, /usr/bin/systemctl restart surfpool, /usr/bin/systemctl enable --now surfpool, \
-    /usr/bin/systemctl start mithril-validator, /usr/bin/systemctl stop mithril-validator, /usr/bin/systemctl restart mithril-validator, /usr/bin/systemctl enable --now mithril-validator
+    /usr/bin/systemctl start solana-validator, /usr/bin/systemctl stop solana-validator, /usr/bin/systemctl restart solana-validator, /usr/bin/systemctl enable --now solana-validator, /usr/bin/systemctl disable solana-validator, \
+    /usr/bin/systemctl start jito-validator, /usr/bin/systemctl stop jito-validator, /usr/bin/systemctl restart jito-validator, /usr/bin/systemctl enable --now jito-validator, /usr/bin/systemctl disable jito-validator, \
+    /usr/bin/systemctl start firedancer, /usr/bin/systemctl stop firedancer, /usr/bin/systemctl restart firedancer, /usr/bin/systemctl enable --now firedancer, /usr/bin/systemctl disable firedancer, \
+    /usr/bin/systemctl start frankendancer, /usr/bin/systemctl stop frankendancer, /usr/bin/systemctl restart frankendancer, /usr/bin/systemctl enable --now frankendancer, /usr/bin/systemctl disable frankendancer, \
+    /usr/bin/systemctl start surfpool, /usr/bin/systemctl stop surfpool, /usr/bin/systemctl restart surfpool, /usr/bin/systemctl enable --now surfpool, /usr/bin/systemctl disable surfpool, \
+    /usr/bin/systemctl start mithril-validator, /usr/bin/systemctl stop mithril-validator, /usr/bin/systemctl restart mithril-validator, /usr/bin/systemctl enable --now mithril-validator, /usr/bin/systemctl disable mithril-validator
 
 Cmnd_Alias PILLAR_UNIT = \
     /usr/bin/tee /etc/systemd/system/solana-validator.service, \
