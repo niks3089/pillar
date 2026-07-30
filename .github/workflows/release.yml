@@ -13,16 +13,21 @@ jobs:
     name: Release Please
     runs-on: ubuntu-latest
     outputs:
-      agent_release_created: ${{ steps.release.outputs['agent--release_created'] }}
-      agent_version: ${{ steps.release.outputs['agent--version'] }}
-      controller_release_created: ${{ steps.release.outputs['controller--release_created'] }}
-      controller_version: ${{ steps.release.outputs['controller--version'] }}
+      agent_release_created: ${{ steps.agent.outputs['agent--release_created'] }}
+      agent_version: ${{ steps.agent.outputs['agent--version'] }}
+      controller_release_created: ${{ steps.controller.outputs['controller--release_created'] }}
+      controller_version: ${{ steps.controller.outputs['controller--version'] }}
     steps:
       - uses: googleapis/release-please-action@v4
-        id: release
+        id: agent
         with:
-          config-file: release-please-config.json
-          manifest-file: .release-please-manifest.json
+          config-file: release-please-config-agent.json
+          manifest-file: .release-please-manifest-agent.json
+      - uses: googleapis/release-please-action@v4
+        id: controller
+        with:
+          config-file: release-please-config-controller.json
+          manifest-file: .release-please-manifest-controller.json
 
   build:
     name: Build

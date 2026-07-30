@@ -1,0 +1,9 @@
+{
+  "packages": {
+    "agent": {
+      "release-type": "rust",
+      "component": "pillar-agent",
+      "bump-minor-pre-major": true
+    }
+  }
+}
