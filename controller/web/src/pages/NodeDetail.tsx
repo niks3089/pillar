@@ -254,7 +254,9 @@ function NodeDetail() {
     if (!showProvision) return
     setVersionOptions([])
     setShowVersions(false)
-    fetchClientReleases(provClient).then(r => setVersionOptions(r.versions)).catch(() => {})
+    let stale = false
+    fetchClientReleases(provClient).then(r => { if (!stale) setVersionOptions(r.versions) }).catch(() => {})
+    return () => { stale = true }
   }, [showProvision, provClient])
 
   // Dismissed last-deployment banner, remembered per script across reloads
