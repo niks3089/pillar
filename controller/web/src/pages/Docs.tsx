@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import opsDoc from '../operations.md?raw'
+import { copyText } from '../clipboard'
 
 interface Section {
   id: string
@@ -33,6 +34,7 @@ function parseSections(md: string): Section[] {
 export default function Docs() {
   const [query, setQuery] = useState('')
   const [activeSection, setActiveSection] = useState('overview')
+  const [copied, setCopied] = useState(false)
   const sections = useMemo(() => parseSections(opsDoc), [])
   const q = query.trim().toLowerCase()
   const filtered = q
@@ -104,9 +106,18 @@ export default function Docs() {
              <span className="text-zinc-300">{sections.find(s => s.id === activeSection)?.title || 'Overview'}</span>
            </div>
            
-           <span className="inline-flex items-center gap-1.5 px-3 py-1 text-sm font-medium text-purple-400 bg-purple-500/10 border border-purple-500/20 rounded-md mb-8">
-             Operations Guide
-           </span>
+           <div className="flex items-center gap-3 mb-8">
+             <span className="inline-flex items-center gap-1.5 px-3 py-1 text-sm font-medium text-purple-400 bg-purple-500/10 border border-purple-500/20 rounded-md">
+               Operations Guide
+             </span>
+             <button
+               className="inline-flex items-center gap-1.5 px-3 py-1 text-sm font-medium text-zinc-300 bg-white/5 hover:bg-white/10 border border-white/10 rounded-md transition-colors"
+               title="Copy the full guide as Markdown — paste into an AI assistant"
+               onClick={async () => { if (await copyText(opsDoc)) { setCopied(true); setTimeout(() => setCopied(false), 2000) } }}
+             >
+               {copied ? '✓ Copied' : '⧉ Copy for AI'}
+             </button>
+           </div>
         </div>
 
         {filtered.length === 0 && (
