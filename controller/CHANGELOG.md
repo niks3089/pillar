@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.15.3](https://github.com/niks3089/pillar/compare/pillar-controller-v0.15.2...pillar-controller-v0.15.3) (2026-07-31)
+
+
+### Bug Fixes
+
+* **controller:** provision arg conflicts crash-looped validator behind a success banner ([6f5b394](https://github.com/niks3089/pillar/commit/6f5b3942787f325bbf97370fa99e1f2cd9ac1369))
+* **controller:** provision arg conflicts crash-looped validator behind a success banner ([f9e9eb8](https://github.com/niks3089/pillar/commit/f9e9eb8e02ae22a96f79f910610320092e38537a))
+
 ## [0.15.2](https://github.com/niks3089/pillar/compare/pillar-controller-v0.15.1...pillar-controller-v0.15.2) (2026-07-30)
 
 
