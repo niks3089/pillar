@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.15.4](https://github.com/niks3089/pillar/compare/pillar-controller-v0.15.3...pillar-controller-v0.15.4) (2026-07-31)
+
+
+### Bug Fixes
+
+* **controller:** extend post-start verification to 60s, fail on any restart ([4e61400](https://github.com/niks3089/pillar/commit/4e61400c5974bd555a47a26a5ddb16f29a336973))
+* **controller:** extend post-start verification to 60s, fail on any restart ([e5e263f](https://github.com/niks3089/pillar/commit/e5e263fd7147c630ade16944693af4133ce6406c))
+* **controller:** flag deployment as broken when validator dies after script success ([b8968ab](https://github.com/niks3089/pillar/commit/b8968aba0cd681afed6468d2f625451672a59350))
+* **controller:** flag deployment as broken when validator dies after script success ([4232201](https://github.com/niks3089/pillar/commit/423220134bd5aef3644ea71497e5711930d3b4fa))
+
 ## [0.15.3](https://github.com/niks3089/pillar/compare/pillar-controller-v0.15.2...pillar-controller-v0.15.3) (2026-07-31)
 
 
