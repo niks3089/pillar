@@ -193,11 +193,15 @@ pub fn build_exec_start(
     }
 
     if !known_validators.is_empty() {
-        args.push("--only-known-rpc".to_string());
-        args.push(format!(
-            "--expected-genesis-hash {}",
-            genesis_hash_for_cluster(cluster)
-        ));
+        if !validator_flags.contains_key("only-known-rpc") {
+            args.push("--only-known-rpc".to_string());
+        }
+        if !validator_flags.contains_key("expected-genesis-hash") {
+            args.push(format!(
+                "--expected-genesis-hash {}",
+                genesis_hash_for_cluster(cluster)
+            ));
+        }
     }
 
     if jito.enabled {

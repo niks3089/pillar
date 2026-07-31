@@ -1103,8 +1103,12 @@ fi"#,
 async fn provision_node(
     State(state): State<ApiState>,
     Path(id): Path<String>,
-    Json(req): Json<ProvisionRequest>,
+    Json(mut req): Json<ProvisionRequest>,
 ) -> impl IntoResponse {
+    // entrypoint4/5.testnet no longer exist in DNS; agave refuses to start on an
+    // unresolvable entrypoint, so saved configs that still carry them crash-loop.
+    req.entrypoints
+        .retain(|e| !e.starts_with("entrypoint4.testnet.") && !e.starts_with("entrypoint5.testnet."));
     // Validate every operator-supplied field BEFORE it is interpolated into a shell
     // script the agent runs as `sol` with sudo. Blocks command/template injection.
     if let Err(msg) = validate_provision_request(&req) {
