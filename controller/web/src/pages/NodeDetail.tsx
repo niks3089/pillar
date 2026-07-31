@@ -48,6 +48,15 @@ function formatDuration(secs: number): string {
   return `${days}d ${hours}h`
 }
 
+function deployBroken(node: Node): boolean {
+  if (!node.last_script || node.last_script.exit_code !== 0) return false
+  const ageSecs = Date.now() / 1000 - node.last_script.completed_at
+  if (ageSecs > 1800) return false
+  const s = node.live_status
+  if (!s) return false
+  return s.crash_looping || s.state.toLowerCase() === 'off'
+}
+
 function clusterLabel(cluster?: string): string {
   if (!cluster) return '-'
   if (cluster === 'mainnet-beta') return 'mainnet'
@@ -585,6 +594,19 @@ function NodeDetail() {
               </span>
             </div>
             <button className="text-red-400/60 hover:text-red-300 transition-colors shrink-0" title="Dismiss" onClick={() => dismissOutcome(node.last_script!.script_id)}>✕</button>
+          </div>
+        ) : deployBroken(node) ? (
+          <div className="flex items-center gap-4 bg-amber-950/30 border border-amber-900/50 rounded-xl p-5 shadow-sm">
+            <span className="text-amber-400 text-lg shrink-0">⚠</span>
+            <div className="flex flex-col gap-0.5 min-w-0 flex-1">
+              <span className="text-sm font-medium text-amber-300">
+                {node.last_script.description || 'Last deployment'} script succeeded, but the validator is {node.live_status?.crash_looping ? 'crash-looping' : 'not running'}
+              </span>
+              <span className="text-xs text-amber-400/60">
+                The service started and later died — check the Validator logs below.
+              </span>
+            </div>
+            <button className="text-amber-400/60 hover:text-amber-300 transition-colors shrink-0" title="Dismiss" onClick={() => dismissOutcome(node.last_script!.script_id)}>✕</button>
           </div>
         ) : (
           <div className="flex items-center gap-3 bg-green-500/5 border border-green-500/20 rounded-xl px-5 py-3 shadow-sm">
