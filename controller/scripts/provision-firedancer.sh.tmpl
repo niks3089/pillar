@@ -42,10 +42,10 @@ UNIT
 
 sudo systemctl daemon-reload
 sudo systemctl enable --now {{service_name}}
-sleep 20
+sleep 60
 STATE=$(systemctl is-active {{service_name}} || true)
 RESTARTS=$(systemctl show {{service_name}} -p NRestarts --value)
-if [ "$STATE" = "failed" ] || [ "${RESTARTS:-0}" -ge 2 ]; then
+if [ "$STATE" = "failed" ] || [ "${RESTARTS:-0}" -ge 1 ]; then
   echo "ERROR: {{service_name}} is not running cleanly after start (state=$STATE, restarts=$RESTARTS)" >&2
   systemctl status {{service_name}} --no-pager -l 2>&1 | tail -15 >&2 || true
   exit 1
