@@ -67,6 +67,7 @@ pub fn router(state: ApiState) -> Router {
         .route("/api/nodes/{id}/restart", post(restart_node))
         .route("/api/nodes/{id}/recover", post(recover_node))
         .route("/api/nodes/{id}/provision", post(provision_node))
+        .route("/api/nodes/{id}/config", put(update_node_config))
         .route("/api/nodes/{id}/upgrade", post(upgrade_node))
         .route("/api/nodes/{id}/stop", post(stop_node))
         .route("/api/nodes/{id}/cancel", post(cancel_deployment))
@@ -1098,6 +1099,40 @@ fi"#,
         agent_config_sed_commands,
     );
     vars
+}
+
+async fn update_node_config(
+    State(state): State<ApiState>,
+    Path(id): Path<String>,
+    Json(req): Json<ProvisionRequest>,
+) -> impl IntoResponse {
+    if let Err(msg) = validate_provision_request(&req) {
+        return (StatusCode::BAD_REQUEST, Json(CommandResponse { ok: false, message: msg }))
+            .into_response();
+    }
+    let provision_json = serde_json::to_string(&req).unwrap_or_default();
+    if let Err(e) =
+        db::set_provision_config(&state.db, &id, &provision_json, &req.client, &req.cluster).await
+    {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(CommandResponse { ok: false, message: format!("failed to store config: {e}") }),
+        )
+            .into_response();
+    }
+    emit_controller_log(
+        &state.registry,
+        &state.db,
+        &id,
+        "info",
+        "Stored provision config update (no provisioning run; applies on next provision)",
+    )
+    .await;
+    Json(CommandResponse {
+        ok: true,
+        message: "provision config stored; it will be used by the next provision run".to_string(),
+    })
+    .into_response()
 }
 
 async fn provision_node(
