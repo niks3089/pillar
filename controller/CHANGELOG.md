@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.15.5](https://github.com/niks3089/pillar/compare/pillar-controller-v0.15.4...pillar-controller-v0.15.5) (2026-08-04)
+
+
+### Bug Fixes
+
+* **controller:** 404 when updating config for an unknown node ([d0c54da](https://github.com/niks3089/pillar/commit/d0c54da13a0ce49ce5c185e71f298260450f2b1b))
+* **controller:** 404 when updating config for an unknown node ([d4a3ae2](https://github.com/niks3089/pillar/commit/d4a3ae25736b7904f3b7715c78045c4091cb4a9f))
+
 ## [0.15.4](https://github.com/niks3089/pillar/compare/pillar-controller-v0.15.3...pillar-controller-v0.15.4) (2026-07-31)
 
 
