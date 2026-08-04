@@ -1110,6 +1110,23 @@ async fn update_node_config(
         return (StatusCode::BAD_REQUEST, Json(CommandResponse { ok: false, message: msg }))
             .into_response();
     }
+    match db::get_node(&state.db, &id).await {
+        Ok(Some(_)) => {}
+        Ok(None) => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(CommandResponse { ok: false, message: format!("unknown node: {id}") }),
+            )
+                .into_response();
+        }
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(CommandResponse { ok: false, message: format!("lookup failed: {e}") }),
+            )
+                .into_response();
+        }
+    }
     let provision_json = serde_json::to_string(&req).unwrap_or_default();
     if let Err(e) =
         db::set_provision_config(&state.db, &id, &provision_json, &req.client, &req.cluster).await
