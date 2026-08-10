@@ -514,7 +514,9 @@ section "Applying sysctl tuning"
 SYSCTL_CONF="/etc/sysctl.d/21-agave-validator.conf"
 cat > "$SYSCTL_CONF" <<EOF
 # Anza-recommended sysctl settings for Solana validators
+net.core.rmem_default = 134217728
 net.core.rmem_max = 134217728
+net.core.wmem_default = 134217728
 net.core.wmem_max = 134217728
 vm.max_map_count = 1000000
 # Firedancer requires fs.nr_open >= 1024000 to raise RLIMIT_NOFILE; 1048576 covers it
