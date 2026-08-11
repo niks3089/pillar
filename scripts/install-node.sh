@@ -526,6 +526,27 @@ EOF
 sysctl -p "$SYSCTL_CONF" >/dev/null 2>&1 || warn "failed to apply sysctl settings (may require reboot)"
 ok "wrote $SYSCTL_CONF"
 
+if compgen -G "/sys/devices/system/cpu/cpu*/cpufreq/scaling_governor" >/dev/null 2>&1; then
+    for gov in /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor; do
+        echo performance > "$gov" 2>/dev/null || true
+    done
+    cat > /etc/systemd/system/cpu-performance.service <<EOF
+[Unit]
+Description=Set CPU governor to performance
+After=multi-user.target
+[Service]
+Type=oneshot
+ExecStart=/bin/sh -c "for g in /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor; do echo performance > \$g; done"
+[Install]
+WantedBy=multi-user.target
+EOF
+    systemctl daemon-reload
+    systemctl enable -q cpu-performance 2>/dev/null || true
+    ok "CPU governor set to performance (persisted via cpu-performance.service)"
+else
+    info "no cpufreq scaling on this host — skipping governor tuning"
+fi
+
 LIMITS_CONF="/etc/security/limits.d/sol-limits.conf"
 cat > "$LIMITS_CONF" <<EOF
 # Solana validator limits
