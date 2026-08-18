@@ -514,7 +514,9 @@ section "Applying sysctl tuning"
 SYSCTL_CONF="/etc/sysctl.d/21-agave-validator.conf"
 cat > "$SYSCTL_CONF" <<EOF
 # Anza-recommended sysctl settings for Solana validators
+net.core.rmem_default = 134217728
 net.core.rmem_max = 134217728
+net.core.wmem_default = 134217728
 net.core.wmem_max = 134217728
 vm.max_map_count = 1000000
 # Firedancer requires fs.nr_open >= 1024000 to raise RLIMIT_NOFILE; 1048576 covers it
@@ -523,6 +525,27 @@ fs.nr_open = 1048576
 EOF
 sysctl -p "$SYSCTL_CONF" >/dev/null 2>&1 || warn "failed to apply sysctl settings (may require reboot)"
 ok "wrote $SYSCTL_CONF"
+
+if compgen -G "/sys/devices/system/cpu/cpu*/cpufreq/scaling_governor" >/dev/null 2>&1; then
+    for gov in /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor; do
+        echo performance > "$gov" 2>/dev/null || true
+    done
+    cat > /etc/systemd/system/cpu-performance.service <<EOF
+[Unit]
+Description=Set CPU governor to performance
+After=multi-user.target
+[Service]
+Type=oneshot
+ExecStart=/bin/sh -c "for g in /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor; do echo performance > \$g; done"
+[Install]
+WantedBy=multi-user.target
+EOF
+    systemctl daemon-reload
+    systemctl enable -q cpu-performance 2>/dev/null || true
+    ok "CPU governor set to performance (persisted via cpu-performance.service)"
+else
+    info "no cpufreq scaling on this host — skipping governor tuning"
+fi
 
 LIMITS_CONF="/etc/security/limits.d/sol-limits.conf"
 cat > "$LIMITS_CONF" <<EOF
