@@ -464,7 +464,18 @@ function NodeDetail() {
         log_rate_limit_disable: provLogRateLimitDisable,
         start_limit_disable: provStartLimitDisable,
       }
-      const result = await provisionNode(id, config)
+      let result
+      try {
+        result = await provisionNode(id, config)
+      } catch (err) {
+        const msg = String(err)
+        const stuck = msg.includes("'starting_up' state") || msg.includes("'provisioning' state")
+        if (stuck && window.confirm('Node is stuck in provisioning/starting-up state. Force provision anyway?\n\nUse this to recover a validator stuck in a crash loop — the provision will stop it and set up the new version.')) {
+          result = await provisionNode(id, { ...config, force: true })
+        } else {
+          throw err
+        }
+      }
       if (result.ok) {
         showToast('success', `Deployment started: ${provClient} ${provVersion} on ${provCluster}.`)
         setShowProvision(false)

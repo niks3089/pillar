@@ -675,6 +675,8 @@ struct ProvisionRequest {
     /// 8.8.8.8. Only meaningful for the "xdp" provider.
     #[serde(default)]
     net_interface: String,
+    #[serde(default)]
+    force: bool,
 }
 
 const ALLOWED_CLIENTS: &[&str] =
@@ -1191,12 +1193,14 @@ async fn provision_node(
 
     // Reject if node is already provisioning or actively running a validator
     match db::get_lifecycle_state(&state.db, &id).await {
-        Ok(Some(s)) if s == "provisioning" || s == "starting_up" => {
+        Ok(Some(s)) if !req.force && (s == "provisioning" || s == "starting_up") => {
             return (
                 StatusCode::CONFLICT,
                 Json(CommandResponse {
                     ok: false,
-                    message: format!("node is already in '{s}' state"),
+                    message: format!(
+                        "node is already in '{s}' state (pass force=true to provision anyway, e.g. onto a crash-looping validator)"
+                    ),
                 }),
             )
                 .into_response();
@@ -2047,6 +2051,19 @@ mod tests {
         assert!(!valid_manifest_entry(sha, "http://github.com/x")); // not https
         assert!(!valid_manifest_entry(sha, "https://evil.com/binary"));
         assert!(!valid_manifest_entry(sha, "https://github.com/x\" ; rm -rf / #")); // shell metachars
+    }
+
+    #[test]
+    fn force_defaults_off_and_parses() {
+        let r = req(
+            r#"{"client":"agave","version":"2.1.6","cluster":"testnet","ledger_path":"/mnt/ledger"}"#,
+        );
+        assert!(!r.force);
+        let r = req(
+            r#"{"client":"agave","version":"2.1.6","cluster":"testnet","ledger_path":"/mnt/ledger","force":true}"#,
+        );
+        assert!(r.force);
+        assert!(validate_provision_request(&r).is_ok());
     }
 
     #[test]
