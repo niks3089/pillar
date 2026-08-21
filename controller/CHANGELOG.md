@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.16.0](https://github.com/niks3089/pillar/compare/pillar-controller-v0.15.5...pillar-controller-v0.16.0) (2026-08-21)
+
+
+### Features
+
+* **controller:** allow force-provisioning past a stuck lifecycle state ([783f3b7](https://github.com/niks3089/pillar/commit/783f3b751097abc66dbf1720076b309ad9a55fef))
+* **controller:** allow force-provisioning past a stuck lifecycle state ([0aef197](https://github.com/niks3089/pillar/commit/0aef197a14f20254fcd34898fc26cb6d910bd37c))
+
 ## [0.15.5](https://github.com/niks3089/pillar/compare/pillar-controller-v0.15.4...pillar-controller-v0.15.5) (2026-08-04)
 
 
