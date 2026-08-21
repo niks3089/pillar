@@ -166,6 +166,7 @@ export interface ProvisionRequest {
   start_limit_disable?: boolean
   no_port_check?: boolean
   net_provider?: string
+  force?: boolean
 }
 
 export async function provisionNode(id: string, config: ProvisionRequest): Promise<{ ok: boolean; message: string }> {
