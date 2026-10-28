@@ -1,10 +1,16 @@
 pub mod types;
 
-/// Marker written by the Stop action. While it exists the agent will not
-/// auto-start the validator; Restart / Recover / Upgrade / Provision remove it.
-/// Operators can create or delete it by hand (`touch` / `rm`) to get the same
-/// effect from the shell.
-pub const HOLD_FILE: &str = "/home/sol/.pillar/validator.hold";
+/// Directory holding operator hold markers (see [`hold_file`]).
+pub const HOLD_DIR: &str = "/home/sol/.pillar";
+
+/// Marker written by the Stop action for one validator unit. While it exists
+/// the agent will not auto-start that unit; Restart / Recover / Upgrade /
+/// Provision remove it. Operators can `touch` / `rm` it by hand for the same
+/// effect. Per service so multiple validators on one host (e.g.
+/// `setup-surfpool-fleet.sh`) hold independently.
+pub fn hold_file(service_name: &str) -> String {
+    format!("{HOLD_DIR}/{service_name}.hold")
+}
 
 pub mod proto {
     include!(concat!(env!("OUT_DIR"), "/pillar.rs"));

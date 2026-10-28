@@ -1,0 +1,87 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  rust:
+    name: cargo test
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install protoc
+        run: sudo apt-get update -qq && sudo apt-get install -y protobuf-compiler
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-test-${{ hashFiles('**/Cargo.lock') }}
+      - run: cargo test --workspace
+
+  e2e:
+    # ui:     real controller + browser, stubbed node states (fast)
+    # system: real controller + systemd container running install-node.sh,
+    #         pillar-agent and surfpool; drives stop/start through the UI
+    name: playwright (${{ matrix.suite }})
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: [ui, system]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install protoc
+        run: sudo apt-get update -qq && sudo apt-get install -y protobuf-compiler
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: controller/web/package-lock.json
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-e2e-${{ hashFiles('**/Cargo.lock') }}
+      - name: Install web deps + browser
+        working-directory: controller/web
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+      - name: Build controller (embeds the UI) and agent
+        run: |
+          (cd controller/web && npm run build)
+          cargo build -p pillar-controller -p pillar-agent
+      - name: Run ${{ matrix.suite }} suite
+        working-directory: controller/web
+        env:
+          PILLAR_E2E_SKIP_BUILD: "1"
+          # Pinned: the release lookup hits the unauthenticated GitHub API,
+          # which shared runners exhaust.
+          PILLAR_E2E_SURFPOOL_VERSION: "1.7.0"
+        run: |
+          if [ "${{ matrix.suite }}" = ui ]; then
+            npm run typecheck:e2e
+            npm run test:e2e
+          else
+            npm run test:e2e:system
+          fi
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-${{ matrix.suite }}
+          path: |
+            controller/web/test-results
+            controller/web/playwright-report
+          retention-days: 7

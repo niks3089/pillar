@@ -372,7 +372,7 @@ function NodeDetail() {
   }
 
   const handleStop = async () => {
-    if (!id || !await confirmDialog({ title: 'Stop Validator', message: 'Stop the validator on this node? Pillar writes a hold file (~sol/.pillar/validator.hold) so the agent will not auto-restart it until you click Start, Recover, or upgrade.', confirmLabel: 'Stop', danger: true })) return
+    if (!id || !await confirmDialog({ title: 'Stop Validator', message: 'Stop the validator on this node? Pillar writes a hold file (~sol/.pillar/<unit>.hold) so the agent will not auto-restart it until you click Start, Recover, or upgrade.', confirmLabel: 'Stop', danger: true })) return
     try {
       const result = await stopNode(id)
       if (result.ok) {
@@ -536,7 +536,7 @@ function NodeDetail() {
           <div className="flex items-center gap-4">
             <h1 className="text-2xl font-semibold text-zinc-100 m-0 leading-none">{node.node_id}</h1>
             <div className="flex items-center gap-2">
-              <span className={`inline-flex items-center px-2 py-0.5 text-[11px] font-medium uppercase tracking-wider rounded border ${STATE_BADGE_CLASSES[node.lifecycle_state] || 'bg-zinc-500/10 text-zinc-400 border-zinc-500/20'}`}>
+              <span data-testid="lifecycle-state" className={`inline-flex items-center px-2 py-0.5 text-[11px] font-medium uppercase tracking-wider rounded border ${STATE_BADGE_CLASSES[node.lifecycle_state] || 'bg-zinc-500/10 text-zinc-400 border-zinc-500/20'}`}>
                 {node.lifecycle_state}
               </span>
               <span className="flex items-center gap-1.5 px-2 py-0.5 text-[11px] font-medium uppercase tracking-wider rounded border bg-zinc-800/50 border-zinc-700/50 text-zinc-400">
@@ -761,8 +761,8 @@ function NodeDetail() {
             
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
               <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-medium text-zinc-400 uppercase tracking-wider">Client</label>
-                <select className="w-full px-3 py-2 bg-black/40 border border-white/10 rounded-md text-zinc-100 text-sm focus:outline-none focus:border-purple-500/50 transition-all appearance-none" value={provClient} onChange={e => setProvClient(e.target.value)}>
+                <label htmlFor="prov-client" className="text-xs font-medium text-zinc-400 uppercase tracking-wider">Client</label>
+                <select id="prov-client" className="w-full px-3 py-2 bg-black/40 border border-white/10 rounded-md text-zinc-100 text-sm focus:outline-none focus:border-purple-500/50 transition-all appearance-none" value={provClient} onChange={e => setProvClient(e.target.value)}>
                   <option value="agave">Agave</option>
                   <option value="jito">Jito</option>
                   <option value="firedancer">Firedancer</option>
@@ -772,25 +772,25 @@ function NodeDetail() {
                 </select>
               </div>
               <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-medium text-zinc-400 uppercase tracking-wider">Cluster</label>
-                <select className="w-full px-3 py-2 bg-black/40 border border-white/10 rounded-md text-zinc-100 text-sm focus:outline-none focus:border-purple-500/50 transition-all appearance-none" value={provCluster} onChange={e => handleClusterChange(e.target.value)}>
+                <label htmlFor="prov-cluster" className="text-xs font-medium text-zinc-400 uppercase tracking-wider">Cluster</label>
+                <select id="prov-cluster" className="w-full px-3 py-2 bg-black/40 border border-white/10 rounded-md text-zinc-100 text-sm focus:outline-none focus:border-purple-500/50 transition-all appearance-none" value={provCluster} onChange={e => handleClusterChange(e.target.value)}>
                   <option value="mainnet-beta">mainnet-beta</option>
                   <option value="testnet">testnet</option>
                   <option value="devnet">devnet</option>
                 </select>
               </div>
               <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-medium text-zinc-400 uppercase tracking-wider">Node Type</label>
-                <select className="w-full px-3 py-2 bg-black/40 border border-white/10 rounded-md text-zinc-100 text-sm focus:outline-none focus:border-purple-500/50 transition-all appearance-none" value={provNodeType} onChange={e => handleNodeTypeChange(e.target.value)}>
+                <label htmlFor="prov-node-type" className="text-xs font-medium text-zinc-400 uppercase tracking-wider">Node Type</label>
+                <select id="prov-node-type" className="w-full px-3 py-2 bg-black/40 border border-white/10 rounded-md text-zinc-100 text-sm focus:outline-none focus:border-purple-500/50 transition-all appearance-none" value={provNodeType} onChange={e => handleNodeTypeChange(e.target.value)}>
                   <option value="validator">Validator</option>
                   <option value="rpc">RPC Node</option>
                   <option value="archival">Archival RPC</option>
                 </select>
               </div>
               <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-medium text-zinc-400 uppercase tracking-wider">Version</label>
+                <label htmlFor="prov-version" className="text-xs font-medium text-zinc-400 uppercase tracking-wider">Version</label>
                 <div className="relative">
-                  <input className="w-full px-3 py-2 pr-8 bg-black/40 border border-white/10 rounded-md text-zinc-100 text-sm focus:outline-none focus:border-purple-500/50 transition-all placeholder:text-zinc-600" type="text" value={provVersion} onChange={e => setProvVersion(e.target.value)} placeholder="e.g. 2.1.6" />
+                  <input id="prov-version" className="w-full px-3 py-2 pr-8 bg-black/40 border border-white/10 rounded-md text-zinc-100 text-sm focus:outline-none focus:border-purple-500/50 transition-all placeholder:text-zinc-600" type="text" value={provVersion} onChange={e => setProvVersion(e.target.value)} placeholder="e.g. 2.1.6" />
                   {versionOptions.length > 0 && (
                     <button type="button" className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-200 transition-colors" onClick={() => setShowVersions(v => !v)} title="Recent releases">▾</button>
                   )}

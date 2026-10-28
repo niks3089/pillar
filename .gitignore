@@ -29,3 +29,8 @@ controller/.local/
 *.db-shm
 *.db-wal
 *.local.yaml
+
+# Playwright
+controller/web/playwright/.auth/
+controller/web/test-results/
+controller/web/playwright-report/

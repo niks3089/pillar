@@ -2,9 +2,12 @@ use std::collections::HashMap;
 
 /// Simple `{{placeholder}}` template renderer.
 /// Replaces all occurrences of `{{key}}` with the corresponding value from `vars`.
-/// `{{hold_file}}` is always available and resolves to [`pillar_shared::HOLD_FILE`].
+/// `{{hold_file}}` is derived from `service_name` via [`pillar_shared::hold_file`].
 pub fn render(template: &str, vars: &HashMap<String, String>) -> String {
-    let mut result = template.replace("{{hold_file}}", pillar_shared::HOLD_FILE);
+    let mut result = template.to_string();
+    if let Some(service) = vars.get("service_name") {
+        result = result.replace("{{hold_file}}", &pillar_shared::hold_file(service));
+    }
     for (key, value) in vars {
         result = result.replace(&format!("{{{{{key}}}}}"), value);
     }
@@ -296,9 +299,10 @@ mod tests {
 
     #[test]
     fn stop_writes_hold_before_stopping() {
-        let out = render(scripts::STOP, &HashMap::new());
+        let vars = HashMap::from([("service_name".to_string(), "surfpool".to_string())]);
+        let out = render(scripts::STOP, &vars);
         let hold = out
-            .find(pillar_shared::HOLD_FILE)
+            .find(&pillar_shared::hold_file("surfpool"))
             .expect("stop must write hold file");
         let stop = out.find("systemctl stop").expect("stop must stop the unit");
         assert!(
@@ -320,11 +324,12 @@ mod tests {
             scripts::PROVISION_SURFPOOL,
             scripts::PROVISION_MITHRIL,
         ];
-        let clear = format!("rm -f {}", pillar_shared::HOLD_FILE);
+        let vars = HashMap::from([("service_name".to_string(), "surfpool".to_string())]);
+        let clear = format!("rm -f {}", pillar_shared::hold_file("surfpool"));
         for tmpl in starters {
-            let out = render(tmpl, &HashMap::new());
+            let out = render(tmpl, &vars);
             let rm = out.find(&clear).expect("script must clear the hold file");
-            let start = ["systemctl start", "systemctl restart {{", "enable --now"]
+            let start = ["systemctl start surfpool", "systemctl restart surfpool", "enable --now"]
                 .iter()
                 .filter_map(|p| out.rfind(p))
                 .max()
