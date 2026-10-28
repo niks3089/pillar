@@ -37,6 +37,8 @@ AUTH_TOKEN=""
 NODE_ID=""
 VERSION="latest"
 SOLANA_VERSION="stable"
+LOCAL_BINARY=""
+SKIP_TOOLCHAINS="false"
 
 GH_RELEASES="https://github.com/niks3089/pillar/releases"
 
@@ -74,6 +76,8 @@ while [[ $# -gt 0 ]]; do
         --token)                 AUTH_TOKEN="$2";            shift 2 ;;
         --node-id)               NODE_ID="$2";               shift 2 ;;
         --solana-version)        SOLANA_VERSION="$2";        shift 2 ;;
+        --binary)                LOCAL_BINARY="$2";          shift 2 ;;
+        --skip-toolchains)       SKIP_TOOLCHAINS="true";     shift ;;
         --help|-h)
             head -12 "$0" | tail -8
             exit 0
@@ -284,18 +288,24 @@ PLAN
 
 section "Downloading agent binary"
 
+DOWNLOAD_DIR=$(mktemp -d)
+if [[ -n "$LOCAL_BINARY" ]]; then
+    [[ -x "$LOCAL_BINARY" ]] || die "--binary $LOCAL_BINARY is not an executable file"
+    cp "$LOCAL_BINARY" "$DOWNLOAD_DIR/pillar-agent"
+    ok "using local agent binary $LOCAL_BINARY"
+else
 if [[ "$VERSION" == "latest" ]]; then
     DL_URL="${GH_RELEASES}/latest/download/pillar-agent-linux-amd64"
 else
     DL_URL="${GH_RELEASES}/download/pillar-agent-v${VERSION}/pillar-agent-linux-amd64"
 fi
-DOWNLOAD_DIR=$(mktemp -d)
 info "downloading from $DL_URL ..."
 if ! curl -sSfL "$DL_URL" -o "$DOWNLOAD_DIR/pillar-agent"; then
     die "failed to download pillar-agent binary from $DL_URL"
 fi
 chmod +x "$DOWNLOAD_DIR/pillar-agent"
 ok "downloaded pillar-agent binary"
+fi
 
 # ------------------------------------------------------------------------------
 # Phase 1: Preflight checks
@@ -561,6 +571,10 @@ ok "wrote $LIMITS_CONF"
 # Phase 3d: Install Solana CLI
 # ------------------------------------------------------------------------------
 
+if [[ "$SKIP_TOOLCHAINS" == "true" ]]; then
+    section "Toolchains"
+    info "--skip-toolchains: not installing Solana CLI / Rust / Go (fine for surfpool-only hosts)"
+else
 section "Solana CLI"
 
 if su - sol -c "command -v agave-validator" &>/dev/null; then
@@ -650,6 +664,8 @@ else
         warn "failed to download Go — Mithril provisioning will install it on demand"
     fi
 fi
+
+fi # SKIP_TOOLCHAINS
 
 # ------------------------------------------------------------------------------
 # Phase 3f: Generate validator keypairs
