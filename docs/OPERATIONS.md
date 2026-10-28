@@ -130,8 +130,62 @@ itself upgrades with `POST /api/upgrade-controller` (or re-run `install-controll
 - **Versions & upgrades:** the running controller version shows in the nav; click it (**↻**)
   to force an update check. When a newer controller or agent release exists, an upgrade banner
   appears.
-- **Lifecycle actions** (top of node detail): **Restart**, **Recover** (snapshot
-  recovery), **Stop**, **Delete** — disabled while a deployment is in progress.
+- **Lifecycle actions** (top of node detail): **Restart** (shown as **Start** when the node
+  is stopped), **Recover** (snapshot recovery), **Stop** (stays stopped — see below),
+  **Delete** — disabled while a deployment is in progress.
+
+### What Pillar runs on your node
+
+Everything Pillar does on a validator host is plain systemd + bash — you can inspect and
+override all of it from the shell.
+
+**systemd units**
+
+| Unit | Runs as | Restart policy | What it does |
+|---|---|---|---|
+| `pillar-agent.service` | `sol` | `Restart=always` | Health-checks the validator every 20s, ships metrics/logs to the controller, runs scripts the controller sends. |
+| `solana-validator` / `jito-validator` / `firedancer` / `frankendancer` / `mithril-validator` / `surfpool` | `sol` | `Restart=on-failure`, enabled at boot | The validator itself. Unit file: `/etc/systemd/system/<name>.service`. |
+
+Inspect with `systemctl status pillar-agent <validator-unit>` and
+`journalctl -u pillar-agent -f`. Root access is limited to the commands in
+`/etc/sudoers.d/sol-pillar`.
+
+**Who restarts the validator?** Two layers:
+
+1. **systemd** restarts it after a crash (non-zero exit), per `Restart=on-failure`.
+2. **pillar-agent** starts it if it has been down for 3 consecutive health checks (~1 min)
+   and systemd isn't running it. If the ledger is stale, it wipes the ledger and pulls a
+   fresh snapshot first. After 3 agent restarts in an hour it backs off and reports
+   `crash_looping`, and it never touches a unit that is `active`/`activating`.
+
+**Keeping it stopped: the hold file.** **Stop** writes
+`/home/sol/.pillar/validator.hold` *before* running `systemctl stop`. While that file
+exists, the agent reports the node as **stopped** and never auto-starts or recovers it.
+**Start** (the Restart button), **Recover**, **Upgrade** and **Provision** delete the hold
+file before starting the validator. If you work from the shell:
+
+```bash
+# stop and keep it stopped (same as the Stop button)
+touch /home/sol/.pillar/validator.hold && sudo systemctl stop solana-validator
+# hand control back to pillar
+rm /home/sol/.pillar/validator.hold && sudo systemctl start solana-validator
+```
+
+A bare `sudo systemctl stop` without the hold file is treated as an outage, so the agent
+starts the validator again after about a minute. To take the agent out of the picture
+entirely, run `sudo systemctl stop pillar-agent`.
+
+**Exactly what each button runs** (templates live in `controller/scripts/`; every line a
+script prints shows up in the **Agent** log tab, and its pass/fail result in the **Controller**
+tab):
+
+| Button | Commands on the host |
+|---|---|
+| Stop | write hold file → `systemctl stop <unit>` |
+| Start / Restart | `rm` hold file → `systemctl restart <unit>` |
+| Recover | `systemctl stop` → wipe ledger dir → `rm` hold file → `systemctl start` |
+| Update Validator | build/download binary → rewrite unit file → `rm` hold file → `systemctl enable --now` → restart agent |
+| Upgrade Agent | swap `pillar-agent` binary → `systemctl restart pillar-agent` |
 
 ---
 
@@ -301,4 +355,5 @@ doesn't affect agents or validators).
 | Agent fails to register, `h2 FRAME_SIZE_ERROR` | TLS scheme mismatch — agent endpoint must be `https://` when the controller has TLS. |
 | Grafana **"Dashboard not found"** | Dashboards not provisioned — ensure the JSONs are in `/var/lib/grafana/dashboards/pillar/`. |
 | Firedancer won't start | Check `fdctl configure init` (hugepages), `fs.nr_open`, and NIC AF_XDP support (or `net_provider=socket`). |
+| Validator **keeps coming back** after you stop it | Stopped with plain `systemctl stop` — the agent treats that as an outage. Use **Stop** or `touch /home/sol/.pillar/validator.hold` (see §5). |
 | Want a guaranteed-healthy node for a demo | Provision **Surfpool** — local fork, instantly healthy, no sync. |

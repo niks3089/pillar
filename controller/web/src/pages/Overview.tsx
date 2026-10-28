@@ -13,6 +13,7 @@ const STATE_BADGE_CLASSES: Record<string, string> = {
   registered: 'bg-purple-500/10 text-purple-400 border-purple-500/20',
   provisioning: 'bg-purple-500/10 text-purple-400 border-purple-500/20',
   starting_up: 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20',
+  stopped: 'bg-zinc-500/10 text-zinc-300 border-zinc-500/30',
 }
 
 function formatLastSeen(ts?: number): string {

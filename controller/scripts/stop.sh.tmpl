@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
+# Hold first so the agent never sees a stopped-but-unheld validator and restarts it.
+mkdir -p "$(dirname {{hold_file}})"
+echo "stopped via pillar at $(date -u +%Y-%m-%dT%H:%M:%SZ)" > {{hold_file}}
+echo "Wrote hold file {{hold_file}} — pillar-agent will not auto-start {{service_name}}"
 sudo systemctl stop {{service_name}}
 echo "Stopped {{service_name}}"

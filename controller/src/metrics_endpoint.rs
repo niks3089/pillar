@@ -38,7 +38,7 @@ const METRIC_HEADERS: &[(&str, &str)] = &[
     ),
     (
         "pillar_node_state",
-        "Node lifecycle state (off/starting_up/behind/healthy/recovering), one-hot per state label",
+        "Node lifecycle state (off/starting_up/behind/healthy/recovering/stopped), one-hot per state label",
     ),
     (
         "pillar_system_cpu_usage_percent",

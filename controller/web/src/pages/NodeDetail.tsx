@@ -12,7 +12,8 @@ const STATE_BADGE_CLASSES: Record<string, string> = {
   healthy: 'bg-green-500/10 text-green-400 border-green-500/20',
   unhealthy: 'bg-red-500/10 text-red-400 border-red-500/20',
   shutting_down: 'bg-orange-500/10 text-orange-400 border-orange-500/20',
-  terminated: 'bg-zinc-800 text-zinc-500 border-zinc-700'
+  terminated: 'bg-zinc-800 text-zinc-500 border-zinc-700',
+  stopped: 'bg-zinc-500/10 text-zinc-300 border-zinc-500/30'
 }
 function formatBytes(bytes: number): string {
   if (bytes === 0) return '0 B'
@@ -350,10 +351,16 @@ function NodeDetail() {
     }
   }
 
+  const isStopped = node?.lifecycle_state === 'stopped'
+
   const handleRestart = async () => {
-    if (!id || !await confirmDialog({ title: 'Restart Validator', message: 'Restart the validator on this node?', confirmLabel: 'Restart' })) return
+    const verb = isStopped ? 'Start' : 'Restart'
+    const message = isStopped
+      ? 'Start the validator on this node? This clears the stop hold, so the agent will auto-restart it again if it goes down.'
+      : 'Restart the validator on this node?'
+    if (!id || !await confirmDialog({ title: `${verb} Validator`, message, confirmLabel: verb })) return
     await restartNode(id)
-    showToast('success', 'Restart command sent.')
+    showToast('success', `${verb} command sent.`)
     refresh()
   }
 
@@ -365,7 +372,7 @@ function NodeDetail() {
   }
 
   const handleStop = async () => {
-    if (!id || !await confirmDialog({ title: 'Stop Validator', message: 'Stop the validator on this node? It will not restart automatically.', confirmLabel: 'Stop', danger: true })) return
+    if (!id || !await confirmDialog({ title: 'Stop Validator', message: 'Stop the validator on this node? Pillar writes a hold file (~sol/.pillar/validator.hold) so the agent will not auto-restart it until you click Start, Recover, or upgrade.', confirmLabel: 'Stop', danger: true })) return
     try {
       const result = await stopNode(id)
       if (result.ok) {
@@ -547,7 +554,7 @@ function NodeDetail() {
         </div>
         
         <div className="flex flex-wrap items-center gap-3">
-          <button className="px-3 py-1.5 text-sm font-medium text-zinc-300 bg-white/5 hover:bg-white/10 rounded-md border border-white/10 shadow-sm transition-all disabled:opacity-40 disabled:pointer-events-none" onClick={handleRestart} disabled={scriptActive} title="Restart Validator">Restart</button>
+          <button className="px-3 py-1.5 text-sm font-medium text-zinc-300 bg-white/5 hover:bg-white/10 rounded-md border border-white/10 shadow-sm transition-all disabled:opacity-40 disabled:pointer-events-none" onClick={handleRestart} disabled={scriptActive} title={isStopped ? 'Start Validator' : 'Restart Validator'}>{isStopped ? 'Start' : 'Restart'}</button>
           <button className="px-3 py-1.5 text-sm font-medium text-zinc-300 bg-white/5 hover:bg-white/10 rounded-md border border-white/10 shadow-sm transition-all disabled:opacity-40 disabled:pointer-events-none" onClick={handleStop} disabled={scriptActive} title="Stop Validator">Stop</button>
           <button className="px-3 py-1.5 text-sm font-medium text-zinc-300 bg-white/5 hover:bg-white/10 rounded-md border border-white/10 shadow-sm transition-all disabled:opacity-40 disabled:pointer-events-none" onClick={handleRecover} disabled={scriptActive} title="Recover from Snapshot">Recover</button>
 
