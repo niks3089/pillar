@@ -159,16 +159,17 @@ Inspect with `systemctl status pillar-agent <validator-unit>` and
    `crash_looping`, and it never touches a unit that is `active`/`activating`.
 
 **Keeping it stopped: the hold file.** **Stop** writes
-`/home/sol/.pillar/validator.hold` *before* running `systemctl stop`. While that file
+`/home/sol/.pillar/<unit>.hold` (e.g. `solana-validator.hold`) *before* running
+`systemctl stop`. While that file
 exists, the agent reports the node as **stopped** and never auto-starts or recovers it.
 **Start** (the Restart button), **Recover**, **Upgrade** and **Provision** delete the hold
 file before starting the validator. If you work from the shell:
 
 ```bash
 # stop and keep it stopped (same as the Stop button)
-touch /home/sol/.pillar/validator.hold && sudo systemctl stop solana-validator
+touch /home/sol/.pillar/solana-validator.hold && sudo systemctl stop solana-validator
 # hand control back to pillar
-rm /home/sol/.pillar/validator.hold && sudo systemctl start solana-validator
+rm /home/sol/.pillar/solana-validator.hold && sudo systemctl start solana-validator
 ```
 
 A bare `sudo systemctl stop` without the hold file is treated as an outage, so the agent
@@ -355,5 +356,5 @@ doesn't affect agents or validators).
 | Agent fails to register, `h2 FRAME_SIZE_ERROR` | TLS scheme mismatch — agent endpoint must be `https://` when the controller has TLS. |
 | Grafana **"Dashboard not found"** | Dashboards not provisioned — ensure the JSONs are in `/var/lib/grafana/dashboards/pillar/`. |
 | Firedancer won't start | Check `fdctl configure init` (hugepages), `fs.nr_open`, and NIC AF_XDP support (or `net_provider=socket`). |
-| Validator **keeps coming back** after you stop it | Stopped with plain `systemctl stop` — the agent treats that as an outage. Use **Stop** or `touch /home/sol/.pillar/validator.hold` (see §5). |
+| Validator **keeps coming back** after you stop it | Stopped with plain `systemctl stop` — the agent treats that as an outage. Use **Stop** or `touch /home/sol/.pillar/<unit>.hold` (see §5). |
 | Want a guaranteed-healthy node for a demo | Provision **Surfpool** — local fork, instantly healthy, no sync. |

@@ -46,8 +46,9 @@ export default function Login({ onLogin }: LoginProps) {
         
         <div className="w-full flex flex-col gap-4 mb-8">
           <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-medium text-zinc-400 uppercase tracking-wider">Username</label>
+            <label htmlFor="login-username" className="text-xs font-medium text-zinc-400 uppercase tracking-wider">Username</label>
             <input
+              id="login-username"
               type="text"
               className="w-full px-3 py-2.5 bg-black/40 border border-white/10 rounded-md text-zinc-100 text-sm focus:outline-none focus:border-purple-500/50 focus:ring-1 focus:ring-purple-500/50 transition-all placeholder:text-zinc-600"
               placeholder="admin"
@@ -58,8 +59,9 @@ export default function Login({ onLogin }: LoginProps) {
             />
           </div>
           <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-medium text-zinc-400 uppercase tracking-wider">Password</label>
+            <label htmlFor="login-password" className="text-xs font-medium text-zinc-400 uppercase tracking-wider">Password</label>
             <input
+              id="login-password"
               type="password"
               className="w-full px-3 py-2.5 bg-black/40 border border-white/10 rounded-md text-zinc-100 text-sm focus:outline-none focus:border-purple-500/50 focus:ring-1 focus:ring-purple-500/50 transition-all placeholder:text-zinc-600"
               placeholder="••••••••"

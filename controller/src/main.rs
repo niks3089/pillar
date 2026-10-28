@@ -127,15 +127,25 @@ async fn main() -> anyhow::Result<()> {
         .is_none()
     {
         db::set_setting(&database, "admin_username", "admin").await?;
-        let password = certs::generate_token();
+        // PILLAR_INITIAL_ADMIN_PASSWORD lets scripted installs (and the e2e suite)
+        // seed a known password; it is only read on first start.
+        let seeded = std::env::var("PILLAR_INITIAL_ADMIN_PASSWORD")
+            .ok()
+            .filter(|p| !p.is_empty());
+        let generated = seeded.is_none();
+        let password = seeded.unwrap_or_else(certs::generate_token);
         let hash = auth::hash_password(&password)
             .map_err(|e| anyhow::anyhow!("failed to hash admin password: {e}"))?;
         db::set_setting(&database, "admin_password_hash", &hash).await?;
-        tracing::warn!(
-            username = "admin",
-            password = %password,
-            "generated initial admin credentials — log in and change the password; shown only once"
-        );
+        if generated {
+            tracing::warn!(
+                username = "admin",
+                password = %password,
+                "generated initial admin credentials — log in and change the password; shown only once"
+            );
+        } else {
+            tracing::info!("seeded admin password from PILLAR_INITIAL_ADMIN_PASSWORD");
+        }
     }
 
     // Ensure auth token exists: use config value, else load from DB, else generate + persist.

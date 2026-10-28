@@ -25,8 +25,8 @@ export function useConfirm() {
 
   const confirmElement = state ? (
     <div className="fixed inset-0 z-[70] flex items-center justify-center px-4 bg-black/60 backdrop-blur-sm" onClick={() => close(false)}>
-      <div className="w-full max-w-md bg-[#15131f] border border-white/10 rounded-xl shadow-2xl p-6 flex flex-col gap-4" onClick={e => e.stopPropagation()}>
-        <h3 className="text-lg font-semibold text-zinc-100 m-0">{state.title}</h3>
+      <div role="dialog" aria-modal="true" aria-labelledby="confirm-dialog-title" className="w-full max-w-md bg-[#15131f] border border-white/10 rounded-xl shadow-2xl p-6 flex flex-col gap-4" onClick={e => e.stopPropagation()}>
+        <h3 id="confirm-dialog-title" className="text-lg font-semibold text-zinc-100 m-0">{state.title}</h3>
         <p className="text-sm text-zinc-400 m-0 whitespace-pre-wrap">{state.message}</p>
         <div className="flex items-center justify-end gap-3 mt-2">
           <button
