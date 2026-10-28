@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.9.0](https://github.com/niks3089/pillar/compare/pillar-agent-v0.8.8...pillar-agent-v0.9.0) (2026-10-28)
+
+
+### Features
+
+* **agent:** trace every script command and redact secrets ([0bcfca3](https://github.com/niks3089/pillar/commit/0bcfca30aa914ff4d9e2f4151edeb6fa183c2010))
+* show the exact commands before, during and after every action ([6a423d3](https://github.com/niks3089/pillar/commit/6a423d3dc34b8d197659572e03f5ff8abcb79525))
+
+
+### Bug Fixes
+
+* **agent:** scope the operator hold file to the validator unit ([ab6e742](https://github.com/niks3089/pillar/commit/ab6e742a916523383473b712262784d7079ac32b))
+
 ## [0.8.8](https://github.com/niks3089/pillar/compare/pillar-agent-v0.8.7...pillar-agent-v0.8.8) (2026-10-28)
 
 
