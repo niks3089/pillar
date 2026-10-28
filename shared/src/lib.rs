@@ -1,3 +1,4 @@
+pub mod redact;
 pub mod types;
 
 /// Directory holding operator hold markers (see [`hold_file`]).
