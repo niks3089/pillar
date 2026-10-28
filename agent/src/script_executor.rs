@@ -1,6 +1,7 @@
 use std::time::Duration;
 
 use pillar_shared::proto::{ExecuteScript, ScriptResult};
+use pillar_shared::redact::redact;
 use tokio::io::AsyncBufReadExt;
 
 const DEFAULT_TIMEOUT_SECS: u64 = 3600;
@@ -57,8 +58,12 @@ impl ScriptExecutor {
 
         // Spawn process with process group for clean kill
         let child = unsafe {
+            // `-x` traces every command to stderr (never stdout: `$(...)` would
+            // capture it). PS4 tags trace lines so they can be told apart from
+            // the script's own stderr.
             tokio::process::Command::new("bash")
-                .args([&script_path])
+                .args(["-x", &script_path])
+                .env("PS4", TRACE_PS4)
                 .stdout(std::process::Stdio::piped())
                 .stderr(std::process::Stdio::piped())
                 .kill_on_drop(true)
@@ -94,6 +99,7 @@ impl ScriptExecutor {
             let mut lines = tokio::io::BufReader::new(stdout_pipe).lines();
             let mut output = String::new();
             while let Ok(Some(line)) = lines.next_line().await {
+                let line = redact(&line);
                 tracing::info!(script_id = %sid, "[stdout] {}", line);
                 output.push_str(&line);
                 output.push('\n');
@@ -106,7 +112,11 @@ impl ScriptExecutor {
             let mut lines = tokio::io::BufReader::new(stderr_pipe).lines();
             let mut output = String::new();
             while let Ok(Some(line)) = lines.next_line().await {
-                tracing::info!(script_id = %sid, "[stderr] {}", line);
+                let line = redact(&line);
+                match trace_command(&line) {
+                    Some(cmd) => tracing::info!(script_id = %sid, "[cmd] {}", cmd),
+                    None => tracing::info!(script_id = %sid, "[stderr] {}", line),
+                }
                 output.push_str(&line);
                 output.push('\n');
             }
@@ -144,5 +154,26 @@ impl ScriptExecutor {
             stdout,
             stderr,
         }
+    }
+}
+
+/// Prefix bash writes before each traced command (repeated `+` for nesting).
+pub const TRACE_PS4: &str = "+pillar$ ";
+
+/// If `line` is a bash xtrace line produced with [`TRACE_PS4`], return the command.
+pub fn trace_command(line: &str) -> Option<&str> {
+    line.trim_start_matches('+').strip_prefix("pillar$ ")
+}
+
+#[cfg(test)]
+mod trace_tests {
+    use super::trace_command;
+
+    #[test]
+    fn recognises_trace_lines_at_any_nesting_depth() {
+        assert_eq!(trace_command("+pillar$ sudo systemctl stop surfpool"), Some("sudo systemctl stop surfpool"));
+        assert_eq!(trace_command("++pillar$ echo inner"), Some("echo inner"));
+        assert_eq!(trace_command("Failed to stop surfpool.service: Unit not loaded."), None);
+        assert_eq!(trace_command("+ plain xtrace without our tag"), None);
     }
 }

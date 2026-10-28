@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import { fetchNode, fetchNodeLogs, restartNode, recoverNode, deleteNode, stopNode, cancelDeployment, provisionNode, fetchVersionInfo, upgradeAgent, fetchClientReleases } from '../api'
-import type { Node, LogEntry, ProvisionRequest, VersionInfo } from '../api'
+import { fetchNode, fetchNodeLogs, restartNode, recoverNode, deleteNode, stopNode, cancelDeployment, provisionNode, fetchVersionInfo, upgradeAgent, fetchClientReleases, previewAction, fetchNodeScripts } from '../api'
+import type { Node, LogEntry, ProvisionRequest, VersionInfo, NodeAction, ScriptExecution } from '../api'
 import { useConfirm, useToast } from '../components/dialogs'
 import { copyText } from '../clipboard'
 
@@ -185,6 +185,7 @@ function NodeDetail() {
   const [showAdvanced, setShowAdvanced] = useState(false)
   const [showProvision, setShowProvision] = useState(false)
   const [versionInfo, setVersionInfo] = useState<VersionInfo | null>(null)
+  const [scripts, setScripts] = useState<ScriptExecution[]>([])
   const { confirmDialog, confirmElement } = useConfirm()
   const { showToast, toastElement } = useToast()
 
@@ -199,6 +200,7 @@ function NodeDetail() {
     } catch (err) {
       setError(String(err))
     }
+    fetchNodeScripts(id).then(setScripts).catch(() => {})
   }, [id])
 
   useEffect(() => {
@@ -337,7 +339,7 @@ function NodeDetail() {
   const handleUpgradeAgent = async () => {
     if (!id || !versionInfo?.agent_update) return
     const v = versionInfo.agent_update.version
-    if (!await confirmDialog({ title: 'Upgrade Agent', message: `Upgrade agent to v${v}?`, confirmLabel: 'Upgrade' })) return
+    if (!await confirmDialog({ title: 'Upgrade Agent', message: `Upgrade agent to v${v}?`, confirmLabel: 'Upgrade', preview: previewScript('upgrade-agent') })) return
     try {
       const result = await upgradeAgent(id)
       if (result.ok) {
@@ -353,26 +355,29 @@ function NodeDetail() {
 
   const isStopped = node?.lifecycle_state === 'stopped'
 
+  const previewScript = (action: NodeAction, body?: unknown) => () =>
+    previewAction(id!, action, body).then(r => r.script)
+
   const handleRestart = async () => {
     const verb = isStopped ? 'Start' : 'Restart'
     const message = isStopped
       ? 'Start the validator on this node? This clears the stop hold, so the agent will auto-restart it again if it goes down.'
       : 'Restart the validator on this node?'
-    if (!id || !await confirmDialog({ title: `${verb} Validator`, message, confirmLabel: verb })) return
+    if (!id || !await confirmDialog({ title: `${verb} Validator`, message, confirmLabel: verb, preview: previewScript('restart') })) return
     await restartNode(id)
     showToast('success', `${verb} command sent.`)
     refresh()
   }
 
   const handleRecover = async () => {
-    if (!id || !await confirmDialog({ title: 'Snapshot Recovery', message: 'Trigger snapshot recovery on this node? This will stop the validator and re-download a snapshot.', confirmLabel: 'Recover', danger: true })) return
+    if (!id || !await confirmDialog({ title: 'Snapshot Recovery', message: 'Trigger snapshot recovery on this node? This will stop the validator and re-download a snapshot.', confirmLabel: 'Recover', danger: true, preview: previewScript('recover') })) return
     await recoverNode(id)
     showToast('success', 'Recovery command sent.')
     refresh()
   }
 
   const handleStop = async () => {
-    if (!id || !await confirmDialog({ title: 'Stop Validator', message: 'Stop the validator on this node? Pillar writes a hold file (~sol/.pillar/<unit>.hold) so the agent will not auto-restart it until you click Start, Recover, or upgrade.', confirmLabel: 'Stop', danger: true })) return
+    if (!id || !await confirmDialog({ title: 'Stop Validator', message: 'Stop the validator on this node? Pillar writes a hold file (~sol/.pillar/<unit>.hold) so the agent will not auto-restart it until you click Start, Recover, or upgrade.', confirmLabel: 'Stop', danger: true, preview: previewScript('stop') })) return
     try {
       const result = await stopNode(id)
       if (result.ok) {
@@ -387,7 +392,7 @@ function NodeDetail() {
   }
 
   const handleCancel = async () => {
-    if (!id || !await confirmDialog({ title: 'Cancel Deployment', message: 'Cancel the in-progress deployment? The validator will be stopped.', confirmLabel: 'Cancel Deployment', danger: true })) return
+    if (!id || !await confirmDialog({ title: 'Cancel Deployment', message: 'Cancel the in-progress deployment? The validator will be stopped.', confirmLabel: 'Cancel Deployment', danger: true, preview: previewScript('cancel') })) return
     try {
       const result = await cancelDeployment(id)
       if (result.ok) {
@@ -425,13 +430,6 @@ function NodeDetail() {
       showToast('error', 'Client, version, and cluster are required.')
       return
     }
-    if (!await confirmDialog({
-      title: hasConfig ? 'Update Validator' : 'Install Validator',
-      message: `Install ${provClient} ${provVersion} on ${provCluster} for this node?`,
-      confirmLabel: 'Install',
-    })) return
-
-    setProvSubmitting(true)
     try {
       const validatorFlags = parseFlags(provValidatorFlags)
       const envVars = parseEnvVars(provEnvironmentVars)
@@ -471,6 +469,13 @@ function NodeDetail() {
         log_rate_limit_disable: provLogRateLimitDisable,
         start_limit_disable: provStartLimitDisable,
       }
+      if (!await confirmDialog({
+        title: hasConfig ? 'Update Validator' : 'Install Validator',
+        message: `Install ${provClient} ${provVersion} on ${provCluster} for this node?`,
+        confirmLabel: 'Install',
+        preview: previewScript('provision', config),
+      })) return
+      setProvSubmitting(true)
       let result
       try {
         result = await provisionNode(id, config)
@@ -952,8 +957,8 @@ function NodeDetail() {
                   </div>
 
                   <div className="flex flex-col gap-1.5">
-                    <label className="text-xs font-medium text-zinc-400 uppercase tracking-wider">Environment Variables <span className="lowercase text-zinc-500 font-normal">(KEY=VALUE)</span></label>
-                    <textarea className="w-full px-3 py-2 bg-black/40 border border-white/10 rounded-md text-zinc-100 text-sm font-mono focus:outline-none focus:border-purple-500/50 transition-all placeholder:text-zinc-600 resize-y" rows={2} value={provEnvironmentVars} onChange={e => setProvEnvironmentVars(e.target.value)} placeholder="SOLANA_METRICS_CONFIG=host=https://metrics.solana.com:8086,db=mainnet-beta" />
+                    <label htmlFor="prov-env-vars" className="text-xs font-medium text-zinc-400 uppercase tracking-wider">Environment Variables <span className="lowercase text-zinc-500 font-normal">(KEY=VALUE)</span></label>
+                    <textarea id="prov-env-vars" className="w-full px-3 py-2 bg-black/40 border border-white/10 rounded-md text-zinc-100 text-sm font-mono focus:outline-none focus:border-purple-500/50 transition-all placeholder:text-zinc-600 resize-y" rows={2} value={provEnvironmentVars} onChange={e => setProvEnvironmentVars(e.target.value)} placeholder="SOLANA_METRICS_CONFIG=host=https://metrics.solana.com:8086,db=mainnet-beta" />
                   </div>
 
                   <div className="flex flex-col gap-1.5">
@@ -973,6 +978,8 @@ function NodeDetail() {
           </div>
         </div>
       )}
+
+      <ActivityPanel scripts={scripts} />
 
       {/* Logs */}
       <div className="bg-[#15131f] border border-white/10 rounded-xl overflow-hidden flex flex-col h-[500px] shadow-sm">
@@ -1038,3 +1045,59 @@ function NodeDetail() {
 }
 
 export default NodeDetail
+
+function ActivityPanel({ scripts }: { scripts: ScriptExecution[] }) {
+  return (
+    <section aria-labelledby="activity-heading" className="bg-[#15131f] border border-white/10 rounded-xl p-6 shadow-sm flex flex-col gap-4">
+      <div>
+        <h2 id="activity-heading" className="text-lg font-semibold text-zinc-100 m-0">Activity</h2>
+        <p className="text-sm text-zinc-400 mt-1 m-0">Every action Pillar ran on this node: the exact script, its result, and its output. Secret values are masked.</p>
+      </div>
+      {scripts.length === 0 ? (
+        <p className="text-sm text-zinc-500 m-0">No actions yet.</p>
+      ) : (
+        <ul className="flex flex-col gap-2 m-0 p-0 list-none">
+          {scripts.map(sc => <ActivityRow key={sc.script_id} sc={sc} />)}
+        </ul>
+      )}
+    </section>
+  )
+}
+
+function activityStatus(sc: ScriptExecution): { label: string; cls: string } {
+  if (sc.completed_at == null) return { label: 'running', cls: 'text-blue-400 border-blue-500/20 bg-blue-500/10' }
+  if (sc.timed_out) return { label: 'timed out', cls: 'text-red-400 border-red-500/20 bg-red-500/10' }
+  if (sc.exit_code === 0) return { label: 'succeeded', cls: 'text-green-400 border-green-500/20 bg-green-500/10' }
+  return { label: `failed (exit ${sc.exit_code})`, cls: 'text-red-400 border-red-500/20 bg-red-500/10' }
+}
+
+function ActivityRow({ sc }: { sc: ScriptExecution }) {
+  const status = activityStatus(sc)
+  const when = new Date(sc.initiated_at * 1000).toLocaleString()
+  const blocks: [string, string | undefined][] = [
+    ['Script', sc.script],
+    ['Commands & errors (stderr)', sc.stderr],
+    ['Output (stdout)', sc.stdout],
+  ]
+  return (
+    <li>
+      <details className="group bg-black/20 border border-white/5 rounded-lg">
+        <summary className="flex items-center gap-3 px-4 py-2.5 cursor-pointer text-sm">
+          <span className="font-medium text-zinc-200">{sc.description || sc.script_id}</span>
+          <span className={`px-2 py-0.5 text-[11px] font-medium rounded border ${status.cls}`}>{status.label}</span>
+          <span className="ml-auto text-xs text-zinc-500">{when}</span>
+        </summary>
+        <div className="flex flex-col gap-3 px-4 pb-4">
+          {sc.error && <p className="text-xs text-red-400 m-0 whitespace-pre-wrap">{sc.error}</p>}
+          {blocks.filter(([, body]) => body && body.trim()).map(([title, body]) => (
+            <div key={title} className="flex flex-col gap-1">
+              <span className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">{title}</span>
+              <pre aria-label={title} className="max-h-72 overflow-auto m-0 p-3 text-[11px] leading-relaxed font-mono text-zinc-300 bg-black/40 border border-white/10 rounded-md whitespace-pre">{body}</pre>
+            </div>
+          ))}
+          {!sc.script && <p className="text-xs text-zinc-500 m-0">Script not recorded (dispatched by an older controller).</p>}
+        </div>
+      </details>
+    </li>
+  )
+}

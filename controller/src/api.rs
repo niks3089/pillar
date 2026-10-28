@@ -64,6 +64,7 @@ pub fn router(state: ApiState) -> Router {
         .route("/api/nodes/{id}", get(get_node).delete(delete_node))
         .route("/api/nodes/{id}/logs", get(node_logs))
         .route("/api/nodes/{id}/logs/stream", get(node_logs_stream))
+        .route("/api/nodes/{id}/scripts", get(node_scripts))
         .route("/api/nodes/{id}/restart", post(restart_node))
         .route("/api/nodes/{id}/recover", post(recover_node))
         .route("/api/nodes/{id}/provision", post(provision_node))
@@ -198,6 +199,62 @@ fn wrap_script(script: ExecuteScript) -> ControllerCommand {
     ControllerCommand {
         command: Some(controller_command::Command::Execute(script)),
     }
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct DispatchQuery {
+    /// Render and return the script without sending it ("Show commands").
+    #[serde(default)]
+    dry_run: bool,
+}
+
+#[derive(Serialize)]
+struct ScriptPreview {
+    ok: bool,
+    description: String,
+    script: String,
+}
+
+fn script_preview(exec: &ExecuteScript) -> Response {
+    Json(ScriptPreview {
+        ok: true,
+        description: exec.description.clone(),
+        script: pillar_shared::redact::redact(&exec.script).into_owned(),
+    })
+    .into_response()
+}
+
+/// Send a script to a node and record it (redacted) in the node's history.
+/// Recorded before sending so a fast result can never race the insert.
+async fn dispatch_script(state: &ApiState, id: &str, exec: ExecuteScript) -> Result<(), String> {
+    let script_id = exec.script_id.clone();
+    let recorded = pillar_shared::redact::redact(&exec.script).into_owned();
+    if let Err(e) = db::insert_script_execution(
+        &state.db,
+        &script_id,
+        id,
+        &exec.description,
+        &recorded,
+        exec.timeout_secs,
+    )
+    .await
+    {
+        tracing::warn!(error = %e, "failed to record script execution");
+    }
+    if let Err(e) = state.registry.send_command(id, wrap_script(exec)).await {
+        let _ = db::complete_script_execution(
+            &state.db,
+            &script_id,
+            -1,
+            false,
+            &format!("not delivered: {e}"),
+            "",
+            "",
+        )
+        .await;
+        return Err(e);
+    }
+    Ok(())
 }
 
 /// Emit a controller-originated log entry into the node's broadcast channel and persist to DB.
@@ -391,7 +448,37 @@ async fn node_logs_stream(
     }
 }
 
-async fn restart_node(State(state): State<ApiState>, Path(id): Path<String>) -> impl IntoResponse {
+#[derive(Debug, Deserialize)]
+struct ScriptsQuery {
+    #[serde(default = "default_scripts_limit")]
+    limit: u32,
+}
+
+fn default_scripts_limit() -> u32 {
+    20
+}
+
+/// Every action dispatched to the node: the exact (redacted) script, result and output.
+async fn node_scripts(
+    State(state): State<ApiState>,
+    Path(id): Path<String>,
+    Query(q): Query<ScriptsQuery>,
+) -> Response {
+    match db::list_script_executions(&state.db, &id, q.limit.min(100)).await {
+        Ok(rows) => Json(rows).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"error": format!("db error: {e}")})),
+        )
+            .into_response(),
+    }
+}
+
+async fn restart_node(
+    State(state): State<ApiState>,
+    Path(id): Path<String>,
+    Query(q): Query<DispatchQuery>,
+) -> Response {
     let service_name = get_service_name_for_node(&state.db, &id)
         .await
         .unwrap_or_else(|| "solana-validator".to_string());
@@ -400,14 +487,17 @@ async fn restart_node(State(state): State<ApiState>, Path(id): Path<String>) -> 
     vars.insert("service_name".to_string(), service_name);
 
     let script = templates::render(templates::scripts::RESTART, &vars);
-    let cmd = wrap_script(ExecuteScript {
+    let exec = ExecuteScript {
         script_id: generate_script_id(),
         script,
         description: "Restart validator".to_string(),
         timeout_secs: 60,
-    });
+    };
+    if q.dry_run {
+        return script_preview(&exec);
+    }
 
-    match state.registry.send_command(&id, cmd).await {
+    match dispatch_script(&state, &id, exec).await {
         Ok(()) => {
             emit_controller_log(
                 &state.registry,
@@ -434,7 +524,11 @@ async fn restart_node(State(state): State<ApiState>, Path(id): Path<String>) -> 
     }
 }
 
-async fn recover_node(State(state): State<ApiState>, Path(id): Path<String>) -> impl IntoResponse {
+async fn recover_node(
+    State(state): State<ApiState>,
+    Path(id): Path<String>,
+    Query(q): Query<DispatchQuery>,
+) -> Response {
     let service_name = get_service_name_for_node(&state.db, &id)
         .await
         .unwrap_or_else(|| "solana-validator".to_string());
@@ -447,14 +541,17 @@ async fn recover_node(State(state): State<ApiState>, Path(id): Path<String>) -> 
     vars.insert("ledger_path".to_string(), ledger_path);
 
     let script = templates::render(templates::scripts::RECOVER, &vars);
-    let cmd = wrap_script(ExecuteScript {
+    let exec = ExecuteScript {
         script_id: generate_script_id(),
         script,
         description: "Recovery: stop, wipe ledger, restart".to_string(),
         timeout_secs: 300,
-    });
+    };
+    if q.dry_run {
+        return script_preview(&exec);
+    }
 
-    match state.registry.send_command(&id, cmd).await {
+    match dispatch_script(&state, &id, exec).await {
         Ok(()) => {
             emit_controller_log(
                 &state.registry,
@@ -481,7 +578,11 @@ async fn recover_node(State(state): State<ApiState>, Path(id): Path<String>) -> 
     }
 }
 
-async fn stop_node(State(state): State<ApiState>, Path(id): Path<String>) -> impl IntoResponse {
+async fn stop_node(
+    State(state): State<ApiState>,
+    Path(id): Path<String>,
+    Query(q): Query<DispatchQuery>,
+) -> Response {
     let service_name = get_service_name_for_node(&state.db, &id)
         .await
         .unwrap_or_else(|| "solana-validator".to_string());
@@ -490,14 +591,17 @@ async fn stop_node(State(state): State<ApiState>, Path(id): Path<String>) -> imp
     vars.insert("service_name".to_string(), service_name);
 
     let script = templates::render(templates::scripts::STOP, &vars);
-    let cmd = wrap_script(ExecuteScript {
+    let exec = ExecuteScript {
         script_id: generate_script_id(),
         script,
         description: "Stop validator".to_string(),
         timeout_secs: 60,
-    });
+    };
+    if q.dry_run {
+        return script_preview(&exec);
+    }
 
-    match state.registry.send_command(&id, cmd).await {
+    match dispatch_script(&state, &id, exec).await {
         Ok(()) => {
             if let Err(e) = db::set_lifecycle_state(&state.db, &id, "stopped").await {
                 tracing::warn!(error = %e, "failed to set lifecycle_state to stopped");
@@ -523,7 +627,8 @@ async fn stop_node(State(state): State<ApiState>, Path(id): Path<String>) -> imp
 async fn cancel_deployment(
     State(state): State<ApiState>,
     Path(id): Path<String>,
-) -> impl IntoResponse {
+    Query(q): Query<DispatchQuery>,
+) -> Response {
     // Only allow cancel when node is actively deploying
     match db::get_lifecycle_state(&state.db, &id).await {
         Ok(Some(s)) if s == "provisioning" || s == "starting_up" => {}
@@ -569,14 +674,17 @@ async fn cancel_deployment(
     vars.insert("service_name".to_string(), service_name);
 
     let script = templates::render(templates::scripts::STOP, &vars);
-    let cmd = wrap_script(ExecuteScript {
+    let exec = ExecuteScript {
         script_id: generate_script_id(),
         script,
         description: "Cancel deployment: stop validator".to_string(),
         timeout_secs: 60,
-    });
+    };
+    if q.dry_run {
+        return script_preview(&exec);
+    }
 
-    match state.registry.send_command(&id, cmd).await {
+    match dispatch_script(&state, &id, exec).await {
         Ok(()) => {
             if let Err(e) = db::set_lifecycle_state(&state.db, &id, "registered").await {
                 tracing::warn!(error = %e, "failed to reset lifecycle_state to registered");
@@ -1157,8 +1265,9 @@ async fn update_node_config(
 async fn provision_node(
     State(state): State<ApiState>,
     Path(id): Path<String>,
+    Query(q): Query<DispatchQuery>,
     Json(mut req): Json<ProvisionRequest>,
-) -> impl IntoResponse {
+) -> Response {
     // entrypoint4/5.testnet no longer exist in DNS; agave refuses to start on an
     // unresolvable entrypoint, so saved configs that still carry them crash-loop.
     req.entrypoints
@@ -1174,6 +1283,55 @@ async fn provision_node(
             }),
         )
             .into_response();
+    }
+
+    // Select template by client
+    let template = match templates::provision_template(&req.client) {
+        Ok(t) => t,
+        Err(e) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(CommandResponse {
+                    ok: false,
+                    message: e,
+                }),
+            )
+                .into_response();
+        }
+    };
+
+    let log_msg = format!(
+        "Provision command sent: {} {} ({})",
+        req.client, req.version, req.cluster
+    );
+    let description = format!(
+        "Provision {} v{} on {}",
+        req.client, req.version, req.cluster
+    );
+
+    // Save provision config JSON for the node record
+    let provision_json = serde_json::to_string(&req).unwrap_or_default();
+
+    let prev_client = db::get_provision_config(&state.db, &id)
+        .await
+        .ok()
+        .flatten()
+        .and_then(|j| serde_json::from_str::<serde_json::Value>(&j).ok())
+        .and_then(|v| v.get("client").and_then(|c| c.as_str()).map(String::from));
+
+    // Build template variables and render script
+    let vars = build_provision_vars(&req, prev_client.as_deref());
+    let script = templates::render(template, &vars);
+    let script_id = generate_script_id();
+
+    let exec = ExecuteScript {
+        script_id: script_id.clone(),
+        script,
+        description: description.clone(),
+        timeout_secs: db::MAX_SCRIPT_RUNTIME_SECS as u32,
+    };
+    if q.dry_run {
+        return script_preview(&exec);
     }
 
     // lifecycle_state can't guard this — agent status reports overwrite it within seconds
@@ -1228,53 +1386,7 @@ async fn provision_node(
         _ => {} // registered, healthy, offline, etc. — allow provisioning
     }
 
-    // Select template by client
-    let template = match templates::provision_template(&req.client) {
-        Ok(t) => t,
-        Err(e) => {
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(CommandResponse {
-                    ok: false,
-                    message: e,
-                }),
-            )
-                .into_response();
-        }
-    };
-
-    let log_msg = format!(
-        "Provision command sent: {} {} ({})",
-        req.client, req.version, req.cluster
-    );
-    let description = format!(
-        "Provision {} v{} on {}",
-        req.client, req.version, req.cluster
-    );
-
-    // Save provision config JSON for the node record
-    let provision_json = serde_json::to_string(&req).unwrap_or_default();
-
-    let prev_client = db::get_provision_config(&state.db, &id)
-        .await
-        .ok()
-        .flatten()
-        .and_then(|j| serde_json::from_str::<serde_json::Value>(&j).ok())
-        .and_then(|v| v.get("client").and_then(|c| c.as_str()).map(String::from));
-
-    // Build template variables and render script
-    let vars = build_provision_vars(&req, prev_client.as_deref());
-    let script = templates::render(template, &vars);
-    let script_id = generate_script_id();
-
-    let cmd = wrap_script(ExecuteScript {
-        script_id: script_id.clone(),
-        script,
-        description: description.clone(),
-        timeout_secs: db::MAX_SCRIPT_RUNTIME_SECS as u32,
-    });
-
-    match state.registry.send_command(&id, cmd).await {
+    match dispatch_script(&state, &id, exec).await {
         Ok(()) => {
             // Mark node as provisioning in the database
             if let Err(e) = db::set_lifecycle_state(&state.db, &id, "provisioning").await {
@@ -1286,12 +1398,6 @@ async fn provision_node(
                     .await
             {
                 tracing::warn!(error = %e, "failed to store provision config");
-            }
-            // Record script execution
-            if let Err(e) =
-                db::insert_script_execution(&state.db, &script_id, &id, &description).await
-            {
-                tracing::warn!(error = %e, "failed to record script execution");
             }
             emit_controller_log(&state.registry, &state.db, &id, "info", &log_msg).await;
             Json(CommandResponse {
@@ -1334,8 +1440,9 @@ struct UpgradeRequest {
 async fn upgrade_node(
     State(state): State<ApiState>,
     Path(id): Path<String>,
+    Query(q): Query<DispatchQuery>,
     Json(req): Json<UpgradeRequest>,
-) -> impl IntoResponse {
+) -> Response {
     let log_msg = format!(
         "Upgrade command sent: {} v{} ({})",
         req.binary_name, req.version, req.reason
@@ -1355,14 +1462,17 @@ async fn upgrade_node(
     let script = templates::render(templates::scripts::UPGRADE_VALIDATOR, &vars);
     let description = format!("Upgrade {} to v{}", req.binary_name, req.version);
 
-    let cmd = wrap_script(ExecuteScript {
+    let exec = ExecuteScript {
         script_id: generate_script_id(),
         script,
         description,
         timeout_secs: 3600,
-    });
+    };
+    if q.dry_run {
+        return script_preview(&exec);
+    }
 
-    match state.registry.send_command(&id, cmd).await {
+    match dispatch_script(&state, &id, exec).await {
         Ok(()) => {
             emit_controller_log(&state.registry, &state.db, &id, "info", &log_msg).await;
             Json(CommandResponse {
@@ -1726,7 +1836,11 @@ rm -rf "{staging}"
     .into_response()
 }
 
-async fn upgrade_agent(State(state): State<ApiState>, Path(id): Path<String>) -> impl IntoResponse {
+async fn upgrade_agent(
+    State(state): State<ApiState>,
+    Path(id): Path<String>,
+    Query(q): Query<DispatchQuery>,
+) -> Response {
     let info = state.update_info.read().await;
     let update = match &info.agent_update {
         Some(u) => u.clone(),
@@ -1752,20 +1866,18 @@ async fn upgrade_agent(State(state): State<ApiState>, Path(id): Path<String>) ->
     let description = format!("Upgrade agent to v{}", update.version);
     let script_id = generate_script_id();
 
-    let cmd = wrap_script(ExecuteScript {
+    let exec = ExecuteScript {
         script_id: script_id.clone(),
         script,
         description: description.clone(),
         timeout_secs: 300,
-    });
+    };
+    if q.dry_run {
+        return script_preview(&exec);
+    }
 
-    match state.registry.send_command(&id, cmd).await {
+    match dispatch_script(&state, &id, exec).await {
         Ok(()) => {
-            if let Err(e) =
-                db::insert_script_execution(&state.db, &script_id, &id, &description).await
-            {
-                tracing::warn!(error = %e, "failed to record script execution");
-            }
             emit_controller_log(
                 &state.registry,
                 &state.db,

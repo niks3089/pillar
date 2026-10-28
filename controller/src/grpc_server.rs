@@ -289,7 +289,13 @@ impl PillarController for GrpcServer {
             } else {
                 &result.stdout
             };
-            let lines: Vec<&str> = source.trim().lines().collect();
+            // Agents >= 0.9 interleave `+pillar$ cmd` xtrace lines into stderr;
+            // the summary should show the error, not the command trail.
+            let lines: Vec<&str> = source
+                .trim()
+                .lines()
+                .filter(|l| !l.trim_start_matches('+').starts_with("pillar$ "))
+                .collect();
             let start = lines.len().saturating_sub(10);
             lines[start..].join("\n")
         };
@@ -300,6 +306,8 @@ impl PillarController for GrpcServer {
             result.exit_code,
             result.timed_out,
             &failure_detail,
+            &pillar_shared::redact::redact(&result.stdout),
+            &pillar_shared::redact::redact(&result.stderr),
         )
         .await
         {
