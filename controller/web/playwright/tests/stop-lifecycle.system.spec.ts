@@ -48,6 +48,21 @@ async function confirm(page: Page, title: string, button: string) {
   await dialog.getByRole('button', { name: button, exact: true }).click()
 }
 
+interface Execution {
+  description?: string
+  exit_code?: number
+  completed_at?: number
+  script?: string
+  stdout?: string
+  stderr?: string
+}
+
+async function latestExecution(page: Page, description: RegExp): Promise<Execution | undefined> {
+  const res = await page.request.get(`/api/nodes/${NODE_ID}/scripts`)
+  const rows: Execution[] = await res.json()
+  return rows.find(r => description.test(r.description ?? ''))
+}
+
 async function surfpoolVersion(page: Page): Promise<string> {
   if (e2eEnv.surfpoolVersion) return e2eEnv.surfpoolVersion
   const res = await page.request.get('/api/client-releases/surfpool')
@@ -90,6 +105,11 @@ test.describe.serial('validator stop/start lifecycle on a real node', () => {
 
     await expectState(page, 'healthy', 8 * 60_000)
     expect(node.unitState(UNIT)).toBe('active')
+
+    const provision = await latestExecution(page, /^Provision surfpool/)
+    expect(provision?.exit_code).toBe(0)
+    expect(provision?.script).toContain(`sudo systemctl enable --now ${UNIT}`)
+    expect(provision?.stderr).toContain(`+pillar$ sudo systemctl enable --now ${UNIT}`)
     await page.reload()
     await expect(page.getByTestId('lifecycle-state')).toHaveText('healthy')
   })
@@ -97,7 +117,22 @@ test.describe.serial('validator stop/start lifecycle on a real node', () => {
   test('Stop keeps the validator down, even across an agent restart', async ({ page }) => {
     await page.goto(`/nodes/${NODE_ID}`)
     await page.getByRole('button', { name: 'Stop', exact: true }).click()
+
+    // What the operator is shown before confirming...
+    const dialog = page.getByRole('dialog', { name: 'Stop Validator' })
+    await dialog.getByRole('button', { name: 'Show commands' }).click()
+    const preview = await dialog.getByLabel('Commands to run').innerText()
+    expect(preview).toContain(`sudo systemctl stop ${UNIT}`)
     await confirm(page, 'Stop Validator', 'Stop')
+
+    // ...is exactly what was recorded, and every command shows up as it ran.
+    await expect.poll(async () => (await latestExecution(page, /^Stop validator$/))?.completed_at, { timeout: 60_000 })
+      .toBeTruthy()
+    const stop = (await latestExecution(page, /^Stop validator$/))!
+    expect(stop.exit_code).toBe(0)
+    expect(stop.script?.trim()).toBe(preview.trim())
+    expect(stop.stderr).toContain(`+pillar$ sudo systemctl stop ${UNIT}`)
+    expect(node.journal('pillar-agent', 400)).toContain(`[cmd] sudo systemctl stop ${UNIT}`)
 
     await expectState(page, 'stopped', 90_000)
     expect(node.fileExists(HOLD)).toBe(true)
@@ -109,6 +144,8 @@ test.describe.serial('validator stop/start lifecycle on a real node', () => {
     await page.reload()
     await expect(page.getByTestId('lifecycle-state')).toHaveText('stopped')
     await expect(page.getByRole('button', { name: 'Start', exact: true })).toBeVisible()
+    const activity = page.getByRole('region', { name: 'Activity' })
+    await expect(activity.getByRole('listitem').filter({ hasText: 'Stop validator' }).first()).toContainText('succeeded')
   })
 
   test('Start clears the hold and the validator returns to healthy', async ({ page }) => {
