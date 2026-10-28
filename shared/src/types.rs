@@ -10,6 +10,9 @@ pub enum NodeState {
     Behind,
     Healthy,
     Recovering,
+    /// Operator stopped the validator on purpose (hold file present) — the
+    /// agent will not auto-start it.
+    Stopped,
 }
 
 impl NodeState {
@@ -19,6 +22,7 @@ impl NodeState {
         NodeState::Behind,
         NodeState::Healthy,
         NodeState::Recovering,
+        NodeState::Stopped,
     ];
 
     pub fn as_str(&self) -> &str {
@@ -28,6 +32,7 @@ impl NodeState {
             NodeState::Behind => "behind",
             NodeState::Healthy => "healthy",
             NodeState::Recovering => "recovering",
+            NodeState::Stopped => "stopped",
         }
     }
 }

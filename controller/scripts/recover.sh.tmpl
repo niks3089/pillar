@@ -17,5 +17,6 @@ else
 fi
 
 # Restart the validator (it will re-sync from snapshot)
+rm -f {{hold_file}}  # clear operator hold (see Stop)
 sudo systemctl start {{service_name}}
 echo "=== Recovery complete, validator restarting ==="

@@ -733,6 +733,7 @@ fn map_state_to_lifecycle(state: &str) -> &str {
         "behind" => "behind",
         "healthy" => "healthy",
         "recovering" => "recovering",
+        "stopped" => "stopped",
         _ => state,
     }
 }

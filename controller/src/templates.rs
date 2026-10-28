@@ -2,8 +2,9 @@ use std::collections::HashMap;
 
 /// Simple `{{placeholder}}` template renderer.
 /// Replaces all occurrences of `{{key}}` with the corresponding value from `vars`.
+/// `{{hold_file}}` is always available and resolves to [`pillar_shared::HOLD_FILE`].
 pub fn render(template: &str, vars: &HashMap<String, String>) -> String {
-    let mut result = template.to_string();
+    let mut result = template.replace("{{hold_file}}", pillar_shared::HOLD_FILE);
     for (key, value) in vars {
         result = result.replace(&format!("{{{{{key}}}}}"), value);
     }
@@ -291,6 +292,48 @@ mod tests {
         let mut vars = HashMap::new();
         vars.insert("known".to_string(), "yes".to_string());
         assert_eq!(render(template, &vars), "yes and {{unknown}}");
+    }
+
+    #[test]
+    fn stop_writes_hold_before_stopping() {
+        let out = render(scripts::STOP, &HashMap::new());
+        let hold = out
+            .find(pillar_shared::HOLD_FILE)
+            .expect("stop must write hold file");
+        let stop = out.find("systemctl stop").expect("stop must stop the unit");
+        assert!(
+            hold < stop,
+            "hold file must be written before systemctl stop"
+        );
+    }
+
+    #[test]
+    fn starting_scripts_clear_hold_before_starting() {
+        let starters = [
+            scripts::RESTART,
+            scripts::RECOVER,
+            scripts::UPGRADE_VALIDATOR,
+            scripts::PROVISION_AGAVE,
+            scripts::PROVISION_JITO,
+            scripts::PROVISION_FIREDANCER,
+            scripts::PROVISION_FRANKENDANCER,
+            scripts::PROVISION_SURFPOOL,
+            scripts::PROVISION_MITHRIL,
+        ];
+        let clear = format!("rm -f {}", pillar_shared::HOLD_FILE);
+        for tmpl in starters {
+            let out = render(tmpl, &HashMap::new());
+            let rm = out.find(&clear).expect("script must clear the hold file");
+            let start = ["systemctl start", "systemctl restart {{", "enable --now"]
+                .iter()
+                .filter_map(|p| out.rfind(p))
+                .max()
+                .expect("script must start the unit");
+            assert!(
+                rm < start,
+                "hold must be cleared before the validator starts"
+            );
+        }
     }
 
     #[test]

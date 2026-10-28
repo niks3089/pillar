@@ -42,6 +42,8 @@ pub struct Reconciler {
     last_check_duration_secs: f64,
     consecutive_off_count: usize,
     executing_script: bool,
+    /// True while the operator hold file exists (validator stopped on purpose).
+    held: bool,
 
     // Self-health counters
     started_at_unix_secs: i64,
@@ -91,6 +93,7 @@ impl Reconciler {
             last_check_duration_secs: 0.0,
             consecutive_off_count: 0,
             executing_script: false,
+            held: false,
             started_at_unix_secs: chrono::Utc::now().timestamp(),
             reconcile_count: 0,
             health_check_error_count: 0,
@@ -224,6 +227,29 @@ impl Reconciler {
             self.consecutive_off_count = 0;
         }
 
+        // 1b. Operator hold: Stop (or a manual `touch`) writes the hold file.
+        // While it exists the validator stays down — no auto-start, no recovery.
+        let held = std::path::Path::new(pillar_shared::HOLD_FILE).exists();
+        if held != self.held {
+            self.held = held;
+            if held {
+                tracing::info!(
+                    hold_file = pillar_shared::HOLD_FILE,
+                    "validator held stopped by operator — auto-restart disabled until \
+                     Restart/Recover/Upgrade/Provision runs or the hold file is removed"
+                );
+            } else {
+                tracing::info!(
+                    hold_file = pillar_shared::HOLD_FILE,
+                    "operator hold cleared — auto-restart re-enabled"
+                );
+            }
+        }
+        if held && health.state == NodeState::Off {
+            health.state = NodeState::Stopped;
+            self.consecutive_off_count = 0;
+        }
+
         // 2. Handle state transition — don't transition to Off until consecutive threshold met
         let effective_state = if health.state == NodeState::Off
             && self.consecutive_off_count < self.config.health.consecutive_off_threshold
@@ -342,6 +368,11 @@ impl Reconciler {
     }
 
     async fn attempt_recovery(&mut self) {
+        if self.held {
+            tracing::debug!("operator hold active, skipping recovery");
+            return;
+        }
+
         if self.executing_script {
             tracing::info!("script execution in progress, skipping recovery");
             return;

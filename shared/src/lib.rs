@@ -1,5 +1,11 @@
 pub mod types;
 
+/// Marker written by the Stop action. While it exists the agent will not
+/// auto-start the validator; Restart / Recover / Upgrade / Provision remove it.
+/// Operators can create or delete it by hand (`touch` / `rm`) to get the same
+/// effect from the shell.
+pub const HOLD_FILE: &str = "/home/sol/.pillar/validator.hold";
+
 pub mod proto {
     include!(concat!(env!("OUT_DIR"), "/pillar.rs"));
 }

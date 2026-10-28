@@ -12,6 +12,7 @@ echo "{{sha256}}  $STAGING/binary" | sha256sum -c
 # Stop, swap, restart
 sudo systemctl stop {{service_name}} 2>/dev/null || true
 sudo install -m 755 "$STAGING/binary" {{binary_dest}}
+rm -f {{hold_file}}  # clear operator hold (see Stop)
 sudo systemctl restart {{service_name}}
 
 rm -rf "$STAGING"

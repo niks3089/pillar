@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
 set -euo pipefail
+rm -f {{hold_file}}  # clear operator hold (see Stop)
 sudo systemctl restart {{service_name}}
 echo "Restarted {{service_name}}"
