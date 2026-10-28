@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.17.0](https://github.com/niks3089/pillar/compare/pillar-controller-v0.16.1...pillar-controller-v0.17.0) (2026-10-28)
+
+
+### Features
+
+* **controller:** show commands before, during and after every action ([48b3282](https://github.com/niks3089/pillar/commit/48b3282bd6d3d394e225f8cfe970c3615a42a86e))
+* show the exact commands before, during and after every action ([6a423d3](https://github.com/niks3089/pillar/commit/6a423d3dc34b8d197659572e03f5ff8abcb79525))
+
+
+### Bug Fixes
+
+* **controller:** per-unit hold file, seedable admin password, accessible forms ([be13e2d](https://github.com/niks3089/pillar/commit/be13e2db990de2632a9584a5bd8459fb41cbbf70))
+
 ## [0.16.1](https://github.com/niks3089/pillar/compare/pillar-controller-v0.16.0...pillar-controller-v0.16.1) (2026-10-28)
 
 
