@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.8.8](https://github.com/niks3089/pillar/compare/pillar-agent-v0.8.7...pillar-agent-v0.8.8) (2026-10-28)
+
+
+### Bug Fixes
+
+* **agent:** don't auto-restart a validator the operator stopped ([34f5af3](https://github.com/niks3089/pillar/commit/34f5af360b1ef489b6d1d098c312d0807c201d62))
+* make Stop stick (operator hold file) + document what runs on the node ([4c774c0](https://github.com/niks3089/pillar/commit/4c774c063e7fc91cce2cfc7fc531ef5b3d1a9617))
+
 ## [0.8.7](https://github.com/niks3089/pillar/compare/pillar-agent-v0.8.6...pillar-agent-v0.8.7) (2026-07-30)
 
 
