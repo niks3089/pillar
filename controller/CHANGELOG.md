@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.16.1](https://github.com/niks3089/pillar/compare/pillar-controller-v0.16.0...pillar-controller-v0.16.1) (2026-10-28)
+
+
+### Bug Fixes
+
+* **controller:** make Stop stick and document what runs on the node ([591ac13](https://github.com/niks3089/pillar/commit/591ac1391ff112d3db05eff56a38b6da764ae022))
+* make Stop stick (operator hold file) + document what runs on the node ([4c774c0](https://github.com/niks3089/pillar/commit/4c774c063e7fc91cce2cfc7fc531ef5b3d1a9617))
+
 ## [0.16.0](https://github.com/niks3089/pillar/compare/pillar-controller-v0.15.5...pillar-controller-v0.16.0) (2026-08-21)
 
 
