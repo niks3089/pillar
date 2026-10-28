@@ -229,18 +229,19 @@ impl Reconciler {
 
         // 1b. Operator hold: Stop (or a manual `touch`) writes the hold file.
         // While it exists the validator stays down — no auto-start, no recovery.
-        let held = std::path::Path::new(pillar_shared::HOLD_FILE).exists();
+        let hold_file = pillar_shared::hold_file(&self.config.lifecycle.service_name);
+        let held = std::path::Path::new(&hold_file).exists();
         if held != self.held {
             self.held = held;
             if held {
                 tracing::info!(
-                    hold_file = pillar_shared::HOLD_FILE,
+                    hold_file = %hold_file,
                     "validator held stopped by operator — auto-restart disabled until \
                      Restart/Recover/Upgrade/Provision runs or the hold file is removed"
                 );
             } else {
                 tracing::info!(
-                    hold_file = pillar_shared::HOLD_FILE,
+                    hold_file = %hold_file,
                     "operator hold cleared — auto-restart re-enabled"
                 );
             }
