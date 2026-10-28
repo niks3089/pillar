@@ -5,6 +5,39 @@ export interface ConfirmOptions {
   message: string
   confirmLabel?: string
   danger?: boolean
+  /** Loads the exact commands this action will run, shown behind "Show commands". */
+  preview?: () => Promise<string>
+}
+
+function CommandPreview({ load }: { load: () => Promise<string> }) {
+  const [open, setOpen] = useState(false)
+  const [script, setScript] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  const toggle = () => {
+    setOpen(o => !o)
+    if (script === null && error === null) {
+      load().then(setScript).catch(e => setError(String(e)))
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-2">
+      <button type="button" aria-expanded={open} className="self-start text-xs font-medium text-purple-300 hover:text-purple-200 transition-colors" onClick={toggle}>
+        {open ? 'Hide commands' : 'Show commands'}
+      </button>
+      {open && (
+        error ? <p className="text-xs text-red-400 m-0">Could not load commands: {error}</p>
+        : script === null ? <p className="text-xs text-zinc-500 m-0">Loading…</p>
+        : (
+          <>
+            <pre aria-label="Commands to run" className="max-h-80 overflow-auto m-0 p-3 text-[11px] leading-relaxed font-mono text-zinc-300 bg-black/40 border border-white/10 rounded-md whitespace-pre">{script}</pre>
+            <p className="text-[11px] text-zinc-500 m-0">Runs on the node as <code>sol</code> via <code>bash -x</code>; each command is echoed to the Agent log as <code>[cmd]</code>. Secret values are masked as <code>***</code>.</p>
+          </>
+        )
+      )}
+    </div>
+  )
 }
 
 interface ConfirmState extends ConfirmOptions {
@@ -25,9 +58,10 @@ export function useConfirm() {
 
   const confirmElement = state ? (
     <div className="fixed inset-0 z-[70] flex items-center justify-center px-4 bg-black/60 backdrop-blur-sm" onClick={() => close(false)}>
-      <div role="dialog" aria-modal="true" aria-labelledby="confirm-dialog-title" className="w-full max-w-md bg-[#15131f] border border-white/10 rounded-xl shadow-2xl p-6 flex flex-col gap-4" onClick={e => e.stopPropagation()}>
+      <div role="dialog" aria-modal="true" aria-labelledby="confirm-dialog-title" className={`w-full ${state.preview ? 'max-w-2xl' : 'max-w-md'} bg-[#15131f] border border-white/10 rounded-xl shadow-2xl p-6 flex flex-col gap-4`} onClick={e => e.stopPropagation()}>
         <h3 id="confirm-dialog-title" className="text-lg font-semibold text-zinc-100 m-0">{state.title}</h3>
         <p className="text-sm text-zinc-400 m-0 whitespace-pre-wrap">{state.message}</p>
+        {state.preview && <CommandPreview key={state.title} load={state.preview} />}
         <div className="flex items-center justify-end gap-3 mt-2">
           <button
             className="px-4 py-2 text-sm font-medium text-zinc-400 hover:text-zinc-200 transition-colors"

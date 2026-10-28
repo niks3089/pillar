@@ -176,9 +176,24 @@ A bare `sudo systemctl stop` without the hold file is treated as an outage, so t
 starts the validator again after about a minute. To take the agent out of the picture
 entirely, run `sudo systemctl stop pillar-agent`.
 
-**Exactly what each button runs** (templates live in `controller/scripts/`; every line a
-script prints shows up in the **Agent** log tab, and its pass/fail result in the **Controller**
-tab):
+**Seeing exactly what runs.** Every action is a bash script the controller renders and the
+agent runs as `sol`. You can see it at every stage:
+
+- **Before:** every confirm dialog (Stop, Start/Restart, Recover, Update Validator, Cancel,
+  Upgrade Agent) has **Show commands**, which renders the exact script for this node without
+  sending anything (`POST /api/nodes/:id/<action>?dry_run=true`).
+- **While it runs:** scripts run under `bash -x`; each command is logged to the **Agent** log
+  tab as `[cmd] <command>`, followed by its `[stdout]` / `[stderr]` lines.
+- **After:** the node's **Activity** panel lists every action with its result, the script that
+  was sent, the command trail + errors (stderr), and its output (stdout)
+  (`GET /api/nodes/:id/scripts`). History follows the controller's log retention.
+
+Secret values are masked as `***` everywhere (previews, Activity, agent logs): environment
+variables named like `*_TOKEN`, `*_SECRET`, `*_PASSWORD`, `*_API_KEY`, the `p=` in
+`SOLANA_METRICS_CONFIG`, `?api-key=` style URL parameters, and `user:pass@` in URLs. Command
+names and other values stay visible.
+
+**What each button runs** (templates live in `controller/scripts/`):
 
 | Button | Commands on the host |
 |---|---|

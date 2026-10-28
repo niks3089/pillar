@@ -102,6 +102,12 @@ fn init_schema(conn: &Connection) -> Result<()> {
     )
     .context("creating script_executions table")?;
 
+    // Migration: keep what ran and what it printed, so operators can audit every action.
+    let _ = conn.execute_batch("ALTER TABLE script_executions ADD COLUMN script TEXT;");
+    let _ = conn.execute_batch("ALTER TABLE script_executions ADD COLUMN stdout TEXT;");
+    let _ = conn.execute_batch("ALTER TABLE script_executions ADD COLUMN stderr TEXT;");
+    let _ = conn.execute_batch("ALTER TABLE script_executions ADD COLUMN timeout_secs INTEGER;");
+
     Ok(())
 }
 
@@ -375,23 +381,42 @@ pub async fn get_provision_config(db: &Db, node_id: &str) -> Result<Option<Strin
     .await?
 }
 
+/// Cap on stored stdout/stderr per execution (the tail is kept).
+const MAX_STORED_OUTPUT_BYTES: usize = 64 * 1024;
+
+fn output_tail(s: &str) -> &str {
+    if s.len() <= MAX_STORED_OUTPUT_BYTES {
+        return s;
+    }
+    let mut start = s.len() - MAX_STORED_OUTPUT_BYTES;
+    while !s.is_char_boundary(start) {
+        start += 1;
+    }
+    &s[start..]
+}
+
+/// Record a dispatched script. `script` should already be redacted.
 pub async fn insert_script_execution(
     db: &Db,
     script_id: &str,
     node_id: &str,
     description: &str,
+    script: &str,
+    timeout_secs: u32,
 ) -> Result<()> {
     let db = db.clone();
     let script_id = script_id.to_owned();
     let node_id = node_id.to_owned();
     let description = description.to_owned();
+    let script = script.to_owned();
     tokio::task::spawn_blocking(move || {
         let conn = db.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
         let now = now_epoch_secs();
         conn.execute(
-            "INSERT INTO script_executions (script_id, node_id, description, initiated_at)
-             VALUES (?1, ?2, ?3, ?4)",
-            params![script_id, node_id, description, now],
+            "INSERT INTO script_executions
+                 (script_id, node_id, description, initiated_at, script, timeout_secs)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![script_id, node_id, description, now, script, timeout_secs],
         )
         .context("insert_script_execution")?;
         Ok(())
@@ -399,24 +424,30 @@ pub async fn insert_script_execution(
     .await?
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn complete_script_execution(
     db: &Db,
     script_id: &str,
     exit_code: i32,
     timed_out: bool,
     error: &str,
+    stdout: &str,
+    stderr: &str,
 ) -> Result<()> {
     let db = db.clone();
     let script_id = script_id.to_owned();
     let error = error.to_owned();
+    let stdout = output_tail(stdout).to_owned();
+    let stderr = output_tail(stderr).to_owned();
     tokio::task::spawn_blocking(move || {
         let conn = db.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
         let now = now_epoch_secs();
         conn.execute(
             "UPDATE script_executions
-             SET completed_at = ?1, exit_code = ?2, timed_out = ?3, error = ?4
-             WHERE script_id = ?5",
-            params![now, exit_code, timed_out, optional_str(&error), script_id],
+             SET completed_at = ?1, exit_code = ?2, timed_out = ?3, error = ?4,
+                 stdout = ?5, stderr = ?6
+             WHERE script_id = ?7",
+            params![now, exit_code, timed_out, optional_str(&error), stdout, stderr, script_id],
         )
         .context("complete_script_execution")?;
         Ok(())
@@ -440,13 +471,15 @@ pub async fn get_active_script(db: &Db, node_id: &str) -> Result<Option<ActiveSc
     let node_id = node_id.to_owned();
     tokio::task::spawn_blocking(move || {
         let conn = db.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
-        let cutoff = now_epoch_secs() - (MAX_SCRIPT_RUNTIME_SECS + 300);
+        // A script whose result never arrives (node dropped mid-run) stops
+        // counting as active once its own timeout + grace has passed.
         let row = conn
             .query_row(
                 "SELECT script_id, description, initiated_at FROM script_executions
-                 WHERE node_id = ?1 AND completed_at IS NULL AND initiated_at > ?2
+                 WHERE node_id = ?1 AND completed_at IS NULL
+                   AND initiated_at + COALESCE(timeout_secs, ?2) + 300 > ?3
                  ORDER BY initiated_at DESC LIMIT 1",
-                params![node_id, cutoff],
+                params![node_id, MAX_SCRIPT_RUNTIME_SECS, now_epoch_secs()],
                 |row| {
                     Ok(ActiveScript {
                         script_id: row.get(0)?,
@@ -458,6 +491,59 @@ pub async fn get_active_script(db: &Db, node_id: &str) -> Result<Option<ActiveSc
             .optional()
             .context("get_active_script")?;
         Ok(row)
+    })
+    .await?
+}
+
+/// One action from a node's history, including exactly what ran.
+#[derive(Debug, Clone, Serialize)]
+pub struct ScriptExecution {
+    pub script_id: String,
+    pub description: Option<String>,
+    pub initiated_at: i64,
+    pub completed_at: Option<i64>,
+    pub exit_code: Option<i64>,
+    pub timed_out: bool,
+    pub error: Option<String>,
+    pub script: Option<String>,
+    pub stdout: Option<String>,
+    pub stderr: Option<String>,
+}
+
+/// Most recent executions for a node, newest first.
+pub async fn list_script_executions(
+    db: &Db,
+    node_id: &str,
+    limit: u32,
+) -> Result<Vec<ScriptExecution>> {
+    let db = db.clone();
+    let node_id = node_id.to_owned();
+    tokio::task::spawn_blocking(move || {
+        let conn = db.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
+        let mut stmt = conn.prepare(
+            "SELECT script_id, description, initiated_at, completed_at, exit_code,
+                    COALESCE(timed_out, 0), error, script, stdout, stderr
+             FROM script_executions WHERE node_id = ?1
+             ORDER BY initiated_at DESC, rowid DESC LIMIT ?2",
+        )?;
+        let rows = stmt
+            .query_map(params![node_id, limit], |row| {
+                Ok(ScriptExecution {
+                    script_id: row.get(0)?,
+                    description: row.get(1)?,
+                    initiated_at: row.get(2)?,
+                    completed_at: row.get(3)?,
+                    exit_code: row.get(4)?,
+                    timed_out: row.get(5)?,
+                    error: row.get(6)?,
+                    script: row.get(7)?,
+                    stdout: row.get(8)?,
+                    stderr: row.get(9)?,
+                })
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .context("list_script_executions")?;
+        Ok(rows)
     })
     .await?
 }
@@ -707,6 +793,12 @@ pub async fn prune_old_data(db: &Db, retention_days: u32) -> Result<usize> {
             )
             .context("prune logs")?;
 
+        conn.execute(
+            "DELETE FROM script_executions WHERE initiated_at < ?1",
+            params![cutoff],
+        )
+        .context("prune script executions")?;
+
         Ok(logs_deleted)
     })
     .await?
@@ -823,16 +915,23 @@ mod tests {
         let db = test_db();
         assert!(get_active_script(&db, "node-1").await.unwrap().is_none());
 
-        insert_script_execution(&db, "script-1", "node-1", "Provision agave v2.1.6")
-            .await
-            .unwrap();
+        insert_script_execution(
+            &db,
+            "script-1",
+            "node-1",
+            "Provision agave v2.1.6",
+            "sudo systemctl enable --now solana-validator",
+            3600,
+        )
+        .await
+        .unwrap();
         let active = get_active_script(&db, "node-1").await.unwrap().unwrap();
         assert_eq!(active.script_id, "script-1");
         assert_eq!(active.description.as_deref(), Some("Provision agave v2.1.6"));
 
         assert!(get_active_script(&db, "node-2").await.unwrap().is_none());
 
-        complete_script_execution(&db, "script-1", 0, false, "")
+        complete_script_execution(&db, "script-1", 0, false, "", "started\n", "+pillar$ sudo systemctl enable --now solana-validator\n")
             .await
             .unwrap();
         assert!(get_active_script(&db, "node-1").await.unwrap().is_none());
@@ -841,6 +940,39 @@ mod tests {
         assert_eq!(last.script_id, "script-1");
         assert_eq!(last.exit_code, 0);
         assert!(get_last_script(&db, "node-2").await.unwrap().is_none());
+
+        let history = list_script_executions(&db, "node-1", 10).await.unwrap();
+        assert_eq!(history.len(), 1);
+        assert_eq!(history[0].script.as_deref(), Some("sudo systemctl enable --now solana-validator"));
+        assert_eq!(history[0].stdout.as_deref(), Some("started\n"));
+        assert!(history[0].stderr.as_deref().unwrap().contains("systemctl enable"));
+    }
+
+    #[tokio::test]
+    async fn orphaned_short_script_stops_blocking_after_its_own_timeout() {
+        let db = test_db();
+        insert_script_execution(&db, "stop-1", "node-1", "Stop validator", "sudo systemctl stop x", 60)
+            .await
+            .unwrap();
+        assert!(get_active_script(&db, "node-1").await.unwrap().is_some());
+        {
+            // Pretend it was dispatched an hour ago and the result never came back.
+            let conn = db.lock().unwrap();
+            conn.execute(
+                "UPDATE script_executions SET initiated_at = initiated_at - 3600 WHERE script_id = 'stop-1'",
+                [],
+            )
+            .unwrap();
+        }
+        assert!(get_active_script(&db, "node-1").await.unwrap().is_none());
+    }
+
+    #[test]
+    fn output_tail_keeps_the_end_on_a_char_boundary() {
+        let long = format!("{}é{}", "a".repeat(MAX_STORED_OUTPUT_BYTES), "tail");
+        let t = output_tail(&long);
+        assert!(t.len() <= MAX_STORED_OUTPUT_BYTES);
+        assert!(t.ends_with("tail"));
     }
 
     #[tokio::test]

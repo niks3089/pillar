@@ -126,6 +126,33 @@ export async function deleteNode(id: string): Promise<void> {
   }
 }
 
+export type NodeAction = 'restart' | 'recover' | 'stop' | 'cancel' | 'provision' | 'upgrade-agent'
+
+/** Render the exact script an action would run, without running it. */
+export async function previewAction(id: string, action: NodeAction, body?: unknown): Promise<{ description: string; script: string }> {
+  return api(`/api/nodes/${encodeURIComponent(id)}/${action}?dry_run=true`, {
+    method: 'POST',
+    ...(body === undefined ? {} : { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }),
+  })
+}
+
+export interface ScriptExecution {
+  script_id: string
+  description?: string
+  initiated_at: number
+  completed_at?: number
+  exit_code?: number
+  timed_out: boolean
+  error?: string
+  script?: string
+  stdout?: string
+  stderr?: string
+}
+
+export async function fetchNodeScripts(id: string, limit = 20): Promise<ScriptExecution[]> {
+  return api(`/api/nodes/${encodeURIComponent(id)}/scripts?limit=${limit}`)
+}
+
 export async function stopNode(id: string): Promise<{ ok: boolean; message: string }> {
   return api(`/api/nodes/${encodeURIComponent(id)}/stop`, { method: 'POST' })
 }
